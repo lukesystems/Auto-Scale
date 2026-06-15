@@ -2,6 +2,14 @@ import type { ZodTypeAny, z } from "zod";
 
 export type AIProvider = "openai" | "anthropic" | "gemini" | "openrouter" | "mock";
 
+export type AITaskType =
+  | "autobrief"
+  | "trendwatch"
+  | "content"
+  | "quality_gate"
+  | "compound"
+  | "default";
+
 export interface AIMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -10,6 +18,7 @@ export interface AIMessage {
 export interface GenerateTextParams {
   provider?: AIProvider;
   model?: string;
+  taskType?: AITaskType;
   system?: string;
   prompt: string;
   temperature?: number;
@@ -30,6 +39,7 @@ export interface GenerateTextResult {
 export interface GenerateObjectParams<T extends ZodTypeAny> {
   provider?: AIProvider;
   model?: string;
+  taskType?: AITaskType;
   system?: string;
   prompt: string;
   schema: T;
@@ -54,6 +64,9 @@ export interface GenerateObjectResult<T extends ZodTypeAny> {
 export interface AdapterContext {
   apiKey: string;
   baseUrl?: string;
+  appUrl?: string | null;
+  appTitle?: string;
+  providerLabel?: AIProvider;
 }
 
 export interface AIAdapter {

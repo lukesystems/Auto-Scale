@@ -6,6 +6,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { sendToPostiz } from "@/services/postiz/client";
 import { checkChainIntegrity } from "@/lib/chain-integrity";
+import { getProviderModeForUser } from "@/lib/provider-mode";
+import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 
 const Schema = z.object({
   project_id: z.string().uuid(),
@@ -30,18 +32,14 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const [{ data: post }, { data: connection }] = await Promise.all([
-    supabase
-      .from("generated_posts")
-      .select("id, project_id, platform, caption, cta, hook, status")
-      .eq("id", parsed.data.post_id)
-      .maybeSingle(),
-    supabase
-      .from("postiz_connections")
-      .select("api_url, api_key")
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-  ]);
+  const providerMode = await getProviderModeForUser(user.id);
+
+  const { data: post } = await supabase
+    .from("generated_posts")
+    .select("id, project_id, platform, caption, cta, hook, status")
+    .eq("id", parsed.data.post_id)
+    .maybeSingle();
+
   if (!post) return { ok: false, error: "Post not found." };
   if (post.project_id !== parsed.data.project_id) {
     return { ok: false, error: "Cross-project boundary violation: Post belongs to a different project." };
@@ -70,7 +68,6 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     externalRef: post.id,
   };
 
-  // Insert scheduled_post row first (pending)
   const { data: row, error } = await supabase
     .from("scheduled_posts")
     .insert({
@@ -86,22 +83,26 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     .single();
   if (error || !row) return { ok: false, error: error?.message ?? "Failed to create schedule." };
 
-  // Send to Postiz if configured
   let finalStatus = "pending";
   let errorMessage: string | null = null;
   let postizResponse: unknown = {};
 
-  if (connection?.api_url && connection?.api_key) {
+  const credentials = await resolvePostizCredentials(user.id, providerMode);
+
+  if (credentials) {
     const response = await sendToPostiz(
-      { apiUrl: connection.api_url, apiKey: connection.api_key },
+      { apiUrl: credentials.apiUrl, apiKey: credentials.apiKey },
       payload
     );
     finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
-    postizResponse = response.raw ?? {};
+    postizResponse = { ...(response.raw ?? {}), credentialSource: credentials.source };
   } else {
     finalStatus = "queued_local";
-    errorMessage = "Postiz not connected — saved locally. Configure in /settings/postiz to send.";
+    errorMessage =
+      providerMode === "managed"
+        ? "Managed Postiz not configured — saved locally. Set POSTIZ_API_URL and POSTIZ_API_KEY on the server."
+        : "Postiz not connected — saved locally. Configure in /settings/postiz to send.";
   }
 
   await supabase
@@ -113,12 +114,10 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     })
     .eq("id", row.id);
 
-  // Mark post scheduled if Postiz accepted
   if (finalStatus === "scheduled") {
     await supabase.from("generated_posts").update({ status: "scheduled" }).eq("id", post.id);
   }
 
-  // Auto-create experiment row
   await supabase.from("experiments").insert({
     project_id: parsed.data.project_id,
     post_id: post.id,
