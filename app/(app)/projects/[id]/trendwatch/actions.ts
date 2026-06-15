@@ -16,6 +16,7 @@ import {
 } from "@/services/trendwatch/enrich-sources";
 import type { DistortionRisk, SourcePlatform } from "@/lib/supabase/types";
 import { logAIRun } from "@/services/ai/logger";
+import { classifySource } from "@/services/trendwatch/classify-source";
 
 const RunSchema = z.object({ project_id: z.string().uuid() });
 
@@ -31,7 +32,7 @@ async function enrichProjectSources(
   const { data: rawSources } = await supabase
     .from("trendwatch_sources")
     .select(
-      "id, source_url, platform, account_handle, account_type, follower_count, views, likes, saves, shares, comments, transferability_score, notes, fetch_status, fetched_text"
+      "id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes, fetch_status, fetched_text"
     )
     .eq("project_id", projectId);
 
@@ -40,38 +41,49 @@ async function enrichProjectSources(
   for (const row of rawSources ?? []) {
     const source = row as SourceRecord;
     const patch = await enrichSourceFromUrl(source);
+    const classification = await classifySource({ ...source, fetched_text: patch.fetched_text });
+    const rescored = scoreSourceRecord(
+      {
+        ...source,
+        fetched_text: patch.fetched_text,
+        transferability_score: classification.transferability_score,
+      },
+      patch.fetch_status === "success",
+      typeof patch.fetch_metadata.error === "string" ? patch.fetch_metadata.error : null
+    );
 
-    const sourceUpdate: {
-      run_id: string;
-      fetch_status: FetchStatus;
-      fetched_text: string | null;
-      fetch_metadata: Record<string, unknown>;
-      signal_score: number;
-      confidence_score: number;
-      scoring_reasons: string[];
-      distortion_risk: DistortionRisk;
-      platform?: SourcePlatform;
-    } = {
+    const sourceUpdate = {
       run_id: runId,
       fetch_status: patch.fetch_status,
       fetched_text: patch.fetched_text,
       fetch_metadata: patch.fetch_metadata,
-      signal_score: patch.signal_score,
-      confidence_score: patch.confidence_score,
-      scoring_reasons: patch.scoring_reasons,
-      distortion_risk: patch.distortion_risk,
+      signal_score: rescored.score.signalScore,
+      confidence_score: rescored.score.confidenceScore,
+      scoring_reasons: rescored.score.reasons,
+      distortion_risk: classification.distortion_risk,
+      account_type: classification.account_type,
+      format: classification.format,
+      hook: classification.hook,
+      angle: classification.angle,
+      visual_pattern: classification.visual_pattern,
+      cta_pattern: classification.cta_pattern,
+      audience_pain: classification.audience_pain,
+      why_it_worked: classification.why_it_worked,
+      how_to_adapt: classification.how_to_adapt,
+      transferability_score: classification.transferability_score,
+      platform: patch.platform ?? (source.platform as SourcePlatform),
     };
-    if (patch.platform) {
-      sourceUpdate.platform = patch.platform;
-    }
 
     await supabase.from("trendwatch_sources").update(sourceUpdate as never).eq("id", source.id);
 
     enriched.push({
       ...source,
       ...patch,
+      ...classification,
+      signal_score: rescored.score.signalScore,
+      confidence_score: rescored.score.confidenceScore,
+      scoring_reasons: rescored.score.reasons,
       fetch_metadata: patch.fetch_metadata,
-      scoring_reasons: patch.scoring_reasons,
     });
   }
 
@@ -149,10 +161,12 @@ export async function runTrendWatchAction(formData: FormData): Promise<RunTrendW
       confidence_score: number;
       scoring_reasons: string[];
       recommended_experiment: string | null;
+      source_id: string | null;
     }> = [];
 
     const baseConfidence = runConfidence.confidence;
     const baseReasons = runConfidence.reasons;
+    const anchorSource = [...enrichedSources].sort((a, b) => b.confidence_score - a.confidence_score)[0] ?? null;
 
     for (const fmt of result.analysis.winning_formats ?? []) {
       const scored = scoreSourceRecord(
@@ -185,6 +199,7 @@ export async function runTrendWatchAction(formData: FormData): Promise<RunTrendW
         confidence_score: Math.min(baseConfidence, scored.score.confidenceScore),
         scoring_reasons: [...baseReasons, ...scored.score.reasons],
         recommended_experiment: null,
+        source_id: anchorSource?.id ?? null,
       });
     }
 
@@ -219,6 +234,7 @@ export async function runTrendWatchAction(formData: FormData): Promise<RunTrendW
         confidence_score: Math.min(baseConfidence, scored.score.confidenceScore),
         scoring_reasons: [...baseReasons, ...scored.score.reasons],
         recommended_experiment: null,
+        source_id: anchorSource?.id ?? null,
       });
     }
 
@@ -234,6 +250,7 @@ export async function runTrendWatchAction(formData: FormData): Promise<RunTrendW
         confidence_score: baseConfidence,
         scoring_reasons: baseReasons,
         recommended_experiment: exp,
+        source_id: anchorSource?.id ?? null,
       });
     }
 

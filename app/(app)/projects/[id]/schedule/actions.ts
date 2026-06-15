@@ -13,7 +13,10 @@ const Schema = z.object({
   project_id: z.string().uuid(),
   post_id: z.string().uuid(),
   channel: z.string().min(1, "Channel is required."),
-  scheduled_for: z.string().min(1, "Schedule date is required."),
+  scheduled_for: z.string().min(1, "Schedule date is required.").refine(
+    (value) => Number.isFinite(new Date(value).getTime()),
+    "Schedule date is invalid."
+  ),
 });
 
 export type ScheduleResult = { ok: true; scheduledId: string } | { ok: false; error: string };
@@ -33,6 +36,10 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   if (!user) return { ok: false, error: "Not signed in." };
 
   const providerMode = await getProviderModeForUser(user.id);
+  const scheduledFor = new Date(parsed.data.scheduled_for);
+  if (scheduledFor.getTime() <= Date.now()) {
+    return { ok: false, error: "Schedule date must be in the future." };
+  }
 
   const { data: post } = await supabase
     .from("generated_posts")
@@ -58,12 +65,24 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     .eq("post_id", parsed.data.post_id)
     .order("slide_number", { ascending: true });
 
+  const { data: channel } = await supabase
+    .from("postiz_channels")
+    .select("integration_id, platform, disabled")
+    .eq("owner_id", user.id)
+    .eq("integration_id", parsed.data.channel)
+    .maybeSingle();
+  if (channel?.disabled) return { ok: false, error: "That Postiz channel is disabled." };
+  const credentials = await resolvePostizCredentials(user.id, providerMode);
+  if (credentials && !channel) {
+    return { ok: false, error: "Sync Postiz channels in Settings and choose a discovered integration." };
+  }
+
   const payload = {
     channel: parsed.data.channel,
-    scheduledFor: new Date(parsed.data.scheduled_for).toISOString(),
+    scheduledFor: scheduledFor.toISOString(),
     caption: post.caption ?? post.hook ?? "",
     cta: post.cta ?? undefined,
-    platform: post.platform,
+    platform: channel?.platform ?? post.platform,
     slides: (slides ?? []).map((s) => ({ headline: s.headline ?? "", body: s.body ?? "" })),
     externalRef: post.id,
   };
@@ -87,8 +106,6 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   let errorMessage: string | null = null;
   let postizResponse: unknown = {};
 
-  const credentials = await resolvePostizCredentials(user.id, providerMode);
-
   if (credentials) {
     const response = await sendToPostiz(
       { apiUrl: credentials.apiUrl, apiKey: credentials.apiKey },
@@ -97,6 +114,10 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
     postizResponse = { ...(response.raw ?? {}), credentialSource: credentials.source };
+    await supabase
+      .from("scheduled_posts")
+      .update({ remote_id: response.remoteId ?? null })
+      .eq("id", row.id);
   } else {
     finalStatus = "queued_local";
     errorMessage =

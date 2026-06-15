@@ -144,6 +144,9 @@ export function PostCard({ projectId, post, approvalMode }: PostCardProps) {
           {post.quality_status !== "pass" && (
             <span className="text-[11px] text-destructive font-medium">⚠ Fails Quality Gate</span>
           )}
+          {post.quality_status === "pass" && (post.quality_score ?? 0) < 0.7 && (
+            <span className="text-[11px] text-destructive font-medium">Quality score must be at least 70%</span>
+          )}
           {post.quality_status === "pass" && (!post.hook || !post.hypothesis || !post.metric_to_watch || !post.cta) && (
             <span className="text-[11px] text-destructive font-medium">⚠ Missing required fields</span>
           )}
@@ -161,6 +164,7 @@ export function PostCard({ projectId, post, approvalMode }: PostCardProps) {
               disabled={
                 pending ||
                 post.quality_status !== "pass" ||
+                (post.quality_score ?? 0) < 0.7 ||
                 !post.hook ||
                 !post.hypothesis ||
                 !post.metric_to_watch ||

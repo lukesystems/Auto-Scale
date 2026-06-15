@@ -202,6 +202,8 @@ export interface Database {
           platform: SourcePlatform;
           account_handle: string | null;
           account_type: AccountType;
+          caption: string | null;
+          published_at: string | null;
           follower_count: number | null;
           views: number | null;
           likes: number | null;
@@ -363,6 +365,8 @@ export interface Database {
           postiz_response: Json;
           status: string;
           error_message: string | null;
+          remote_id: string | null;
+          release_url: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["scheduled_posts"]["Row"]> & {
@@ -387,6 +391,29 @@ export interface Database {
           owner_id: string;
         };
         Update: Partial<Database["public"]["Tables"]["postiz_connections"]["Row"]>;
+        Relationships: [];
+      };
+
+      postiz_channels: {
+        Row: {
+          id: string;
+          owner_id: string;
+          integration_id: string;
+          provider: string;
+          platform: string;
+          name: string;
+          profile: string | null;
+          disabled: boolean;
+          raw_metadata: Json;
+          synced_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["postiz_channels"]["Row"]> & {
+          owner_id: string;
+          integration_id: string;
+          name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["postiz_channels"]["Row"]>;
         Relationships: [];
       };
 

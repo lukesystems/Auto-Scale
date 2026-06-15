@@ -5,6 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { ProviderMode } from "@/lib/provider-mode";
 import { isManagedMode } from "@/lib/provider-mode";
 import { getManagedPostizCredentials } from "@/services/providers/config";
+import { decryptSecret } from "@/lib/secret-crypto";
 
 export interface PostizCredentials {
   apiUrl: string;
@@ -34,7 +35,11 @@ export async function resolvePostizCredentials(
     .maybeSingle();
 
   if (data?.api_url && data?.api_key) {
-    return { apiUrl: data.api_url, apiKey: data.api_key, source: "byok" };
+    try {
+      return { apiUrl: data.api_url, apiKey: decryptSecret(data.api_key), source: "byok" };
+    } catch {
+      return null;
+    }
   }
 
   return null;

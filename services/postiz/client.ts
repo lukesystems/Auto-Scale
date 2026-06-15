@@ -46,6 +46,15 @@ export interface PostizSchedulePostResponse {
   requestUrl?: string;
 }
 
+export interface PostizIntegration {
+  id: string;
+  name: string;
+  identifier: string;
+  disabled: boolean;
+  profile: string | null;
+  raw: unknown;
+}
+
 const PLATFORM_TYPE_MAP: Record<string, string> = {
   tiktok: "tiktok",
   instagram: "instagram",
@@ -122,6 +131,70 @@ export function buildPostizPayload(payload: PostizSchedulePayload): PostizCreate
   };
 }
 
+async function postizRequest(
+  creds: PostizCredentials,
+  path: string,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; data: unknown; requestUrl: string }> {
+  const validated = validatePostizConfig(creds);
+  if (!validated.ok) throw new Error(validated.error);
+  const requestUrl = `${validated.apiBase}${path}`;
+  const response = await fetch(requestUrl, {
+    ...init,
+    headers: {
+      Authorization: creds.apiKey!.trim(),
+      ...init?.headers,
+    },
+    signal: init?.signal ?? AbortSignal.timeout(15_000),
+  });
+  const text = await response.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Preserve non-JSON errors for diagnostics.
+  }
+  return { ok: response.ok, status: response.status, data, requestUrl };
+}
+
+export async function testPostizConnection(creds: PostizCredentials): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await postizRequest(creds, "/is-connected");
+    return response.ok
+      ? { ok: true }
+      : { ok: false, error: normalizePostizError(response.status, response.data) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Postiz connection test failed." };
+  }
+}
+
+export async function fetchPostizIntegrations(creds: PostizCredentials): Promise<PostizIntegration[]> {
+  const response = await postizRequest(creds, "/integrations");
+  if (!response.ok) throw new Error(normalizePostizError(response.status, response.data));
+  if (!Array.isArray(response.data)) return [];
+
+  return response.data.flatMap((item) => {
+    if (!item || typeof item !== "object" || !("id" in item)) return [];
+    const row = item as Record<string, unknown>;
+    return [{
+      id: String(row.id),
+      name: String(row.name ?? row.identifier ?? "Unnamed channel"),
+      identifier: String(row.identifier ?? "other"),
+      disabled: Boolean(row.disabled),
+      profile: row.profile ? String(row.profile) : null,
+      raw: item,
+    }];
+  });
+}
+
+export function createPostizClient(creds: PostizCredentials) {
+  return {
+    testConnection: () => testPostizConnection(creds),
+    listIntegrations: () => fetchPostizIntegrations(creds),
+    schedulePost: (payload: PostizSchedulePayload) => sendToPostiz(creds, payload),
+  };
+}
+
 export function normalizePostizError(status: number, body: unknown): string {
   const text =
     typeof body === "string"
@@ -177,9 +250,10 @@ export async function sendToPostiz(
       };
     }
 
+    const first = Array.isArray(parsed) ? parsed[0] : parsed;
     const remoteId =
-      typeof parsed === "object" && parsed !== null && "id" in parsed
-        ? String((parsed as { id: unknown }).id)
+      typeof first === "object" && first !== null && ("postId" in first || "id" in first)
+        ? String("postId" in first ? (first as { postId: unknown }).postId : (first as { id: unknown }).id)
         : undefined;
 
     return { ok: true, status: "scheduled", remoteId, raw: parsed, requestUrl };

@@ -8,6 +8,7 @@ import { disconnectPostizAction, savePostizConnectionAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PostizControls } from "./postiz-controls";
 
 export function PostizForm({ initial }: { initial: { api_url: string; has_key: boolean } }) {
   const router = useRouter();
@@ -69,6 +70,7 @@ export function PostizForm({ initial }: { initial: { api_url: string; has_key: b
           </Button>
         )}
       </div>
+      {initial.has_key && <PostizControls />}
     </form>
   );
 }

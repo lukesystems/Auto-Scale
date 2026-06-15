@@ -57,6 +57,26 @@ export function AddSourceForm({ projectId }: { projectId: string }) {
         <Input id="account_handle" name="account_handle" placeholder="founderName" />
       </div>
       <div className="space-y-1.5">
+        <Label htmlFor="caption">Caption or transcript</Label>
+        <Textarea id="caption" name="caption" rows={3} placeholder="Paste the source caption or a short transcript." />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="published_at">Published date (optional)</Label>
+        <Input id="published_at" name="published_at" type="date" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {["follower_count", "views", "likes", "saves", "shares", "comments"].map((field) => (
+          <div key={field} className="space-y-1.5">
+            <Label htmlFor={field}>{field.replace("_", " ")}</Label>
+            <Input id={field} name={field} type="number" min={0} inputMode="numeric" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="screenshot">Screenshot (optional, max 5MB)</Label>
+        <Input id="screenshot" name="screenshot" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+      </div>
+      <div className="space-y-1.5">
         <Label htmlFor="notes">Notes</Label>
         <Textarea id="notes" name="notes" rows={2} placeholder="Why is this worth analyzing?" />
       </div>

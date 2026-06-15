@@ -4,7 +4,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getProviderModeForUser, isManagedMode } from "@/lib/provider-mode";
 import { getClientSafeProviderStatus } from "@/services/providers/status";
-import { PostizForm } from "./postiz-form";
+import { PostizForm } from "./postiz-form";
+import { PostizControls } from "./postiz-controls";
 import { redirect } from "next/navigation";
 
 export const metadata = { title: "Postiz" };
@@ -26,7 +27,8 @@ export default async function PostizSettingsPage() {
 
   const mode = await getProviderModeForUser(user.id);
   const status = getClientSafeProviderStatus(mode);
-  const connection = await loadConnection(user.id);
+  const connection = await loadConnection(user.id);
+  const channels = await loadChannels(user.id);
   const connected = isManagedMode(mode)
     ? status.postiz.configured
     : Boolean(connection?.api_url && connection?.api_key);
@@ -55,7 +57,7 @@ export default async function PostizSettingsPage() {
             Postiz scheduling runs through AutoScale-managed server credentials. No API key is stored in your account or
             shown in the browser.
           </p>
-          <div className="text-sm space-y-1">
+          <div className="text-sm space-y-1">
             <p>
               Status:{" "}
               <span className={status.postiz.configured ? "text-foreground" : "text-muted-foreground"}>
@@ -67,9 +69,10 @@ export default async function PostizSettingsPage() {
                 Set POSTIZ_API_URL and POSTIZ_API_KEY in server environment. Until then, schedules queue locally.
               </p>
             )}
-          </div>
-        </div>
-      ) : (
+          </div>
+          {status.postiz.configured && <PostizControls />}
+        </div>
+      ) : (
         <div className="rounded-xl border border-border bg-card p-6">
           <PostizForm
             initial={{
@@ -78,7 +81,23 @@ export default async function PostizSettingsPage() {
             }}
           />
         </div>
-      )}
+      )}
+
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="font-semibold">Synced channels ({channels.length})</h3>
+        {channels.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">Test the connection, then sync channels from Postiz.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {channels.map((channel) => (
+              <div key={channel.integration_id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
+                <span>{channel.name}</span>
+                <Badge variant={channel.disabled ? "secondary" : "outline"}>{channel.platform}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="rounded-xl border border-border bg-secondary/30 p-5 text-sm text-muted-foreground">
         <h4 className="font-semibold text-foreground">Heads up</h4>
@@ -88,8 +107,7 @@ export default async function PostizSettingsPage() {
           </p>
         ) : (
           <p className="mt-2">
-            Your Postiz API key is stored in Supabase under your user row, protected by RLS. Don&apos;t share screenshots
-            that include it.
+            Your Postiz API key is encrypted on the server before it is stored in Supabase and remains protected by RLS.
           </p>
         )}
         <p className="mt-2">
@@ -99,7 +117,17 @@ export default async function PostizSettingsPage() {
       </div>
     </div>
   );
-}
+}
+
+async function loadChannels(userId: string) {
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("postiz_channels")
+    .select("integration_id, name, platform, disabled")
+    .eq("owner_id", userId)
+    .order("name");
+  return data ?? [];
+}
 
 async function loadConnection(userId: string) {
   const supabase = createSupabaseServerClient();
@@ -110,4 +138,4 @@ async function loadConnection(userId: string) {
     .maybeSingle();
   return data;
 }
-
+

@@ -10,6 +10,7 @@ import { fetchSiteForAutoBrief } from "@/services/autobrief/fetch-site";
 import { generateAutoBrief } from "@/services/autobrief/generate";
 import { AutoBriefSchema, LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
 import { createProjectFromAutoBrief } from "@/services/autobrief/create-project";
+import { mapAutoBriefError, isAIError, isProviderSetupError } from "@/services/autobrief/map-error";
 import { logAIRun } from "@/services/ai/logger";
 
 const ProviderModeSchema = z.enum(["managed", "byok"]);
@@ -98,7 +99,26 @@ export async function fetchAndGenerateAutoBriefAction(input: {
       lowConfidence,
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "AutoBrief generation failed." };
+    const errorMessage = mapAutoBriefError(err, fetchFailed);
+
+    await logAIRun({
+      ownerId: user.id,
+      kind: "autobrief",
+      provider: isAIError(err) ? err.provider : "unknown",
+      model: "unknown",
+      input: { productUrl: urlParsed.data, fetchFailed },
+      status: "failed",
+      errorMessage,
+    });
+
+    if (fetchFailed && !isProviderSetupError(err)) {
+      return {
+        ok: false,
+        error: `${errorMessage} Website fetch failed — you can still use manual entry.`,
+      };
+    }
+
+    return { ok: false, error: errorMessage };
   }
 }
 

@@ -142,6 +142,8 @@ export function buildExperimentTrackerCsv(posts: ExportPostInput[]): string {
 export function buildPostizPayloads(posts: ExportPostInput[]): unknown[] {
   return posts.map((p) => ({
     external_ref: p.id,
+    requires_integration_id: true,
+    requires_schedule_date: true,
     platform: p.platform,
     caption: p.caption,
     cta: p.cta,
@@ -163,6 +165,10 @@ export async function buildExportZip(input: BuildExportInput): Promise<Uint8Arra
   root.file("experiment-tracker.csv", buildExperimentTrackerCsv(input.posts));
   root.file("postiz-payloads.json", JSON.stringify(buildPostizPayloads(input.posts), null, 2));
   root.file(
+    "slides/README.txt",
+    "AutoScale V1 exports structured slide copy only. PNG/image rendering is not included yet.\n"
+  );
+  root.file(
     "README.md",
     [
       `# AutoScale export — ${input.projectName}`,
@@ -176,9 +182,11 @@ export async function buildExportZip(input: BuildExportInput): Promise<Uint8Arra
       `- captions.txt — copy-paste captions + CTA per post`,
       `- schedule.csv — empty schedule template`,
       `- experiment-tracker.csv — empty metrics template`,
-      `- postiz-payloads.json — Postiz-ready payload preview`,
+      `- postiz-payloads.json - mapping preview; add a synced integration ID and schedule date before sending`,
+      `- slides/README.txt - confirms that V1 does not render slide PNGs`,
       ``,
-      `Protect the chain: source → insight → hook → post → metric → variant.`,
+      `Important: this V1 pack contains copy and structured data, not rendered carousel images or videos.`,
+      `Protect the chain: source -> insight -> hook -> post -> metric -> variant.`,
     ].join("\n")
   );
 

@@ -9,9 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-interface Props { projectId: string; postId: string; defaultPlatform: string }
+interface ChannelOption {
+  integrationId: string;
+  name: string;
+  platform: string;
+}
 
-export function SchedulePostForm({ projectId, postId, defaultPlatform }: Props) {
+interface Props {
+  projectId: string;
+  postId: string;
+  defaultPlatform: string;
+  channels: ChannelOption[];
+}
+
+export function SchedulePostForm({ projectId, postId, defaultPlatform, channels }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const defaultDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -36,13 +47,29 @@ export function SchedulePostForm({ projectId, postId, defaultPlatform }: Props) 
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
           <Label htmlFor={`channel-${postId}`} className="text-xs">Channel / platform</Label>
-          <Input
-            id={`channel-${postId}`}
-            name="channel"
-            defaultValue={defaultPlatform}
-            className="h-9 text-sm"
-            required
-          />
+          {channels.length > 0 ? (
+            <select
+              id={`channel-${postId}`}
+              name="channel"
+              defaultValue={channels.find((channel) => channel.platform === defaultPlatform)?.integrationId ?? channels[0]?.integrationId}
+              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              required
+            >
+              {channels.map((channel) => (
+                <option key={channel.integrationId} value={channel.integrationId}>
+                  {channel.name} ({channel.platform})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Input
+              id={`channel-${postId}`}
+              name="channel"
+              defaultValue={defaultPlatform}
+              className="h-9 text-sm"
+              required
+            />
+          )}
         </div>
         <div className="space-y-1">
           <Label htmlFor={`when-${postId}`} className="text-xs">When</Label>

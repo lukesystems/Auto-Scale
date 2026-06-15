@@ -146,6 +146,7 @@ describe("TrendWatch scoring & ingestion", () => {
   it("stores fetch failure from enrichSourceFromUrl without inventing metrics", async () => {
     vi.spyOn(ingestion, "safeFetchUrl").mockResolvedValue({
       url: "https://example.com/missing",
+      finalUrl: "https://example.com/missing",
       status: "failed",
       textSnippet: null,
       title: null,
@@ -226,10 +227,10 @@ describe("Postiz client", () => {
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({ id: "remote-1" }),
+        text: async () => JSON.stringify([{ postId: "remote-1", integration: "int-1" }]),
       });
 
-      await sendToPostiz(
+      const result = await sendToPostiz(
         { apiUrl: "https://api.postiz.com", apiKey: "test-key-123" },
         {
           channel: "int-1",
@@ -249,6 +250,7 @@ describe("Postiz client", () => {
       );
       const headers = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
       expect(headers.Authorization).not.toMatch(/^Bearer /);
+      expect(result.remoteId).toBe("remote-1");
     });
 
     it("returns failed status on API error preserving export fallback path", async () => {

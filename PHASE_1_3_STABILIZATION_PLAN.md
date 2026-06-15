@@ -1,51 +1,56 @@
-# AutoScale Phase 1–3 Stabilization & Security Plan
+# AutoScale Phase 1-3 Stabilization Plan
 
-This implementation plan details the security, stability, core loop, and API refactoring tasks to get AutoScale V1 ready for local development, testing, and staging.
+## Goal
 
-## Components & Files to Change
+Ship a testable V1 loop while protecting:
 
-### 1. Secret Cleanup (Phase 1)
-*   **`.env.example`**: Remove Supabase anon and service-role keys. Add warning comments.
-*   **`.gitignore`**: Ensure `.env.production` and local secret variants are ignored.
-*   **`SECURITY.md`**: Guide on rotating compromised keys in Supabase, purging past secrets from git history using `git filter-repo` or BFG, and preventing key leaks.
+`source -> insight -> content idea -> generated post -> scheduled post -> experiment -> winner -> variant`
 
-### 2. Fix the Project Route Crash (Phase 1)
-*   **`lib/project-pipeline.ts`**: Move `PipelineStep` type and `buildPipelineSteps` here.
-*   **`app/(app)/projects/[id]/layout.tsx`**: Import `buildPipelineSteps` from the new clean module.
-*   **`components/app/project-nav.tsx`**: Import types and helper from `lib/project-pipeline.ts` instead of inline definition.
+## Phase 1: Stability and Security
 
-### 3. Configure Linting (Phase 1)
-*   **`.eslintrc.json`**: Created to configure ESLint non-interactively using `extends: "next/core-web-vitals"`.
+- Keep secrets out of tracked files and encrypt BYOK Postiz credentials at rest.
+- Validate auth redirect targets as local paths.
+- Enforce Quality Gate approval on the server and in the UI.
+- Enforce project ownership and cross-project relationships with RLS, action checks, and composite foreign keys.
+- Keep lint, typecheck, unit tests, and production build green.
 
-### 4. Test Infrastructure (Phase 1)
-*   **`package.json`**: Install `vitest`, add `"test"` and `"test:unit"` scripts.
-*   **`__tests__/`**: Unit/service tests for:
-    *   Pipeline steps builder
-    *   Quality Gate checks
-    *   Postiz payload builder
-    *   TrendWatch URL safe fetcher and SSRF check
-    *   Chain integrity validations
+Acceptance:
 
-### 5. Quality Gate Enforcement (Phase 1)
-*   **`app/(app)/projects/[id]/content/actions.ts`**:
-    *   Block approval server-side in `updatePostStatusAction` if the post does not meet criteria: `quality_status === 'pass'`, score >= 0.70, hook/hypothesis/metric_to_watch/CTA exist, and belongs to same project.
-*   **`app/(app)/projects/[id]/content/post-card.tsx`**:
-    *   Render a warning or disable the "Approve" button if Quality Gate check fails.
+- Approval requires `quality_status=pass`, score >= 0.70, an insight, a content idea, hook, hypothesis, metric, and CTA.
+- Cross-project chain references fail.
+- External/protocol-relative auth redirects fall back to `/projects`.
+- `npm run lint`, `npm run typecheck`, `npm run test`, and `npm run build` pass.
 
-### 6. Project-Chain Integrity (Phase 1)
-*   **`lib/chain-integrity.ts`**: Build validators for related resources (source -> insight -> idea -> post -> scheduled -> experiment).
-*   **Actions (`*actions.ts`)**: Integrate chain validation in actions (generate post, approve post, schedule post, etc.).
-*   **`supabase/migrations/0002_chain_constraints.sql`**: Composite unique/foreign constraints to enforce project boundary at the database level.
+## Phase 2: TrendWatch Ingestion
 
-### 7. Real TrendWatch Ingestion (Phase 2)
-*   **`services/trendwatch/ingestion.ts`**: Safe server-side URL fetcher, timeout (8s), max size (1MB), SSRF check (reject local/private IPs), redirect limit (3).
-*   **`services/trendwatch/scoring.ts`**: Null-aware scoring, confidence score, and clear explanations.
-*   **Screenshot Ingestion**: Setup mock screenshot OCR and direct asset linkage.
-*   **`app/(app)/projects/[id]/trendwatch/actions.ts`**: Load ingested sources and pass actual normalized text to LLM.
+- Accept URL, caption/transcript, publish date, manual metrics, notes, and an optional screenshot.
+- Fetch server-side with protocol checks, all-address DNS validation, private/reserved IP blocking, validated redirects, an 8-second timeout, HTML-only responses, and a 1MB streamed body limit.
+- Store screenshots privately in Supabase Storage.
+- Persist deterministic and AI-assisted source classification fields.
+- Calculate null-aware signal and confidence scores without inventing metrics.
+- Link generated insights to the strongest available source.
 
-### 8. Real Distribution / Postiz V1 (Phase 3)
-*   **`services/postiz/client.ts`**:
-    *   Public API V1 compatibility (header `Authorization: <api-key>`, base URL `https://api.postiz.com/public/v1`).
-    *   Rewrite payload compiler for public `POST /posts` schema.
-*   **Settings & Scheduling Flow**:
-    *   Map integrations/channels, store scheduled status, and provide ZIP/CSV manual export fallbacks.
+Acceptance:
+
+- Failed fetches remain visible with reasons and low confidence.
+- Manual metrics remain manual evidence and are never described as verified scraped metrics.
+- Every sourced insight retains `source_id`.
+
+## Phase 3: Postiz and Export
+
+- Validate the Postiz connection through `GET /is-connected`.
+- Discover channels through `GET /integrations` and persist integration IDs in `postiz_channels`.
+- Schedule approved posts through `POST /posts` using raw `Authorization`.
+- Store the remote `postId`, response, status, and errors.
+- Queue locally when Postiz is not configured.
+- Export CSV, JSON, captions, experiment tracker, and Postiz mapping previews.
+
+Acceptance:
+
+- Scheduling uses a discovered Postiz integration ID when credentials are configured.
+- Every schedule links to a generated post and creates at most one experiment.
+- Export documentation states that V1 does not render slide PNGs or videos.
+
+## Required Migration
+
+Apply migrations `0001` through `0005` in order. Migration `0005_phase_1_3_completion.sql` adds source metadata, screenshot storage policies, Postiz channels, remote schedule IDs, duplicate experiment protection, and corrected chain delete behavior.

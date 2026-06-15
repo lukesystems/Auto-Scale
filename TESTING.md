@@ -1,69 +1,46 @@
-# TESTING.md - AutoScale Testing & RLS Verification
+# AutoScale Testing
 
-This document guides developers on running automated tests and executing manual security verifications to prove the stabilization of AutoScale V1.
+## Automated
 
-## 1. Automated Tests
-We use **Vitest** for running unit and service tests locally.
-
-### Command
 ```bash
+npm install
+npm run lint
+npm run typecheck
 npm run test
+npm run build
 ```
 
-### Coverage Areas
-- **Pipeline Steps Builder**: Verifies correct rendering of progress based on stats.
-- **Quality Gate checks**: Validates deterministic filters (length of hooks, presence of CTAs, hypotheses, etc.).
-- **Chain integrity validation**: Tests cross-project boundary checks.
-- **Postiz payload compiler**: Simulates generating payloads against the V1 public API specs.
-- **TrendWatch safe URL fetching**: Confirms hostnames/IP ranges are validated for SSRF.
+Coverage includes pipeline state, Quality Gate enforcement, cross-project chain checks, auth redirect safety, credential encryption, SSRF IP ranges, null-aware scoring, source classification, Postiz payloads, and official array response parsing.
 
----
+## Local Setup
 
-## 2. Row Level Security (RLS) Verification
+1. Copy `.env.example` to `.env.local`.
+2. Add Supabase URL and anon key.
+3. Apply `supabase/migrations/0001_init.sql` through `0005_phase_1_3_completion.sql`.
+4. Leave `AUTOSCALE_DEFAULT_PROVIDER=mock` to test without an LLM bill.
+5. Run `npm run dev`.
 
-If you are running Supabase locally or inside the Supabase SQL editor, you can run the following SQL queries to manually verify that RLS is working correctly and protecting user privacy.
+## Critical Browser Workflow
 
-### Setup Test Accounts
-We simulate two different users:
-- **User A**: `00000000-0000-0000-0000-00000000000a`
-- **User B**: `00000000-0000-0000-0000-00000000000b`
+1. Sign in and open a project.
+2. Complete or generate the product brief.
+3. Add a source with a caption, metrics, and optional screenshot.
+4. Confirm fetch status, signal score, confidence, and classification appear.
+5. Run TrendWatch and confirm insights link to sources.
+6. Generate ideas and posts.
+7. Confirm a failing or sub-70% post cannot be approved.
+8. Approve a passing post.
+9. Export the pack and confirm `slides/README.txt` says no PNGs are included.
+10. Configure Postiz, test the connection, sync channels, and schedule with a discovered integration.
+11. Enter experiment metrics, mark a winner, and generate variants.
 
-### Test 1: User A cannot read User B's projects
-1. Run as User A:
-```sql
-begin;
-  -- Simulate authentication
-  set local role authenticated;
-  set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+## RLS Verification
 
-  -- Select all projects
-  select * from public.projects;
-commit;
-```
-*Verification: The result should only return User A's projects, never User B's.*
+Using two test users, verify:
 
-### Test 2: User A cannot insert into User B's project
-```sql
-begin;
-  -- Simulate authentication
-  set local role authenticated;
-  set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+- User A cannot select or mutate User B's projects or child records.
+- User A cannot upload/read objects below User B's `project-assets` folder.
+- User A cannot read User B's `postiz_connections`, `postiz_channels`, or `ai_runs`.
+- A generated post cannot reference an insight/content idea from another project.
 
-  -- Attempt to create a source on User B's project
-  insert into public.trendwatch_sources (project_id, platform, source_url)
-  values ('USER_B_PROJECT_UUID_HERE', 'linkedin', 'https://linkedin.com/some-post');
-commit;
-```
-*Verification: This operation must fail due to RLS with checking violation.*
-
-### Test 3: User A cannot read User B's AI Runs or Postiz Connections
-```sql
-begin;
-  set local role authenticated;
-  set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-
-  select * from public.postiz_connections;
-  select * from public.ai_runs;
-commit;
-```
-*Verification: Both queries should return 0 rows if User A does not own those connections/runs.*
+RLS tests should run inside a transaction with `role authenticated` and `request.jwt.claim.sub` set to the test user UUID.
