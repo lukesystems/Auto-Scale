@@ -139,18 +139,39 @@ export function PostCard({ projectId, post, approvalMode }: PostCardProps) {
         </div>
       )}
 
-      <div className="border-t border-border px-5 py-3 flex items-center justify-end gap-2">
-        {post.status !== "rejected" && (
-          <Button size="sm" variant="ghost" onClick={() => setStatus("rejected")} disabled={pending}>
-            <X className="h-3.5 w-3.5" /> Reject
-          </Button>
-        )}
-        {post.status !== "approved" && (
-          <Button size="sm" onClick={() => setStatus("approved")} disabled={pending}>
-            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            Approve
-          </Button>
-        )}
+      <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-2">
+        <div>
+          {post.quality_status !== "pass" && (
+            <span className="text-[11px] text-destructive font-medium">⚠ Fails Quality Gate</span>
+          )}
+          {post.quality_status === "pass" && (!post.hook || !post.hypothesis || !post.metric_to_watch || !post.cta) && (
+            <span className="text-[11px] text-destructive font-medium">⚠ Missing required fields</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {post.status !== "rejected" && (
+            <Button size="sm" variant="ghost" onClick={() => setStatus("rejected")} disabled={pending}>
+              <X className="h-3.5 w-3.5" /> Reject
+            </Button>
+          )}
+          {post.status !== "approved" && (
+            <Button
+              size="sm"
+              onClick={() => setStatus("approved")}
+              disabled={
+                pending ||
+                post.quality_status !== "pass" ||
+                !post.hook ||
+                !post.hypothesis ||
+                !post.metric_to_watch ||
+                !post.cta
+              }
+            >
+              {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Approve
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { generatePostDraft } from "@/services/content-conveyor/generate";
 import { runDeterministicQualityChecks } from "@/services/quality-gate/check";
 import { logAIRun } from "@/services/ai/logger";
+import { checkChainIntegrity } from "@/lib/chain-integrity";
 
 const GenerateSchema = z.object({
   project_id: z.string().uuid(),
@@ -28,6 +29,12 @@ export async function generatePostFromIdeaAction(formData: FormData): Promise<Ge
   if (!user) return { ok: false, error: "Not signed in." };
 
   const projectId = parsed.data.project_id;
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId,
+    ideaId: parsed.data.idea_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
 
   const [{ data: idea }, { data: project }, { data: brief }] = await Promise.all([
     supabase.from("content_ideas").select("*").eq("id", parsed.data.idea_id).maybeSingle(),
@@ -160,6 +167,47 @@ export async function updatePostStatusAction(formData: FormData): Promise<{ ok: 
   if (!parsed.success) return { ok: false, error: "Invalid status update." };
 
   const supabase = createSupabaseServerClient();
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId: parsed.data.project_id,
+    postId: parsed.data.post_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
+
+  if (parsed.data.status === "approved") {
+    const { data: post } = await supabase
+      .from("generated_posts")
+      .select("quality_status, quality_score, insight_id, content_idea_id, hook, hypothesis, metric_to_watch, cta")
+      .eq("id", parsed.data.post_id)
+      .maybeSingle();
+
+    if (!post) return { ok: false, error: "Post not found." };
+
+    if (post.quality_status !== "pass") {
+      return { ok: false, error: "Quality Gate Blocked: Post status must be 'pass'." };
+    }
+    if (post.quality_score === null || post.quality_score < 0.70) {
+      return { ok: false, error: `Quality Gate Blocked: Post score is too low (${post.quality_score ?? 0} < 0.70).` };
+    }
+    if (!post.insight_id) {
+      return { ok: false, error: "Quality Gate Blocked: Post is not linked to a TrendWatch insight." };
+    }
+    if (!post.content_idea_id) {
+      return { ok: false, error: "Quality Gate Blocked: Post is not linked to a Content Idea." };
+    }
+    if (!post.hook?.trim()) {
+      return { ok: false, error: "Quality Gate Blocked: Missing hook." };
+    }
+    if (!post.hypothesis?.trim()) {
+      return { ok: false, error: "Quality Gate Blocked: Missing hypothesis." };
+    }
+    if (!post.metric_to_watch?.trim()) {
+      return { ok: false, error: "Quality Gate Blocked: Missing metric to watch." };
+    }
+    if (!post.cta?.trim()) {
+      return { ok: false, error: "Quality Gate Blocked: Missing CTA (Call-to-Action)." };
+    }
+  }
   const { error } = await supabase
     .from("generated_posts")
     .update({ status: parsed.data.status })

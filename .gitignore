@@ -4,9 +4,19 @@ out/
 build/
 dist/
 
+# Secret files
 .env
 .env.local
+.env.production
+.env.production.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
 .env.*.local
+.env*.local
+*.env
+*.env.local
 
 .DS_Store
 *.log

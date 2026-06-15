@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { Database } from "@/lib/supabase/types";
+import { checkChainIntegrity } from "@/lib/chain-integrity";
 
 const MetricsSchema = z.object({
   project_id: z.string().uuid(),
@@ -33,6 +34,12 @@ export async function updateExperimentAction(formData: FormData): Promise<Experi
   if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? "Invalid input." };
 
   const supabase = createSupabaseServerClient();
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId: parsed.data.project_id,
+    experimentId: parsed.data.experiment_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
   const update: Database["public"]["Tables"]["experiments"]["Update"] = {
     updated_at: new Date().toISOString(),
   };
@@ -67,6 +74,12 @@ export async function createExperimentFromPostAction(formData: FormData): Promis
   if (!parsed.success) return { ok: false, error: "Missing post." };
 
   const supabase = createSupabaseServerClient();
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId: parsed.data.project_id,
+    postId: parsed.data.post_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
   const { error } = await supabase.from("experiments").insert({
     project_id: parsed.data.project_id,
     post_id: parsed.data.post_id,

@@ -1,4 +1,5 @@
-import { ProjectNav, buildPipelineSteps } from "@/components/app/project-nav";
+import { ProjectNav } from "@/components/app/project-nav";
+import { buildPipelineSteps } from "@/lib/project-pipeline";
 import { ProjectHeader } from "@/components/app/project-header";
 import { PageContent } from "@/components/app/page-content";
 import { getProductBrief, getProjectOr404, getProjectStats } from "./queries";
