@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { AlertTriangle, ArrowRight, Globe, Loader2, Sparkles, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import type { ProviderMode } from "@/lib/provider-mode";
@@ -31,7 +31,18 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
   const [lowConfidence, setLowConfidence] = useState(false);
   const [brief, setBrief] = useState<AutoBrief | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [slowGenerationHint, setSlowGenerationHint] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (step !== "generating") {
+      setSlowGenerationHint(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setSlowGenerationHint(true), 45_000);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   function selectMode(mode: ProviderMode) {
     setProviderMode(mode);
@@ -184,6 +195,17 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
         <p className="text-sm text-muted-foreground max-w-sm">
           Fetching your site safely, then drafting positioning, pillars, and competitor suggestions.
         </p>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          This can take 20–60 seconds depending on the model.
+        </p>
+        {slowGenerationHint && (
+          <p className="text-sm text-amber-600 dark:text-amber-500 max-w-sm">
+            Still working? Use manual entry or try a faster model.
+          </p>
+        )}
+        <Button type="button" variant="outline" onClick={() => setStep("url")}>
+          Use manual entry
+        </Button>
       </div>
     );
   }
@@ -195,9 +217,14 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
           <p className="font-medium text-destructive">Something went wrong</p>
           <p className="mt-1 text-muted-foreground">{errorMessage}</p>
         </div>
-        <Button type="button" onClick={() => setStep("url")}>
-          Try again
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button type="button" onClick={() => setStep("url")}>
+            Try again
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setStep("url")}>
+            Use manual entry
+          </Button>
+        </div>
       </div>
     );
   }

@@ -1,8 +1,13 @@
-import dns from "dns";
-import net from "net";
+import dns from "node:dns/promises";
+import net from "node:net";
+
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_REDIRECTS = 3;
+const REQUEST_TIMEOUT_MS = 8_000;
 
 export interface SafeFetchResult {
   url: string;
+  finalUrl: string;
   title: string | null;
   description: string | null;
   textSnippet: string | null;
@@ -11,57 +16,62 @@ export interface SafeFetchResult {
   error: string | null;
 }
 
-/**
- * Checks if an IP address is a private/local/loopback/multicast address
- * to prevent Server-Side Request Forgery (SSRF).
- */
+function isPrivateIpv4(ip: string): boolean {
+  const [a, b] = ip.split(".").map(Number);
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
 export function isPrivateIp(ip: string): boolean {
-  if (!net.isIP(ip)) return true; // Treat invalid IPs as private/unsafe
+  let normalized = ip.toLowerCase().split("%")[0];
+  const version = net.isIP(normalized);
+  if (!version) return true;
+  if (version === 4) return isPrivateIpv4(normalized);
 
-  // IPv4 Loopback (127.0.0.0/8)
-  if (ip.startsWith("127.")) return true;
-
-  // IPv4 Private Range Class A (10.0.0.0/8)
-  if (ip.startsWith("10.")) return true;
-
-  // IPv4 Link-Local (169.254.0.0/16)
-  if (ip.startsWith("169.254.")) return true;
-
-  // IPv4 Private Range Class B (172.16.0.0/12)
-  if (ip.startsWith("172.")) {
-    const parts = ip.split(".").map(Number);
-    if (parts[1] >= 16 && parts[1] <= 31) return true;
+  try {
+    normalized = new URL(`http://[${normalized}]/`).hostname.slice(1, -1);
+  } catch {
+    return true;
   }
+  if (normalized === "::" || normalized === "::1") return true;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  if (/^fe[89ab]/.test(normalized)) return true;
+  if (normalized.startsWith("ff")) return true;
 
-  // IPv4 Private Range Class C (192.168.0.0/16)
-  if (ip.startsWith("192.168.")) return true;
-
-  // IPv6 Loopback, Link-Local, Local
-  if (ip === "::1" || ip === "::") return true;
-  if (ip.toLowerCase().startsWith("fe80:")) return true;
-  if (ip.toLowerCase().startsWith("fc00:") || ip.toLowerCase().startsWith("fd00:")) return true;
-
+  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateIpv4(mapped[1]);
+  const mappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
+    return isPrivateIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
   return false;
 }
 
-/**
- * Resolves a hostname to its IP address and checks if it's safe.
- */
 export async function isSafeHostname(hostname: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    dns.lookup(hostname, (err, address) => {
-      if (err || !address) {
-        resolve(false); // Can't resolve or lookup failed -> unsafe
-      } else {
-        resolve(!isPrivateIp(address));
-      }
-    });
-  });
+  const normalized = hostname.replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return false;
+  if (net.isIP(normalized)) return !isPrivateIp(normalized);
+
+  try {
+    const addresses = await dns.lookup(normalized, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every(({ address }) => !isPrivateIp(address));
+  } catch {
+    return false;
+  }
 }
 
-/**
- * Detects platform guess based on URL patterns.
- */
 export function detectPlatform(url: string): string {
   const lower = url.toLowerCase();
   if (lower.includes("tiktok.com")) return "tiktok";
@@ -76,13 +86,78 @@ export function detectPlatform(url: string): string {
   return "other";
 }
 
-/**
- * Safe client-side fetcher with timeouts, redirect limits, SSRF protection,
- * and maximum content size constraint.
- */
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+async function readLimitedText(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length") ?? 0);
+  if (declaredLength > MAX_BODY_BYTES) {
+    throw new Error("Content exceeds maximum size limit (1MB).");
+  }
+
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let output = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytesRead += value.byteLength;
+    if (bytesRead > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new Error("Content body exceeds maximum size limit (1MB).");
+    }
+    output += decoder.decode(value, { stream: true });
+  }
+
+  return output + decoder.decode();
+}
+
+async function fetchWithValidatedRedirects(initialUrl: URL): Promise<{ response: Response; finalUrl: URL }> {
+  let current = initialUrl;
+
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    if (!["http:", "https:"].includes(current.protocol)) {
+      throw new Error(`Rejected protocol: ${current.protocol}`);
+    }
+    if (!(await isSafeHostname(current.hostname))) {
+      throw new Error(`SSRF prevention rejected hostname "${current.hostname}".`);
+    }
+
+    const response = await fetch(current, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        "User-Agent": "AutoScale/1.0 (+https://autoscale.local)",
+        Accept: "text/html,application/xhtml+xml;q=0.9",
+      },
+    });
+
+    if (response.status < 300 || response.status >= 400) {
+      return { response, finalUrl: current };
+    }
+
+    const location = response.headers.get("location");
+    if (!location) throw new Error(`Redirect ${response.status} did not include a location.`);
+    if (redirectCount === MAX_REDIRECTS) throw new Error("Source exceeded the redirect limit.");
+    current = new URL(location, current);
+  }
+
+  throw new Error("Source exceeded the redirect limit.");
+}
+
 export async function safeFetchUrl(urlStr: string): Promise<SafeFetchResult> {
   const result: SafeFetchResult = {
     url: urlStr,
+    finalUrl: urlStr,
     title: null,
     description: null,
     textSnippet: null,
@@ -92,82 +167,43 @@ export async function safeFetchUrl(urlStr: string): Promise<SafeFetchResult> {
   };
 
   try {
-    const url = new URL(urlStr);
-
-    // SSRF Check: Reject non-http/https protocols
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      result.error = `Rejected protocol: ${url.protocol}`;
-      return result;
-    }
-
-    // SSRF Check: Hostname safety
-    const isSafe = await isSafeHostname(url.hostname);
-    if (!isSafe) {
-      result.error = `SSRF Prevention: Private or loopback IP range detected for hostname "${url.hostname}"`;
-      return result;
-    }
-
-    // Abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-
-    const response = await fetch(urlStr, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AutoScale/1.0",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-
-    clearTimeout(timeoutId);
+    const { response, finalUrl } = await fetchWithValidatedRedirects(new URL(urlStr));
+    result.finalUrl = finalUrl.toString();
+    result.platform = detectPlatform(result.finalUrl);
 
     if (!response.ok) {
       result.error = `HTTP error ${response.status}: ${response.statusText}`;
       return result;
     }
 
-    // Content size check (limit to 1MB)
-    const contentLengthStr = response.headers.get("content-length");
-    if (contentLengthStr) {
-      const contentLength = parseInt(contentLengthStr, 10);
-      if (contentLength > 1024 * 1024) {
-        result.error = "Content exceeds maximum size limit (1MB)";
-        return result;
-      }
-    }
-
-    const htmlText = await response.text();
-    if (htmlText.length > 1024 * 1024) {
-      result.error = "Content body exceeds maximum size limit (1MB)";
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      result.error = `Unsupported content type: ${contentType || "unknown"}`;
       return result;
     }
 
-    // Simple HTML regex parser (no heavy dependency)
-    const titleMatch = htmlText.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const descMatch = htmlText.match(/<meta[^>]+name="description"[^>]+content="([^"]+)"/i) ||
-                      htmlText.match(/<meta[^>]+content="([^"]+)"[^>]+name="description"/i) ||
-                      htmlText.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/i);
+    const html = await readLimitedText(response);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const descriptionMatch =
+      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ??
+      html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:name=["']description["']|property=["']og:description["'])/i);
 
-    result.title = titleMatch ? titleMatch[1].trim() : null;
-    result.description = descMatch ? descMatch[1].trim() : null;
+    result.title = titleMatch ? decodeHtml(titleMatch[1].replace(/\s+/g, " ").trim()) : null;
+    result.description = descriptionMatch ? decodeHtml(descriptionMatch[1].trim()) : null;
 
-    // Extract basic visible text snippet
-    const bodyMatch = htmlText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const bodyContent = bodyMatch ? bodyMatch[1] : htmlText;
-    
-    // Remove scripts, styles, and tags
-    const cleanText = bodyContent
-      .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "")
-      .replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    result.textSnippet = cleanText.slice(0, 1500); // 1500 chars snippet
+    const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html;
+    result.textSnippet = decodeHtml(
+      body
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    ).slice(0, 3_000);
     result.status = "success";
-
-  } catch (e) {
-    result.error = e instanceof Error ? e.message : "Request failed";
+  } catch (error) {
+    result.error = error instanceof Error ? error.message : "Request failed.";
   }
 
   return result;

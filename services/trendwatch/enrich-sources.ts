@@ -15,6 +15,8 @@ export interface SourceRecord {
   platform: SourcePlatform | string;
   account_handle: string | null;
   account_type: AccountType | string;
+  caption?: string | null;
+  published_at?: string | null;
   follower_count: number | null;
   views: number | null;
   likes: number | null;
@@ -63,13 +65,13 @@ function normalizeEngagement(comments: number | null, shares: number | null, vie
 }
 
 export function deriveSignalInputs(source: SourceRecord, fetchOk: boolean): Partial<SignalInputs> {
-  const hasContent = Boolean(source.fetched_text || source.notes);
+  const hasContent = Boolean(source.fetched_text || source.caption || source.notes);
   const relevance =
     fetchOk && source.fetched_text
       ? 0.85
-      : fetchOk && source.notes
+      : fetchOk && (source.caption || source.notes)
         ? 0.65
-        : source.notes
+        : source.caption || source.notes
           ? 0.5
           : null;
 
@@ -108,11 +110,17 @@ export function deriveSignalInputs(source: SourceRecord, fetchOk: boolean): Part
     };
   }
 
+  let recency: number | null = null;
+  if (source.published_at) {
+    const ageDays = (Date.now() - new Date(source.published_at).getTime()) / 86_400_000;
+    if (Number.isFinite(ageDays)) recency = Math.max(0, 1 - Math.max(0, ageDays) / 365);
+  }
+
   return {
     relevance,
     formatTransferability,
     saveSignal,
-    recency: null,
+    recency,
     conversionIntent,
     accountFit,
   };
@@ -150,6 +158,7 @@ export function buildFetchMetadata(fetch: SafeFetchResult): Record<string, unkno
   return {
     title: fetch.title,
     description: fetch.description,
+    final_url: fetch.finalUrl,
     platform: fetch.platform,
     error: fetch.error,
     fetched_at: new Date().toISOString(),
@@ -185,14 +194,14 @@ export async function enrichSourceFromUrl(
   const fetchOk = fetch.status === "success";
   const enriched: SourceRecord = {
     ...source,
-    fetched_text: fetch.textSnippet,
+    fetched_text: [source.caption, fetch.textSnippet].filter(Boolean).join("\n\n") || null,
     platform: (fetch.platform as SourcePlatform | undefined) ?? (source.platform as SourcePlatform),
   };
 
   const scored = scoreSourceRecord(enriched, fetchOk, fetch.error);
   return {
     fetch_status: fetchOk ? "success" : "failed",
-    fetched_text: fetch.textSnippet,
+    fetched_text: enriched.fetched_text ?? null,
     fetch_metadata: buildFetchMetadata(fetch),
     signal_score: scored.score.signalScore,
     confidence_score: scored.score.confidenceScore,

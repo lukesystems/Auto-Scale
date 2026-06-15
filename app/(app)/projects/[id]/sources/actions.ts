@@ -5,7 +5,8 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
-import { enrichSourceFromUrl, type SourceRecord } from "@/services/trendwatch/enrich-sources";
+import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
+import { classifySource } from "@/services/trendwatch/classify-source";
 
 const PlatformEnum = z.enum([
   "tiktok", "instagram", "x", "linkedin", "youtube", "threads", "pinterest", "reddit", "facebook", "other",
@@ -17,6 +18,14 @@ const SourceSchema = z.object({
   platform: PlatformEnum,
   account_handle: z.string().optional(),
   account_type: z.string().optional(),
+  caption: z.string().max(10_000).optional(),
+  published_at: z.string().optional(),
+  follower_count: z.coerce.number().int().nonnegative().optional(),
+  views: z.coerce.number().int().nonnegative().optional(),
+  likes: z.coerce.number().int().nonnegative().optional(),
+  saves: z.coerce.number().int().nonnegative().optional(),
+  shares: z.coerce.number().int().nonnegative().optional(),
+  comments: z.coerce.number().int().nonnegative().optional(),
   notes: z.string().optional(),
 });
 
@@ -30,11 +39,24 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
     platform: formData.get("platform"),
     account_handle: formData.get("account_handle") ?? undefined,
     account_type: formData.get("account_type") ?? undefined,
+    caption: formData.get("caption") || undefined,
+    published_at: formData.get("published_at") || undefined,
+    follower_count: formData.get("follower_count") || undefined,
+    views: formData.get("views") || undefined,
+    likes: formData.get("likes") || undefined,
+    saves: formData.get("saves") || undefined,
+    shares: formData.get("shares") || undefined,
+    comments: formData.get("comments") || undefined,
     notes: formData.get("notes") ?? undefined,
   });
   if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? "Invalid input." };
 
   const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
   const { data: inserted, error } = await supabase
     .from("trendwatch_sources")
     .insert({
@@ -43,29 +65,83 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
       platform: parsed.data.platform,
       account_handle: parsed.data.account_handle || null,
       account_type: (parsed.data.account_type as AccountType | undefined) ?? "unknown",
+      caption: parsed.data.caption || null,
+      published_at: parsed.data.published_at ? new Date(parsed.data.published_at).toISOString() : null,
+      follower_count: parsed.data.follower_count ?? null,
+      views: parsed.data.views ?? null,
+      likes: parsed.data.likes ?? null,
+      saves: parsed.data.saves ?? null,
+      shares: parsed.data.shares ?? null,
+      comments: parsed.data.comments ?? null,
       notes: parsed.data.notes || null,
       fetch_status: parsed.data.source_url ? "pending" : "skipped",
     })
-    .select("id, source_url, platform, account_handle, account_type, follower_count, views, likes, saves, shares, comments, transferability_score, notes")
+    .select("id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes")
     .single();
   if (error || !inserted) return { ok: false, error: error?.message ?? "Failed to add source." };
 
-  if (parsed.data.source_url) {
-    const patch = await enrichSourceFromUrl(inserted as SourceRecord);
-    await supabase
-      .from("trendwatch_sources")
-      .update({
-        fetch_status: patch.fetch_status,
-        fetched_text: patch.fetched_text,
-        fetch_metadata: patch.fetch_metadata as never,
-        signal_score: patch.signal_score,
-        confidence_score: patch.confidence_score,
-        scoring_reasons: patch.scoring_reasons as never,
-        distortion_risk: patch.distortion_risk,
-        platform: (patch.platform as SourcePlatform) ?? parsed.data.platform,
-      })
-      .eq("id", inserted.id);
+  const screenshot = formData.get("screenshot");
+  if (screenshot instanceof File && screenshot.size > 0) {
+    if (!screenshot.type.startsWith("image/") || screenshot.size > 5 * 1024 * 1024) {
+      await supabase.from("trendwatch_sources").delete().eq("id", inserted.id);
+      return { ok: false, error: "Screenshot must be an image no larger than 5MB." };
+    }
+
+    const extension = screenshot.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "png";
+    const storagePath = `${user.id}/${parsed.data.project_id}/sources/${inserted.id}-${crypto.randomUUID()}.${extension}`;
+    const { error: uploadError } = await supabase.storage
+      .from("project-assets")
+      .upload(storagePath, screenshot, { contentType: screenshot.type, upsert: false });
+    if (uploadError) {
+      await supabase.from("trendwatch_sources").delete().eq("id", inserted.id);
+      return { ok: false, error: `Screenshot upload failed: ${uploadError.message}` };
+    }
+
+    await Promise.all([
+      supabase.from("trendwatch_sources").update({ screenshot_url: storagePath }).eq("id", inserted.id),
+      supabase.from("assets").insert({
+        project_id: parsed.data.project_id,
+        owner_id: user.id,
+        kind: "trendwatch_screenshot",
+        storage_path: storagePath,
+        mime_type: screenshot.type,
+        size_bytes: screenshot.size,
+        metadata: { source_id: inserted.id } as never,
+      }),
+    ]);
   }
+
+  const patch = await enrichSourceFromUrl(inserted as SourceRecord);
+  const classifiedSource = { ...inserted, fetched_text: patch.fetched_text } as SourceRecord;
+  const classification = await classifySource(classifiedSource);
+  const rescored = scoreSourceRecord(
+    { ...classifiedSource, transferability_score: classification.transferability_score },
+    patch.fetch_status === "success",
+    typeof patch.fetch_metadata.error === "string" ? patch.fetch_metadata.error : null
+  );
+  await supabase
+    .from("trendwatch_sources")
+    .update({
+      fetch_status: patch.fetch_status,
+      fetched_text: patch.fetched_text,
+      fetch_metadata: patch.fetch_metadata as never,
+      signal_score: rescored.score.signalScore,
+      confidence_score: rescored.score.confidenceScore,
+      scoring_reasons: rescored.score.reasons as never,
+      distortion_risk: classification.distortion_risk,
+      transferability_score: classification.transferability_score,
+      account_type: classification.account_type,
+      format: classification.format,
+      hook: classification.hook,
+      angle: classification.angle,
+      visual_pattern: classification.visual_pattern,
+      cta_pattern: classification.cta_pattern,
+      audience_pain: classification.audience_pain,
+      why_it_worked: classification.why_it_worked,
+      how_to_adapt: classification.how_to_adapt,
+      platform: (patch.platform as SourcePlatform) ?? parsed.data.platform,
+    })
+    .eq("id", inserted.id);
 
   revalidatePath(`/projects/${parsed.data.project_id}/sources`);
   return { ok: true };

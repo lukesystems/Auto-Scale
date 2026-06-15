@@ -99,6 +99,9 @@ export default async function SourcesPage({ params }: PageProps) {
                         {s.account_type && s.account_type !== "unknown" && (
                           <Badge variant="secondary">{s.account_type}</Badge>
                         )}
+                        <Badge variant={s.fetch_status === "success" ? "success" : s.fetch_status === "failed" ? "destructive" : "secondary"}>
+                          {s.fetch_status}
+                        </Badge>
                       </div>
                       <DeleteSourceButton projectId={params.id} sourceId={s.id} />
                     </div>
@@ -108,6 +111,17 @@ export default async function SourcesPage({ params }: PageProps) {
                       </a>
                     )}
                     {s.notes && <p className="mt-2 text-sm text-foreground/80">{s.notes}</p>}
+                    {s.caption && <p className="mt-2 line-clamp-2 text-sm text-foreground/80">{s.caption}</p>}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      {s.format && <span>Format: {s.format}</span>}
+                      <span>Signal: {Math.round(Number(s.signal_score ?? 0) * 100)}%</span>
+                      <span>Confidence: {Math.round(Number(s.confidence_score ?? 0) * 100)}%</span>
+                      {s.screenshot_signed_url && (
+                        <a href={s.screenshot_signed_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          View screenshot
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
@@ -135,8 +149,17 @@ async function loadSources(projectId: string) {
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
     .from("trendwatch_sources")
-    .select("id, platform, account_handle, account_type, source_url, notes")
+    .select("id, platform, account_handle, account_type, source_url, caption, notes, format, signal_score, confidence_score, fetch_status, screenshot_url")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
-  return data ?? [];
+  const rows = data ?? [];
+  const paths = rows.map((row) => row.screenshot_url).filter((path): path is string => Boolean(path));
+  const signed = paths.length
+    ? await supabase.storage.from("project-assets").createSignedUrls(paths, 60 * 60)
+    : { data: [] };
+  const signedByPath = new Map((signed.data ?? []).map((entry) => [entry.path, entry.signedUrl]));
+  return rows.map((row) => ({
+    ...row,
+    screenshot_signed_url: row.screenshot_url ? signedByPath.get(row.screenshot_url) ?? null : null,
+  }));
 }

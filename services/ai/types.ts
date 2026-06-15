@@ -23,6 +23,8 @@ export interface GenerateTextParams {
   prompt: string;
   temperature?: number;
   maxTokens?: number;
+  /** "text" = normal prose (default); "json" = force JSON object where supported */
+  responseMode?: "text" | "json";
 }
 
 export interface GenerateTextResult {

@@ -2,12 +2,16 @@
 
 AutoScale routes AI tasks to different OpenRouter models via environment variables.
 
+See also: [AI_RUNTIME.md](./AI_RUNTIME.md) for `generateText` vs `generateObject`, response modes, and timeouts.
+
 ## How OpenRouter is used
 
 - Endpoint: `https://openrouter.ai/api/v1/chat/completions`
 - Auth: `Authorization: Bearer ${OPENROUTER_API_KEY}`
 - Optional headers: `HTTP-Referer`, `X-OpenRouter-Title` (from `NEXT_PUBLIC_APP_URL`)
-- Structured outputs: `response_format: { type: "json_object" }` via OpenAI-compatible adapter
+- Structured outputs: `response_format: { type: "json_object" }` only when `responseMode: "json"` (used by `generateObject`)
+- Normal text: no `response_format` when `responseMode: "text"` (default for `generateText`)
+- Timeout: `AI_REQUEST_TIMEOUT_MS` (default 45000ms)
 
 Provider stored in `ai_runs.provider` as `openrouter`. Actual model slug stored in `ai_runs.model`.
 

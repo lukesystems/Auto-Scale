@@ -7,18 +7,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { formatRelativeTime } from "@/lib/utils";
 import { SchedulePostForm } from "./schedule-post-form";
+import { getProviderModeForUser } from "@/lib/provider-mode";
+import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 
 interface PageProps { params: { id: string } }
 export const metadata = { title: "Schedule" };
 
 export default async function SchedulePage({ params }: PageProps) {
-  const [approved, scheduled, connection] = await Promise.all([
+  const [approved, scheduled, postiz] = await Promise.all([
     loadApproved(params.id),
     loadScheduled(params.id),
-    loadPostizConnection(),
+    loadPostizContext(),
   ]);
 
-  const postizReady = Boolean(connection?.api_url && connection?.api_key);
+  const postizReady = postiz.ready;
 
   return (
     <div className="container py-10 space-y-8">
@@ -76,7 +78,12 @@ export default async function SchedulePage({ params }: PageProps) {
                 <p className="mt-1 text-xs text-muted-foreground">{p.target_audience}</p>
 
                 <div className="mt-4 pt-4 border-t border-border">
-                  <SchedulePostForm projectId={params.id} postId={p.id} defaultPlatform={p.platform ?? "linkedin"} />
+                  <SchedulePostForm
+                    projectId={params.id}
+                    postId={p.id}
+                    defaultPlatform={p.platform ?? "linkedin"}
+                    channels={postiz.channels}
+                  />
                 </div>
               </div>
             ))}
@@ -163,11 +170,27 @@ async function loadScheduled(projectId: string) {
   }));
 }
 
-async function loadPostizConnection() {
-  if (!isSupabaseConfigured()) return null;
+async function loadPostizContext() {
+  if (!isSupabaseConfigured()) return { ready: false, channels: [] };
   const supabase = createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data } = await supabase.from("postiz_connections").select("api_url, api_key").eq("owner_id", user.id).maybeSingle();
-  return data;
+  if (!user) return { ready: false, channels: [] };
+  const mode = await getProviderModeForUser(user.id);
+  const [credentials, channelsResult] = await Promise.all([
+    resolvePostizCredentials(user.id, mode),
+    supabase
+      .from("postiz_channels")
+      .select("integration_id, name, platform")
+      .eq("owner_id", user.id)
+      .eq("disabled", false)
+      .order("name"),
+  ]);
+  return {
+    ready: Boolean(credentials),
+    channels: (channelsResult.data ?? []).map((channel) => ({
+      integrationId: channel.integration_id,
+      name: channel.name,
+      platform: channel.platform,
+    })),
+  };
 }
