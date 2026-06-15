@@ -41,6 +41,8 @@ describe("TrendWatch ingestion security", () => {
     "fd00::1",
     "fe80::1",
     "::ffff:127.0.0.1",
+    "::ffff:7f00:1",
+    "0:0:0:0:0:0:0:1",
   ])("rejects non-public address %s", (address) => {
     expect(isPrivateIp(address)).toBe(true);
   });

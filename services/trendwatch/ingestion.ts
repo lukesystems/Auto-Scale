@@ -33,18 +33,30 @@ function isPrivateIpv4(ip: string): boolean {
 }
 
 export function isPrivateIp(ip: string): boolean {
-  const normalized = ip.toLowerCase().split("%")[0];
+  let normalized = ip.toLowerCase().split("%")[0];
   const version = net.isIP(normalized);
   if (!version) return true;
   if (version === 4) return isPrivateIpv4(normalized);
 
+  try {
+    normalized = new URL(`http://[${normalized}]/`).hostname.slice(1, -1);
+  } catch {
+    return true;
+  }
   if (normalized === "::" || normalized === "::1") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
   if (/^fe[89ab]/.test(normalized)) return true;
   if (normalized.startsWith("ff")) return true;
 
   const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  return mapped ? isPrivateIpv4(mapped[1]) : false;
+  if (mapped) return isPrivateIpv4(mapped[1]);
+  const mappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
+    return isPrivateIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
+  return false;
 }
 
 export async function isSafeHostname(hostname: string): Promise<boolean> {

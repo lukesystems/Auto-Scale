@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { encryptSecret } from "@/lib/secret-crypto";
+import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { fetchPostizIntegrations, testPostizConnection } from "@/services/postiz/client";
@@ -34,17 +34,30 @@ export async function savePostizConnectionAction(formData: FormData): Promise<Re
     .eq("owner_id", user.id)
     .maybeSingle();
   const submittedKey = parsed.data.api_key && parsed.data.api_key !== "**********" ? parsed.data.api_key : undefined;
-  const storedKey = submittedKey ? encryptSecret(submittedKey) : existing?.api_key ?? null;
+  let plainKey = submittedKey;
+  if (!plainKey && existing?.api_key) {
+    try {
+      plainKey = decryptSecret(existing.api_key);
+    } catch {
+      return { ok: false, error: "The existing Postiz key could not be decrypted. Enter it again." };
+    }
+  }
 
-  if (!parsed.data.api_url || !storedKey) {
+  if (!parsed.data.api_url || !plainKey) {
     return { ok: false, error: "Postiz API URL and API key are required." };
   }
   const connectionTest = await testPostizConnection({
     apiUrl: parsed.data.api_url,
-    apiKey: submittedKey ?? (await resolvePostizCredentials(user.id, "byok"))?.apiKey,
+    apiKey: plainKey,
   });
   if (!connectionTest.ok) {
     return { ok: false, error: connectionTest.error ?? "Postiz rejected the credentials." };
+  }
+  let storedKey: string;
+  try {
+    storedKey = encryptSecret(plainKey);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not encrypt the Postiz key." };
   }
 
   const { error } = await supabase
