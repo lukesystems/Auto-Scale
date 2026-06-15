@@ -66,6 +66,7 @@ Return:
     prompt,
     schema: WinnerDiagnosisSchema,
     schemaName: "WinnerDiagnosis",
+    taskType: "compound",
     temperature: 0.6,
   });
 
@@ -114,6 +115,7 @@ Rules:
     prompt,
     schema: VariantsSchema,
     schemaName: "Variants",
+    taskType: "compound",
     temperature: 0.8,
   });
 

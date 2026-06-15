@@ -46,6 +46,47 @@ const RESPONDERS: Record<string, () => unknown> = {
     brand_voice: "Direct, technical, slightly contrarian. No hype. No fluff.",
   }),
 
+  autobrief: () => ({
+    product_name: "AutoScale",
+    product_url: "https://autoscale.app",
+    product_summary:
+      "An AI-powered distribution OS that helps founders turn proven niche patterns into content experiments.",
+    target_customer: "Non-technical and technical founders who can build but struggle with distribution.",
+    primary_pain: "Founders don't know what to post, when, or why — so growth stalls after launch.",
+    core_promise: "Find what works in your niche, ship structured experiments, and compound winners.",
+    offer: "Starter plan from $49/mo",
+    cta: "Start my growth loop",
+    niche: "founder-led SaaS distribution",
+    positioning_angles: [
+      "You built the product. Distribution is the bottleneck.",
+      "Stop guessing hooks — reverse-engineer what already works.",
+      "Compound winners, don't chase vanity metrics.",
+    ],
+    content_pillars: [
+      "Niche reverse-engineering",
+      "Founder distribution lessons",
+      "Content experiment teardowns",
+      "Compounding wins",
+    ],
+    brand_voice: "Direct, plain English, no hype.",
+    production_constraints: {
+      can_make_carousels: true,
+      can_make_founder_videos: false,
+      can_use_product_screenshots: true,
+      can_use_ai_images: true,
+    },
+    suggested_competitors: [
+      { name: "Buffer", url: null, reason: "Scheduling competitor", confidence: 0.6 },
+      { name: "Hypefury", url: null, reason: "Founder social tooling", confidence: 0.5 },
+    ],
+    suggested_sources: [
+      { platform: "x", url: null, reason: "Founders share distribution playbooks on X", confidence: 0.7 },
+      { platform: "linkedin", url: null, reason: "B2B SaaS founders post carousels on LinkedIn", confidence: 0.65 },
+    ],
+    confidence_score: 0.72,
+    missing_information: ["Exact pricing tier", "Primary acquisition channel"],
+  }),
+
   trendwatch_analysis: () => ({
     niche_summary:
       "A technical founder niche dominated by reverse-engineering teardowns, founder-led pain narratives, and tactical loop diagrams. Mid-sized accounts win with carousels over polished video.",

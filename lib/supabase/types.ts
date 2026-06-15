@@ -75,6 +75,22 @@ export interface Database {
         Relationships: [];
       };
 
+      user_settings: {
+        Row: {
+          id: string;
+          owner_id: string;
+          provider_mode: string;
+          onboarding_completed: boolean;
+          preferred_llm_mode: string | null;
+          default_project_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["user_settings"]["Row"]> & { owner_id: string };
+        Update: Partial<Database["public"]["Tables"]["user_settings"]["Row"]>;
+        Relationships: [];
+      };
+
       projects: {
         Row: {
           id: string;

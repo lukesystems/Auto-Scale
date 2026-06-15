@@ -81,6 +81,7 @@ Produce a TrendWatch analysis that:
     prompt,
     schema: TrendWatchAnalysisSchema,
     schemaName: "TrendWatchAnalysis",
+    taskType: "trendwatch",
     temperature: 0.55,
   });
 

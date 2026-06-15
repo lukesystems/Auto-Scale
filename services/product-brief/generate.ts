@@ -70,6 +70,7 @@ Schema fields:
     prompt,
     schema: ProductBriefSchema,
     schemaName: "ProductBrief",
+    taskType: "autobrief",
     temperature: 0.5,
   });
 

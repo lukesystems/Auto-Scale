@@ -57,6 +57,7 @@ Requirements:
     prompt,
     schema: HooksSchema,
     schemaName: "Hooks",
+    taskType: "content",
     temperature: 0.75,
   });
 
@@ -112,6 +113,7 @@ Prefer formats: problem-solution carousel, tool teardown, before/after workflow,
     prompt,
     schema: ContentIdeasSchema,
     schemaName: "ContentIdeas",
+    taskType: "content",
     temperature: 0.7,
   });
 
@@ -176,6 +178,7 @@ Keep each slide headline under 12 words. Body under 20 words.`;
     prompt,
     schema: GeneratedPostSchema,
     schemaName: "GeneratedPost",
+    taskType: "content",
     temperature: 0.65,
   });
 
