@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { generatePostDraft } from "@/services/content-conveyor/generate";
 import { runDeterministicQualityChecks } from "@/services/quality-gate/check";
 import { logAIRun } from "@/services/ai/logger";
+import { validatePostForApproval } from "@/lib/approval-guard";
 import { checkChainIntegrity } from "@/lib/chain-integrity";
 
 const GenerateSchema = z.object({
@@ -183,30 +184,8 @@ export async function updatePostStatusAction(formData: FormData): Promise<{ ok: 
 
     if (!post) return { ok: false, error: "Post not found." };
 
-    if (post.quality_status !== "pass") {
-      return { ok: false, error: "Quality Gate Blocked: Post status must be 'pass'." };
-    }
-    if (post.quality_score === null || post.quality_score < 0.70) {
-      return { ok: false, error: `Quality Gate Blocked: Post score is too low (${post.quality_score ?? 0} < 0.70).` };
-    }
-    if (!post.insight_id) {
-      return { ok: false, error: "Quality Gate Blocked: Post is not linked to a TrendWatch insight." };
-    }
-    if (!post.content_idea_id) {
-      return { ok: false, error: "Quality Gate Blocked: Post is not linked to a Content Idea." };
-    }
-    if (!post.hook?.trim()) {
-      return { ok: false, error: "Quality Gate Blocked: Missing hook." };
-    }
-    if (!post.hypothesis?.trim()) {
-      return { ok: false, error: "Quality Gate Blocked: Missing hypothesis." };
-    }
-    if (!post.metric_to_watch?.trim()) {
-      return { ok: false, error: "Quality Gate Blocked: Missing metric to watch." };
-    }
-    if (!post.cta?.trim()) {
-      return { ok: false, error: "Quality Gate Blocked: Missing CTA (Call-to-Action)." };
-    }
+    const approval = validatePostForApproval(post);
+    if (!approval.ok) return { ok: false, error: approval.error };
   }
   const { error } = await supabase
     .from("generated_posts")

@@ -33,7 +33,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   const [{ data: post }, { data: connection }] = await Promise.all([
     supabase
       .from("generated_posts")
-      .select("id, platform, caption, cta, hook, status")
+      .select("id, project_id, platform, caption, cta, hook, status")
       .eq("id", parsed.data.post_id)
       .maybeSingle(),
     supabase
@@ -43,10 +43,13 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       .maybeSingle(),
   ]);
   if (!post) return { ok: false, error: "Post not found." };
+  if (post.project_id !== parsed.data.project_id) {
+    return { ok: false, error: "Cross-project boundary violation: Post belongs to a different project." };
+  }
   if (post.status !== "approved") return { ok: false, error: "Only approved posts can be scheduled." };
 
   const integrity = await checkChainIntegrity(supabase, {
-    projectId,
+    projectId: parsed.data.project_id,
     postId: parsed.data.post_id,
   });
   if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
@@ -62,6 +65,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     scheduledFor: new Date(parsed.data.scheduled_for).toISOString(),
     caption: post.caption ?? post.hook ?? "",
     cta: post.cta ?? undefined,
+    platform: post.platform,
     slides: (slides ?? []).map((s) => ({ headline: s.headline ?? "", body: s.body ?? "" })),
     externalRef: post.id,
   };
@@ -92,7 +96,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       { apiUrl: connection.api_url, apiKey: connection.api_key },
       payload
     );
-    finalStatus = response.status;
+    finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
     postizResponse = response.raw ?? {};
   } else {

@@ -205,6 +205,11 @@ export interface Database {
           signal_score: number;
           notes: string | null;
           screenshot_url: string | null;
+          fetch_status: string;
+          fetched_text: string | null;
+          fetch_metadata: Json;
+          confidence_score: number;
+          scoring_reasons: Json;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["trendwatch_sources"]["Row"]> & {
@@ -227,6 +232,8 @@ export interface Database {
           angle: string | null;
           audience: string | null;
           signal_score: number;
+          confidence_score: number | null;
+          scoring_reasons: Json;
           recommended_experiment: string | null;
           created_at: string;
         };
