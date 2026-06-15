@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { sendToPostiz } from "@/services/postiz/client";
+import { checkChainIntegrity } from "@/lib/chain-integrity";
 
 const Schema = z.object({
   project_id: z.string().uuid(),
@@ -32,7 +33,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   const [{ data: post }, { data: connection }] = await Promise.all([
     supabase
       .from("generated_posts")
-      .select("id, platform, caption, cta, hook")
+      .select("id, platform, caption, cta, hook, status")
       .eq("id", parsed.data.post_id)
       .maybeSingle(),
     supabase
@@ -42,6 +43,13 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       .maybeSingle(),
   ]);
   if (!post) return { ok: false, error: "Post not found." };
+  if (post.status !== "approved") return { ok: false, error: "Only approved posts can be scheduled." };
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId,
+    postId: parsed.data.post_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
 
   const { data: slides } = await supabase
     .from("post_slides")

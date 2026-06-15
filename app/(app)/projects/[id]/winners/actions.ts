@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { diagnoseWinner, generateVariants } from "@/services/compound/generate";
 import { logAIRun } from "@/services/ai/logger";
+import { checkChainIntegrity } from "@/lib/chain-integrity";
 
 const Schema = z.object({
   project_id: z.string().uuid(),
@@ -27,6 +28,12 @@ export async function compoundWinnerAction(formData: FormData): Promise<Compound
   const supabase = createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  const integrity = await checkChainIntegrity(supabase, {
+    projectId: parsed.data.project_id,
+    experimentId: parsed.data.experiment_id,
+  });
+  if (!integrity.ok) return { ok: false, error: integrity.error ?? "Chain integrity check failed." };
 
   const { data: experimentRaw } = await supabase
     .from("experiments")
