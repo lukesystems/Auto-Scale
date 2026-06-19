@@ -2,42 +2,92 @@
 
 ## Project
 
-**AutoScale** is an AI-powered distribution operating system for technical founders and early-stage SaaS startups.
+**AutoScale** is an AI-powered growth intelligence system for technical founders and early-stage SaaS startups.
 
-Core loop:
+The product helps founders understand their product, discover public competitor and market signals, reverse-engineer working patterns, turn those patterns into content experiments, distribute consistently, track results, and compound winners.
+
+## Core loop
 
 ```txt
-TrendWatch → Generate → Distribute → Measure → Compound
+Understand → Discover → Analyze → Generate → Distribute → Measure → Compound
 ```
 
-The product helps founders find what already works in their niche, turn proven formats into content experiments, distribute consistently, track results, and compound winners.
+More explicitly:
+
+```txt
+Product URL
+→ Product Brief
+→ Scraping Engine / source discovery
+→ TrendWatch intelligence
+→ content experiments
+→ distribution
+→ experiment results
+→ winner variants + learnings
+```
+
+## Active build direction
+
+The current focus is the **Scraping Engine**.
+
+AutoBrief already gives the product context. The next layer must discover and enrich public competitor/source evidence before TrendWatch reasons deeply.
+
+Agents should treat this as the active next loop:
+
+```txt
+Saved Product Brief
+→ discovery query plan
+→ source candidates
+→ safe fetch/enrichment
+→ source classification
+→ signal scoring
+→ pattern mining
+→ TrendWatch-ready insights
+```
+
+Do not treat this as a generic scraper. It is a growth intelligence engine.
 
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript
 - Supabase Auth + Postgres + Storage
 - Tailwind + shadcn-style components (Radix primitives)
-- AI model abstraction (OpenAI / Anthropic / OpenRouter / Gemini / mock)
+- AI runtime with task-based model routing
 - Zod schema validation for every AI output
 - JSZip for export packs
-- Postiz integration for scheduling (V1 = basic)
+- Postiz integration for scheduling
+- Safe source ingestion, classification, and confidence scoring
 
 ## Core Rule
 
-**Protect the data chain:**
+**Protect the evidence chain:**
 
 ```txt
-source → insight → hook → content idea → generated post → scheduled post →
-experiment → metric → learning → variant
+source candidate
+→ fetched/enriched source
+→ classification
+→ signal score
+→ insight
+→ hook
+→ content idea
+→ generated post
+→ scheduled/exported post
+→ experiment
+→ metric
+→ learning
+→ variant
 ```
 
-Every generated post must link to a TrendWatch insight (or be explicitly flagged as un-anchored by the Quality Gate). Never generate disconnected content.
+Every generated post must link to a TrendWatch insight when available. Every TrendWatch insight must be tied to a source, a run, or an explicit low-confidence caveat.
+
+Never generate disconnected content and never state competitor intelligence as fact without source evidence.
 
 ## Product Modules
 
-- Product Brief Engine (`services/product-brief/`)
+- AutoBrief / Product Brief Engine (`services/autobrief/`)
+- Scraping Engine / source discovery (`docs/SCRAPING_ENGINE.md`; implementation next)
 - TrendWatch (`services/trendwatch/`)
 - Signal Scoring Engine (`services/trendwatch/scoring.ts`)
+- Source ingestion and classification (`services/trendwatch/ingestion.ts`, `services/trendwatch/classify-source.ts`)
 - Content Conveyor (`services/content-conveyor/`)
 - Quality Gate (`services/quality-gate/`)
 - Postiz client (`services/postiz/`)
@@ -45,36 +95,54 @@ Every generated post must link to a TrendWatch insight (or be explicitly flagged
 - Compound Engine (`services/compound/`)
 - AI runtime (`services/ai/`)
 
-## V1 Scope (what's built today)
+## What is built today
 
 1. Auth (sign up / in / out, protected routes, RLS)
 2. Project CRUD
-3. Product brief (manual + AI-generated)
-4. Competitor / source input
-5. TrendWatch run → structured insights + signal scoring
-6. Hook generation + content idea generation
-7. Post draft generation (carousel/script with slides, caption, CTA)
-8. Quality Gate (deterministic checks before approval)
-9. Approval queue
-10. Export pack (ZIP / CSV / JSON / captions / Postiz payload preview / experiment tracker template)
-11. Basic Postiz scheduling (with manual export fallback)
-12. Manual experiment tracker (views, saves, shares, comments, clicks, signups, purchases, revenue, notes)
-13. Winner marking → diagnosis + 10 variants + learnings written to project memory
-14. AI run debugger
-15. Settings shell with provider visibility
+3. AutoBrief onboarding from a product URL
+4. Safe website fetch for AutoBrief
+5. Product brief persistence as project source of truth
+6. Manual competitor/source input
+7. TrendWatch run over provided/enriched sources
+8. Source safe fetch, classification, confidence scoring, and distortion risk
+9. Hook generation + content idea generation
+10. Post draft generation
+11. Quality Gate before approval
+12. Approval queue
+13. Export pack
+14. Basic Postiz scheduling with manual export fallback
+15. Manual experiment tracker
+16. Winner marking → diagnosis + variants + learnings
+17. AI run debugger
+18. Settings shell with provider visibility
 
-## Deferred to post-V1
+## What is not built yet
 
-- Full TikTok / Instagram / X / LinkedIn scraping (V2)
-- Full Postiz multi-platform automation (V1.2)
-- AI Reflection System (V1.3)
-- Advanced analytics dashboard (V2.1)
-- Full AI image generation pipeline (V2.2)
-- Full video generation pipeline (V2.3)
-- Affiliate system (V2.4)
-- Agency / operator mode (V2.5)
-- Autonomous growth operator (V3)
-- Stripe / Lemon Squeezy billing (after first loop proven)
+Do not falsely claim these exist until code exists:
+
+- autonomous web-wide competitor discovery
+- TikTok/X/LinkedIn/YouTube/Reddit adapter-backed source search
+- automatic social metric ingestion
+- browser automation
+- revenue attribution
+- website pixel
+- payment webhooks
+- full autonomous growth operator
+
+## Scraping Engine rules
+
+When implementing the Scraping Engine:
+
+1. Start from the saved Product Brief. Do not ask the user for a long form.
+2. Generate a discovery query plan before fetching anything.
+3. Keep adapters isolated. Do not hardwire search logic into TrendWatch.
+4. Store discovered source candidates before analysis.
+5. Deduplicate source candidates by canonical URL, platform + handle, and similar title/snippet.
+6. Use only public, accessible sources and respect platform access limits.
+7. Save fetch status, fetch error, confidence, discovery adapter, and discovery reason.
+8. Classify each source by account type, format, hook, angle, CTA pattern, audience pain, transferability, and distortion risk.
+9. Label low-confidence and failed sources clearly.
+10. TrendWatch must reason over enriched sources, not vague assumptions.
 
 ## Engineering Rules
 
@@ -86,7 +154,7 @@ Every generated post must link to a TrendWatch insight (or be explicitly flagged
 - Never expose API keys to the client. All AI calls happen in server actions / route handlers.
 - Add loading, empty, and error states to all important UI.
 - Never hardcode a single AI provider — use `services/ai/runtime.ts`.
-- Every generated post must link to a TrendWatch insight when available; Quality Gate enforces this.
+- Every generated post must link to a TrendWatch insight when available.
 - Every scheduled post must link to a generated post.
 - Every experiment must link to a generated or scheduled post.
 - Every winner must link to an experiment.
@@ -94,11 +162,13 @@ Every generated post must link to a TrendWatch insight (or be explicitly flagged
 
 ## AI Rules
 
-- Model abstraction lives in `services/ai/runtime.ts`. Use `generateObject()` for structured calls.
-- Retry malformed outputs once (built into the runtime).
-- Log every call with `logAIRun()` so `/debug/ai-runs` always works.
+- Model abstraction lives in `services/ai/runtime.ts`.
+- Use `generateObject()` for structured calls.
+- Retry malformed outputs once through the runtime.
+- Log every call with `logAIRun()` so `/debug/ai-runs` remains useful.
 - Prefer Zod-validated structured outputs over long prose.
-- Quality Gate must review generated posts before they enter approval.
+- Scraping/TrendWatch outputs must separate observed evidence from strategic inference.
+- Do not invent metrics, creators, URLs, competitors, or platform performance.
 
 ## Commands
 
@@ -107,14 +177,16 @@ Every generated post must link to a TrendWatch insight (or be explicitly flagged
 - `npm run build` — production build
 - `npm run lint` — ESLint
 - `npm run typecheck` — TypeScript check
+- `npm run test` — Vitest
 
 ## Completion Criteria
 
 A task is not complete until:
 
 1. The flow works in the UI.
-2. Data is saved in Supabase (or no-op'd cleanly when Supabase isn't configured).
+2. Data is saved in Supabase or cleanly no-op'd when Supabase is not configured.
 3. Errors are handled.
 4. Empty states exist.
-5. Build / lint passes.
+5. Build / lint / typecheck / tests pass where applicable.
 6. The implementation respects the source → insight → post → experiment chain.
+7. Any AI claim that depends on external evidence is backed by stored source data or explicitly marked low confidence.
