@@ -23,8 +23,40 @@ export async function promoteCandidateToSource(input: {
     throw new Error(candidateError?.message ?? "Source candidate not found.");
   }
 
-  if (candidate.review_status === "accepted") {
-    throw new Error("Candidate already accepted.");
+  if (candidate.review_status !== "pending") {
+    throw new Error("Candidate is no longer pending review.");
+  }
+
+  const { data: existing } = await supabase
+    .from("trendwatch_sources")
+    .select("id")
+    .eq("project_id", input.projectId)
+    .eq("source_url", candidate.url)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from("source_candidates")
+      .update({ review_status: "accepted" })
+      .eq("id", input.candidateId)
+      .eq("review_status", "pending");
+
+    return { sourceId: existing.id };
+  }
+
+  const { data: claimed, error: claimError } = await supabase
+    .from("source_candidates")
+    .update({
+      review_status: "accepted",
+      enrich_status: candidate.enrich_status === "pending" ? "enriched" : candidate.enrich_status,
+    })
+    .eq("id", input.candidateId)
+    .eq("review_status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (claimError || !claimed) {
+    throw new Error("Candidate is no longer pending review.");
   }
 
   const platform = (candidate.platform || detectPlatform(candidate.url)) as SourcePlatform;
@@ -87,11 +119,6 @@ export async function promoteCandidateToSource(input: {
       platform: (patch.platform as SourcePlatform) ?? platform,
     })
     .eq("id", inserted.id);
-
-  await supabase
-    .from("source_candidates")
-    .update({ review_status: "accepted", enrich_status: candidate.enrich_status === "pending" ? "enriched" : candidate.enrich_status })
-    .eq("id", input.candidateId);
 
   return { sourceId: inserted.id };
 }
