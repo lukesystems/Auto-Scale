@@ -34,7 +34,7 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
   if (mode === "managed") {
     if (!config.openrouter.configured) {
       warnings.push(
-        "Managed OpenRouter is not configured. AI will fall back to mock provider until OPENROUTER_API_KEY is set."
+        "Managed OpenRouter is not configured. AI generation will fail until OPENROUTER_API_KEY is set."
       );
     }
     if (!config.postiz.configured) {

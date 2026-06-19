@@ -55,7 +55,7 @@ describe("V1.1 model router", () => {
   beforeEach(() => {
     process.env.AUTOSCALE_MODEL_AUTOBRIEF = "anthropic/claude-3.5-sonnet";
     process.env.AUTOSCALE_MODEL_TRENDWATCH = "openai/gpt-4o-mini";
-    process.env.AUTOSCALE_MODEL_CONTENT = "google/gemini-flash-1.5";
+    process.env.AUTOSCALE_MODEL_CONTENT = "openai/gpt-4o-mini";
     process.env.AUTOSCALE_MODEL_COMPOUND = "meta-llama/llama-3.1-70b-instruct";
     process.env.AUTOSCALE_MODEL_DEFAULT = "openrouter/auto";
   });
@@ -67,7 +67,7 @@ describe("V1.1 model router", () => {
   it("selects task-specific models with fallback to default", () => {
     expect(resolveModelForTask("autobrief")).toBe("anthropic/claude-3.5-sonnet");
     expect(resolveModelForTask("trendwatch")).toBe("openai/gpt-4o-mini");
-    expect(resolveModelForTask("content")).toBe("google/gemini-flash-1.5");
+    expect(resolveModelForTask("content")).toBe("openai/gpt-4o-mini");
     expect(resolveModelForTask("compound")).toBe("meta-llama/llama-3.1-70b-instruct");
     expect(resolveModelForTask("quality_gate")).toBe("openrouter/auto");
     expect(resolveModelForTask("default")).toBe("openrouter/auto");
@@ -113,6 +113,14 @@ describe("V1.1 AutoBrief schema", () => {
 describe("V1.1 website fetch fallback", () => {
   it("marks fetch failure for manual fallback flow", async () => {
     vi.mock("@/services/trendwatch/ingestion", () => ({
+      safeFetchHtml: vi.fn(async () => ({
+        ok: false,
+        url: "https://blocked.test",
+        finalUrl: "https://blocked.test",
+        html: null,
+        contentType: null,
+        error: "SSRF Prevention",
+      })),
       safeFetchUrl: vi.fn(async () => ({
         url: "https://blocked.test",
         title: null,

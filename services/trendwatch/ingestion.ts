@@ -16,6 +16,15 @@ export interface SafeFetchResult {
   error: string | null;
 }
 
+export interface SafeFetchHtmlResult {
+  ok: boolean;
+  url: string;
+  finalUrl: string;
+  html: string | null;
+  contentType: string | null;
+  error: string | null;
+}
+
 function isPrivateIpv4(ip: string): boolean {
   const [a, b] = ip.split(".").map(Number);
   return (
@@ -202,6 +211,41 @@ export async function safeFetchUrl(urlStr: string): Promise<SafeFetchResult> {
         .trim()
     ).slice(0, 3_000);
     result.status = "success";
+  } catch (error) {
+    result.error = error instanceof Error ? error.message : "Request failed.";
+  }
+
+  return result;
+}
+
+export async function safeFetchHtml(urlStr: string): Promise<SafeFetchHtmlResult> {
+  const result: SafeFetchHtmlResult = {
+    ok: false,
+    url: urlStr,
+    finalUrl: urlStr,
+    html: null,
+    contentType: null,
+    error: null,
+  };
+
+  try {
+    const { response, finalUrl } = await fetchWithValidatedRedirects(new URL(urlStr));
+    result.finalUrl = finalUrl.toString();
+    result.contentType = response.headers.get("content-type");
+
+    if (!response.ok) {
+      result.error = `HTTP error ${response.status}: ${response.statusText}`;
+      return result;
+    }
+
+    const contentType = result.contentType?.toLowerCase() ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      result.error = `Unsupported content type: ${contentType || "unknown"}`;
+      return result;
+    }
+
+    result.html = await readLimitedText(response);
+    result.ok = true;
   } catch (error) {
     result.error = error instanceof Error ? error.message : "Request failed.";
   }

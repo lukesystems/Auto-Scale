@@ -52,7 +52,7 @@
 
 ## V2.2 — Full image generation
 
-- Product mockup generation
+- Product visual generation
 - Brand-consistent template engine
 - Carousel cover generation
 - Visual A/B variants

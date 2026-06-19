@@ -6,7 +6,7 @@ AutoScale V1.1 defaults to **Managed Mode** for non-technical founders.
 
 - AutoScale uses server-side environment variables for OpenRouter, Postiz, and (future) Fal.
 - Users do not enter API keys during onboarding or day-to-day use.
-- The app falls back gracefully when keys are missing (mock AI, local schedule queue).
+- Missing AI keys fail loudly with the real configuration error. Scheduling still supports the local/manual export path.
 
 ## Provider modes
 

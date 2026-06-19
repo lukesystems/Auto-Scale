@@ -10,6 +10,7 @@ export async function getProjectOr404(projectId: string) {
       name: "Preview project",
       niche: "Configure Supabase to load real data",
       product_url: null,
+      product_brief_id: null,
       description: null,
       status: "active" as const,
       owner_id: "preview",

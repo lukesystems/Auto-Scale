@@ -15,8 +15,10 @@ Rules:
 - Be specific. Avoid generic marketing language.
 - If website content is missing or fetch failed, say so in missing_information and lower confidence_score.
 - Do NOT invent competitor URLs. Only include URLs you are confident about from provided context.
-- Suggested competitors can be names without URLs when uncertain.
+- Suggested competitors can be names without URLs when uncertain, but they must be labeled as guesses with low/medium/high confidence.
 - Never claim you verified a page you could not fetch.
+- Separate observed product facts from market/distribution guesses.
+- Add confidence levels for audience, features, competitors, and positioning.
 - Return JSON matching the requested schema.`;
 
 export async function generateAutoBrief(input: AutoBriefGenerateInput): Promise<{
@@ -32,7 +34,16 @@ export async function generateAutoBrief(input: AutoBriefGenerateInput): Promise<
 Title: ${input.siteFetch.title ?? "(none)"}
 Description: ${input.siteFetch.description ?? "(none)"}
 Visible text snippet:
-${input.siteFetch.textSnippet ?? "(none)"}`
+${input.siteFetch.textSnippet ?? "(none)"}
+
+Extracted pages:
+${input.siteFetch.pages
+  .map((page) => `- ${page.url}
+  title: ${page.title ?? "(none)"}
+  description: ${page.description ?? "(none)"}
+  headings: ${page.headings.join(" | ") || "(none)"}
+  ctas: ${page.ctas.join(" | ") || "(none)"}`)
+  .join("\n") || "(none)"}`
       : `Website fetch: FAILED
 Error: ${input.siteFetch.error ?? "unknown"}`
     : "Website fetch: not attempted";
@@ -52,12 +63,19 @@ ${fetchBlock}
 ${manualBlock}
 
 Produce:
-- product_name, product_url, product_summary, target_customer, primary_pain, core_promise
+- product_name, product_url, one_line_description, category, product_type
+- product_summary, what_it_does, target_customer, target_audience, primary_pain, user_pain_points, core_promise
+- key_features, key_benefits
 - offer, cta (nullable if unknown)
-- niche, positioning_angles (3-5), content_pillars (3-6), brand_voice
+- niche, alternative_solutions, market_category
+- positioning_angles (3-5), content_pillars (3-6), content_angles, brand_voice
+- platform_recommendations with platform + reason
+- cta_suggestions, founder_led_opportunities, positioning_gaps
 - production_constraints booleans
 - suggested_competitors (name, optional url, reason, confidence 0-1)
 - suggested_sources (platform, url, reason, confidence)
+- confidence object with low/medium/high values
+- extraction_notes: explain what was easy/hard to infer from the website
 - confidence_score (0-1) reflecting how complete the inputs are
 - missing_information: list gaps the founder should fill`;
 
@@ -68,6 +86,7 @@ Produce:
     schemaName: "AutoBrief",
     taskType: "autobrief",
     temperature: 0.45,
+    maxTokens: 5000,
   });
 
   return {

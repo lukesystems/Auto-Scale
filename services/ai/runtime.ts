@@ -20,27 +20,21 @@ import type {
 
 import { AIError } from "./types";
 
-import { mockAdapter } from "./adapters/mock";
-
 import { openaiAdapter } from "./adapters/openai";
 
 import { anthropicAdapter } from "./adapters/anthropic";
 
 import { resolveModelForTask } from "./model-router";
 
-import { getManagedOpenRouterCredentials, getManagedProviderConfig } from "@/services/providers/config";
+import { getManagedOpenRouterCredentials, getManagedProviderConfig, ProviderSetupError } from "@/services/providers/config";
 
 
 
 const ADAPTERS: Record<AIProvider, AIAdapter> = {
 
-  mock: mockAdapter,
-
   openai: openaiAdapter,
 
   anthropic: anthropicAdapter,
-
-  gemini: openaiAdapter, // placeholder until Gemini adapter lands
 
   openrouter: openaiAdapter, // OpenRouter speaks OpenAI's chat completions API
 
@@ -50,9 +44,12 @@ const ADAPTERS: Record<AIProvider, AIAdapter> = {
 
 function defaultProvider(): AIProvider {
 
-  const fromEnv = process.env.AUTOSCALE_DEFAULT_PROVIDER as AIProvider | undefined;
+  const fromEnv = process.env.AUTOSCALE_AI_PROVIDER?.trim();
 
-  if (fromEnv && ADAPTERS[fromEnv]) return fromEnv;
+  if (fromEnv) {
+    if (fromEnv in ADAPTERS) return fromEnv as AIProvider;
+    throw new AIError(`Unsupported AI provider "${fromEnv}". Configure openrouter, openai, or anthropic.`, "openrouter");
+  }
 
   if (getManagedOpenRouterCredentials()) return "openrouter";
 
@@ -60,7 +57,10 @@ function defaultProvider(): AIProvider {
 
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
 
-  return "mock";
+  throw new ProviderSetupError(
+    "No AI provider is configured. Set OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY on the server.",
+    "openrouter_missing"
+  );
 
 }
 
@@ -90,15 +90,8 @@ function defaultModel(provider: AIProvider, taskType: AITaskType = "default"): s
 
       return "openrouter/auto";
 
-    case "gemini":
-
-      return "gemini-1.5-flash";
-
-    case "mock":
-
     default:
-
-      return "mock-default";
+      return "openrouter/auto";
 
   }
 
@@ -152,21 +145,11 @@ function getCtx(provider: AIProvider) {
 
     }
 
-    case "gemini":
-
-      return {
-
-        apiKey: process.env.GOOGLE_API_KEY ?? "",
-
-        providerLabel: "gemini" as const,
-
-      };
-
-    case "mock":
-
     default:
-
-      return { apiKey: "mock", providerLabel: "mock" as const };
+      return {
+        apiKey: "",
+        providerLabel: provider,
+      };
 
   }
 
@@ -190,11 +173,11 @@ export async function generateText(params: GenerateTextParams): Promise<Generate
 
   const ctx = getCtx(provider);
 
-  if (provider !== "mock" && !ctx.apiKey) {
-
-    // Soft-fall back to mock so the app stays usable without keys.
-
-    return mockAdapter.generateText({ ...params, provider: "mock", model: "mock-default" }, { apiKey: "mock" });
+  if (!ctx.apiKey) {
+    throw new ProviderSetupError(
+      `${provider} is not configured. Set the required API key on the server before generating AI output.`,
+      "openrouter_missing"
+    );
 
   }
 
@@ -308,33 +291,11 @@ export async function generateObject<T extends ZodTypeAny>(
 
 
 
-  if (params.fallback) {
-
-    return {
-
-      object: params.fallback(),
-
-      raw: lastResult?.text ?? "",
-
-      provider: lastResult?.provider ?? "mock",
-
-      model: lastResult?.model ?? "mock-default",
-
-      latencyMs: lastResult?.latencyMs ?? 0,
-
-      retries,
-
-    };
-
-  }
-
-
-
   throw new AIError(
 
     `Failed to produce valid structured output after ${retries} retries: ${lastError?.message ?? "unknown"}`,
 
-    lastResult?.provider ?? "mock",
+    lastResult?.provider ?? params.provider ?? "openrouter",
 
     lastError
 

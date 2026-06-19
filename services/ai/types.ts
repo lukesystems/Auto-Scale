@@ -1,6 +1,6 @@
 import type { ZodTypeAny, z } from "zod";
 
-export type AIProvider = "openai" | "anthropic" | "gemini" | "openrouter" | "mock";
+export type AIProvider = "openai" | "anthropic" | "openrouter";
 
 export type AITaskType =
   | "autobrief"
@@ -49,8 +49,6 @@ export interface GenerateObjectParams<T extends ZodTypeAny> {
   schemaDescription?: string;
   temperature?: number;
   maxTokens?: number;
-  /** Override the parser. Defaults to JSON.parse + zod schema. */
-  fallback?: () => z.infer<T>;
 }
 
 export interface GenerateObjectResult<T extends ZodTypeAny> {

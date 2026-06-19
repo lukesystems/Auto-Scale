@@ -9,13 +9,32 @@ import { logAIRun } from "@/services/ai/logger";
 
 const BriefUpdateSchema = z.object({
   project_id: z.string().uuid(),
+  source_url: z.string().optional(),
+  product_name: z.string().optional(),
+  one_line_description: z.string().optional(),
+  category: z.string().optional(),
+  product_type: z.string().optional(),
   product_summary: z.string().optional(),
+  what_it_does: z.string().optional(),
   target_customer: z.string().optional(),
+  target_audience: z.string().optional(),
   primary_pain: z.string().optional(),
+  user_pain_points: z.string().optional(),
   core_promise: z.string().optional(),
+  key_features: z.string().optional(),
+  key_benefits: z.string().optional(),
   offer: z.string().optional(),
   cta: z.string().optional(),
   brand_voice: z.string().optional(),
+  competitors: z.string().optional(),
+  alternative_solutions: z.string().optional(),
+  market_category: z.string().optional(),
+  content_angles: z.string().optional(),
+  platform_recommendations: z.string().optional(),
+  cta_suggestions: z.string().optional(),
+  founder_led_opportunities: z.string().optional(),
+  positioning_gaps: z.string().optional(),
+  extraction_notes: z.string().optional(),
   content_pillars: z.string().optional(), // newline-separated
   positioning_angles: z.string().optional(), // newline-separated
 });
@@ -27,13 +46,32 @@ export async function saveBriefAction(formData: FormData): Promise<BriefResult> 
 
   const parsed = BriefUpdateSchema.safeParse({
     project_id: formData.get("project_id"),
+    source_url: formData.get("source_url") ?? undefined,
+    product_name: formData.get("product_name") ?? undefined,
+    one_line_description: formData.get("one_line_description") ?? undefined,
+    category: formData.get("category") ?? undefined,
+    product_type: formData.get("product_type") ?? undefined,
     product_summary: formData.get("product_summary") ?? undefined,
+    what_it_does: formData.get("what_it_does") ?? undefined,
     target_customer: formData.get("target_customer") ?? undefined,
+    target_audience: formData.get("target_audience") ?? undefined,
     primary_pain: formData.get("primary_pain") ?? undefined,
+    user_pain_points: formData.get("user_pain_points") ?? undefined,
     core_promise: formData.get("core_promise") ?? undefined,
+    key_features: formData.get("key_features") ?? undefined,
+    key_benefits: formData.get("key_benefits") ?? undefined,
     offer: formData.get("offer") ?? undefined,
     cta: formData.get("cta") ?? undefined,
     brand_voice: formData.get("brand_voice") ?? undefined,
+    competitors: formData.get("competitors") ?? undefined,
+    alternative_solutions: formData.get("alternative_solutions") ?? undefined,
+    market_category: formData.get("market_category") ?? undefined,
+    content_angles: formData.get("content_angles") ?? undefined,
+    platform_recommendations: formData.get("platform_recommendations") ?? undefined,
+    cta_suggestions: formData.get("cta_suggestions") ?? undefined,
+    founder_led_opportunities: formData.get("founder_led_opportunities") ?? undefined,
+    positioning_gaps: formData.get("positioning_gaps") ?? undefined,
+    extraction_notes: formData.get("extraction_notes") ?? undefined,
     content_pillars: formData.get("content_pillars") ?? undefined,
     positioning_angles: formData.get("positioning_angles") ?? undefined,
   });
@@ -41,30 +79,82 @@ export async function saveBriefAction(formData: FormData): Promise<BriefResult> 
 
   const supabase = createSupabaseServerClient();
 
-  const pillars = (parsed.data.content_pillars ?? "")
-    .split("\n").map((s) => s.trim()).filter(Boolean);
-  const angles = (parsed.data.positioning_angles ?? "")
-    .split("\n").map((s) => s.trim()).filter(Boolean);
+  const pillars = lines(parsed.data.content_pillars);
+  const angles = lines(parsed.data.positioning_angles);
+  const contentAngles = lines(parsed.data.content_angles);
+  const ctaSuggestions = lines(parsed.data.cta_suggestions);
+  const targetAudience = lines(parsed.data.target_audience);
+  const competitors = lines(parsed.data.competitors);
 
-  const { error } = await supabase
+  const { data: savedBrief, error } = await supabase
     .from("product_briefs")
     .upsert({
       project_id: parsed.data.project_id,
+      source_url: parsed.data.source_url || null,
+      product_name: parsed.data.product_name || null,
+      one_line_description: parsed.data.one_line_description || null,
+      category: parsed.data.category || null,
+      product_type: parsed.data.product_type || null,
       product_summary: parsed.data.product_summary || null,
+      what_it_does: parsed.data.what_it_does || null,
       target_customer: parsed.data.target_customer || null,
+      target_audience: targetAudience as never,
       primary_pain: parsed.data.primary_pain || null,
+      user_pain_points: lines(parsed.data.user_pain_points) as never,
       core_promise: parsed.data.core_promise || null,
+      key_features: lines(parsed.data.key_features) as never,
+      key_benefits: lines(parsed.data.key_benefits) as never,
       offer: parsed.data.offer || null,
       cta: parsed.data.cta || null,
       brand_voice: parsed.data.brand_voice || null,
+      competitors: competitors as never,
+      likely_competitors: competitors.map((name) => ({ name, reason: "Founder edited guess", confidence: "low" })) as never,
+      alternative_solutions: lines(parsed.data.alternative_solutions) as never,
+      market_category: parsed.data.market_category || null,
+      content_angles: contentAngles as never,
+      platform_recommendations: lines(parsed.data.platform_recommendations).map(parsePlatformRecommendation) as never,
+      cta_suggestions: ctaSuggestions as never,
+      founder_led_opportunities: lines(parsed.data.founder_led_opportunities) as never,
+      positioning_gaps: lines(parsed.data.positioning_gaps) as never,
+      extraction_notes: lines(parsed.data.extraction_notes) as never,
       content_pillars: pillars as never,
       positioning_angles: angles as never,
-    }, { onConflict: "project_id" });
+    }, { onConflict: "project_id" })
+    .select("id")
+    .single();
 
   if (error) return { ok: false, error: error.message };
 
+  if (savedBrief?.id) {
+    await supabase
+      .from("projects")
+      .update({
+        product_brief_id: savedBrief.id,
+        status: "brief_saved",
+        product_url: parsed.data.source_url || null,
+        niche: parsed.data.category || null,
+        description: parsed.data.one_line_description || parsed.data.product_summary || null,
+      })
+      .eq("id", parsed.data.project_id);
+  }
+
   revalidatePath(`/projects/${parsed.data.project_id}`);
   return { ok: true };
+}
+
+function lines(value?: string): string[] {
+  return (value ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parsePlatformRecommendation(value: string): { platform: string; reason: string } {
+  const [platform, ...reason] = value.split(":");
+  return {
+    platform: platform?.trim() || "unknown",
+    reason: reason.join(":").trim() || "Founder edited recommendation",
+  };
 }
 
 const AIGenerateSchema = z.object({ project_id: z.string().uuid() });
@@ -148,8 +238,8 @@ export async function aiGenerateBriefAction(formData: FormData): Promise<Generat
       ownerId: user.id,
       projectId: parsed.data.project_id,
       kind: "product_brief",
-      provider: "mock",
-      model: "mock-default",
+      provider: "unknown",
+      model: "unknown",
       input: { project: project.name },
       status: "failed",
       errorMessage: message,

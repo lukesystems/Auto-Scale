@@ -4,7 +4,7 @@
 
 export type Json = string | number | boolean | null | { [k: string]: Json } | Json[];
 
-export type ProjectStatus = "active" | "paused" | "archived";
+export type ProjectStatus = "brief_generating" | "brief_failed" | "brief_saved" | "active" | "paused" | "archived";
 
 export type SourcePlatform =
   | "tiktok"
@@ -99,6 +99,7 @@ export interface Database {
           slug: string | null;
           niche: string | null;
           product_url: string | null;
+          product_brief_id: string | null;
           description: string | null;
           status: ProjectStatus;
           created_at: string;
@@ -116,15 +117,37 @@ export interface Database {
         Row: {
           id: string;
           project_id: string;
+          source_url: string | null;
+          product_name: string | null;
+          one_line_description: string | null;
+          category: string | null;
+          product_type: string | null;
           product_summary: string | null;
+          what_it_does: string | null;
           target_customer: string | null;
+          target_audience: Json;
           primary_pain: string | null;
+          user_pain_points: Json;
           core_promise: string | null;
+          key_features: Json;
+          key_benefits: Json;
           offer: string | null;
           cta: string | null;
           competitors: Json;
+          likely_competitors: Json;
+          alternative_solutions: Json;
+          market_category: string | null;
           content_pillars: Json;
           positioning_angles: Json;
+          content_angles: Json;
+          platform_recommendations: Json;
+          cta_suggestions: Json;
+          founder_led_opportunities: Json;
+          positioning_gaps: Json;
+          confidence: Json;
+          extraction_notes: Json;
+          raw_extracted_content: Json;
+          model_used: string | null;
           production_constraints: Json;
           brand_voice: string | null;
           created_at: string;

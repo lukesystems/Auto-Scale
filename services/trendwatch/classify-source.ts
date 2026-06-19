@@ -69,7 +69,6 @@ ${evidence}`,
     schemaName: "SourceClassification",
     taskType: "trendwatch",
     temperature: 0.2,
-    fallback: () => fallback,
   });
 
   return {

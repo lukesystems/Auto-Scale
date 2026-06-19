@@ -26,7 +26,7 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
   return (
     <div className="container py-10 space-y-8">
       <PageHeader
-        badge={<Badge variant={project.status === "active" ? "success" : "secondary"}>{project.status}</Badge>}
+        badge={<Badge variant={project.status === "brief_saved" || project.status === "active" ? "success" : project.status === "brief_failed" ? "destructive" : "secondary"}>{project.status}</Badge>}
         title={project.name}
         description={project.niche || project.description || "Set your niche in the project brief to sharpen TrendWatch."}
         actions={
@@ -84,6 +84,7 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
           <div className="rounded-xl border border-border bg-card p-6">
             <h4 className="text-sm font-semibold tracking-tight">Pipeline</h4>
             <ul className="mt-4 space-y-2 text-sm">
+              <PipelineRow done={Boolean(brief?.product_summary && brief?.target_customer)} label="Product Brief complete" href={`/projects/${params.id}/brief`} />
               <PipelineRow done={stats.sourceCount > 0} label="Sources gathered" href={`/projects/${params.id}/sources`} />
               <PipelineRow done={stats.insightCount > 0} label="TrendWatch run" href={`/projects/${params.id}/trendwatch`} />
               <PipelineRow done={stats.ideaCount > 0} label="Ideas generated" href={`/projects/${params.id}/ideas`} />
@@ -150,8 +151,7 @@ function computeNextAction({
       href: "brief",
     };
   }
-  if (stats.sourceCount === 0) return { label: "Add competitor sources", description: "Drop a few competitor URLs and example posts. TrendWatch needs real signal.", href: "sources" };
-  if (stats.insightCount === 0) return { label: "Run TrendWatch", description: "Reverse-engineer your niche. Get a competitor map, winning formats, hooks, and risks.", href: "trendwatch" };
+  if (stats.insightCount === 0) return { label: "Generate TrendWatch Report", description: "Loop 1 is complete. Start Loop 2 by turning this product brief into a TrendWatch report.", href: "trendwatch" };
   if (stats.ideaCount === 0) return { label: "Generate content ideas", description: "Turn TrendWatch insights into hooks and structured content ideas.", href: "ideas" };
   if (stats.postCount === 0) return { label: "Draft posts from ideas", description: "Convert ideas into structured post drafts ready for the Quality Gate.", href: "content" };
   if (stats.approvedCount === 0) return { label: "Approve through Quality Gate", description: "Review and approve drafts. Reject the weak ones. Ship the rest.", href: "approval" };

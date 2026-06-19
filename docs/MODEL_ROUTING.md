@@ -42,6 +42,6 @@ AUTOSCALE_MODEL_DEFAULT=openrouter/auto
 
 Do not hardcode Opus/GPT everywhere — different tasks benefit from different cost/latency/quality tradeoffs.
 
-## Mock fallback
+## Failure behavior
 
-If `OPENROUTER_API_KEY` is missing (or `AUTOSCALE_DEFAULT_PROVIDER=mock`), the runtime uses the mock adapter. Prompts with `[[kind]]` tags return deterministic JSON for local dev and tests.
+There is no synthetic provider fallback. If the selected provider is not configured or the model returns invalid JSON, the runtime throws the real provider/config/schema error and logs the failed AI run.

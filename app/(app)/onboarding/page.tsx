@@ -31,8 +31,8 @@ export default async function OnboardingPage() {
   return (
     <div className="container py-10 max-w-2xl animate-fade-in">
       <PageHeader
-        title="Welcome to AutoScale"
-        description="We'll set up your first project in a few steps. AutoScale handles the technical setup by default."
+        title="Paste your product URL. Generate your growth brief."
+        description="AutoScale will read your website, identify your audience, positioning, content angles, and distribution opportunities."
       />
       <div className="mt-8 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-6 md:p-8 shadow-lg shadow-primary/5">
         <OnboardingWizard initialProviderMode={settings?.provider_mode ?? "managed"} />

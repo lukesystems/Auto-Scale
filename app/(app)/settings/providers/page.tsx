@@ -121,7 +121,7 @@ export default async function ProvidersSettingsPage() {
         <ul className="mt-3 space-y-1 font-mono text-xs text-muted-foreground">
           {(Object.entries(routing) as [string, string | null][]).map(([task, model]) => (
             <li key={task}>
-              {task} → {model ?? "AUTOSCALE_MODEL_DEFAULT / mock"}
+              {task} → {model ?? "AUTOSCALE_MODEL_DEFAULT / provider default"}
             </li>
           ))}
         </ul>

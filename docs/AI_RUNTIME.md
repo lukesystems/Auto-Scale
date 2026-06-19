@@ -30,7 +30,7 @@ AutoScale routes all AI calls through `services/ai/runtime.ts`.
 
 ## Providers
 
-Supported providers: `mock`, `openai`, `anthropic`, `openrouter`, `gemini` (placeholder).
+Supported providers: `openai`, `anthropic`, `openrouter`.
 
 OpenRouter uses the OpenAI-compatible adapter at `https://openrouter.ai/api/v1/chat/completions` with:
 
@@ -59,7 +59,7 @@ If AutoBrief hangs or fails during onboarding, check:
 4. **`AI_REQUEST_TIMEOUT_MS`** — increase only if models are consistently slow; default 45s is usually enough
 5. **Provider status** — OpenRouter or upstream model outages
 
-For local dev without keys, set `AUTOSCALE_DEFAULT_PROVIDER=mock`.
+There is no synthetic provider fallback. Local development needs a real provider key when exercising AI generation.
 
 ## Logging
 

@@ -1,77 +1,65 @@
-# Skill: Product Brief Engine
+# Product Brief Skill
 
 ## Purpose
 
-Turn a founder's product URL and a handful of inputs into a structured growth brief that anchors every downstream AutoScale module (TrendWatch, Content Conveyor, Quality Gate, Compound Engine).
+Turn a startup or product URL into a structured, editable Product Brief.
 
-## Inputs
+This skill is Loop 1. It must not generate TrendWatch reports, hooks, scripts, schedules, experiments, analytics, or weekly plans.
 
-- Product name (required)
-- Product URL
-- Description (1-2 sentences)
-- Target audience
-- Competitors (list)
-- Offer
-- Preferred CTA
-- Brand tone
-- Preferred platforms
-- Production preference (faceless, founder-led, UGC, demo-based, etc.)
+Its only job is:
 
-## Workflow
-
-1. Gather inputs from the project record + product_briefs row.
-2. Send to `generateProductBrief()` (services/product-brief/generate.ts).
-3. Validate with `ProductBriefSchema` (Zod).
-4. Upsert into `product_briefs` keyed by `project_id`.
-5. Log to `ai_runs` with kind `product_brief`.
-
-## Output schema
-
-See `services/product-brief/schema.ts`. Required fields:
-
-- `product_summary` — 1-sentence summary
-- `target_customer` — specific ICP
-- `primary_pain` — most acute pain
-- `core_promise` — transformation in one line
-- `offer` — what + price
-- `cta` — short, actionable
-- `competitors` — array
-- `content_pillars` — 3-6 themes
-- `positioning_angles` — 3-5 angles
-- `production_constraints` — object with platform + capability booleans
-- `brand_voice` — one paragraph
-
-## Quality rules
-
-- Never produce generic marketing language ("revolutionize", "unleash", "transform").
-- Always anchor each line to the founder's product + ICP.
-- If inputs are sparse, ask for more — don't invent specifics.
-
-## Failure cases
-
-- Empty product name → reject before AI call.
-- AI output fails schema → retry once (built into `generateObject`).
-- After retry, fall back to keeping whatever fields the founder already filled in.
-
-## Example
-
-```json
-{
-  "product_summary": "AI-powered tool that turns proven content patterns into weekly growth experiments for technical founders.",
-  "target_customer": "Solo and early-stage technical founders who can build but struggle with distribution.",
-  "primary_pain": "Building is easy. Getting users is hard. Founders don't know what to post, when, or why.",
-  "core_promise": "Reverse-engineer your niche, ship structured content experiments, and compound winners — without hiring marketing.",
-  "offer": "$149/month for the full growth loop.",
-  "cta": "Build my growth engine",
-  "content_pillars": ["Founder distribution lessons", "Niche reverse-engineering", "Content experiment teardowns"],
-  "positioning_angles": ["You built the app. Nobody cares yet.", "Stop guessing what to post.", "Distribution is the new bottleneck."],
-  "production_constraints": {
-    "can_make_carousels": true,
-    "can_make_founder_videos": false,
-    "can_use_product_screenshots": true,
-    "can_use_ai_images": true,
-    "preferred_platforms": ["x", "linkedin", "tiktok"]
-  },
-  "brand_voice": "Direct, technical, slightly contrarian. No hype. No fluff."
-}
+```txt
+URL -> product understanding -> validated editable brief -> saved source of truth
 ```
+
+## Hard Rules
+
+1. Do not invent facts that are not supported by the website or founder-provided context.
+2. Use confidence scores when guessing.
+3. Return structured JSON only.
+4. Separate extracted product facts from strategic guesses.
+5. If the website is unreadable, request or use fallback homepage copy/product description.
+6. Competitors are guesses unless directly found on the site.
+7. The saved Product Brief becomes the source of truth for future AutoScale agents.
+8. Keep Loop 1 narrow. Product understanding comes before TrendWatch.
+
+## Runtime Workflow
+
+1. Accept a single product URL, with optional advanced/manual context hidden by default.
+2. Validate and safely fetch the website.
+3. Extract useful website content: title, meta description, headings, body copy, visible CTAs, and product/pricing/feature claims.
+4. Clean obvious junk such as nav repetition, cookie banners, legal/footer text, and repeated menu items.
+5. Generate a Product Brief JSON object with `generateAutoBrief()`.
+6. Validate the result with `AutoBriefSchema`.
+7. Show an editable brief grouped into:
+   - Product Summary
+   - Audience
+   - Problem + Promise
+   - Features + Benefits
+   - Market + Competitors
+   - Distribution Context
+   - Confidence Notes
+8. Save the confirmed brief to `product_briefs` and create/update the project context.
+
+## Required Output
+
+Return an `AutoBrief` JSON object matching `services/autobrief/schema.ts`.
+
+The brief must include:
+
+- Product identity: name, URL, one-line description, category/niche, product type
+- Product understanding: what it does, audience, problem, promise, features, benefits
+- Market guess: competitors, alternatives, market category, audience pain points
+- Distribution context: content angles, platform recommendations, CTAs, founder-led opportunities, positioning gaps
+- Confidence: overall, audience, features, competitors, positioning
+- Notes: missing information and extraction notes
+
+## Quality Bar
+
+A successful Loop 1 output should make the founder think:
+
+```txt
+Okay, this understands my product.
+```
+
+If the brief feels generic, overconfident, or detached from the website, it fails Loop 1.

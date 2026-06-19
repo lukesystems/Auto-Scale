@@ -25,7 +25,7 @@ TrendWatch → Generate → Distribute → Measure → Compound
 - Next.js 14 (App Router) + TypeScript
 - Supabase Auth + Postgres + RLS + Storage
 - Tailwind + shadcn-style UI (Radix primitives, Lucide icons, Sonner toasts)
-- AI model abstraction (OpenAI / Anthropic / OpenRouter / Gemini / mock)
+- AI model abstraction (OpenAI / Anthropic / OpenRouter)
 - Zod schema validation on every AI output
 - JSZip for export packs
 - Postiz integration for scheduling
@@ -50,10 +50,10 @@ Fill in at minimum:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, never expose)
 
-Managed Mode (optional for local dev — mock AI works without keys):
+Managed Mode:
 
 - `AUTOSCALE_PROVIDER_MODE_DEFAULT=managed`
-- `OPENROUTER_API_KEY` — required for real managed AI
+- `OPENROUTER_API_KEY` — required for managed AI
 - `POSTIZ_API_URL` / `POSTIZ_API_KEY` — required for managed scheduling
 - `AUTOSCALE_MODEL_*` — task-based OpenRouter routing (see `docs/MODEL_ROUTING.md`)
 - `FAL_KEY` — foundation only; media generation not active yet
@@ -66,6 +66,9 @@ Open Supabase Studio → SQL Editor → run migrations in order:
 - `supabase/migrations/0002_chain_constraints.sql`
 - `supabase/migrations/0003_source_ingestion.sql`
 - `supabase/migrations/0004_user_settings.sql`
+- `supabase/migrations/0005_phase_1_3_completion.sql`
+- `supabase/migrations/0006_loop1_product_brief_source_of_truth.sql`
+- `supabase/migrations/0007_loop1_project_status.sql`
 
 Create two private storage buckets:
 

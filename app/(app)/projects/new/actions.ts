@@ -58,6 +58,7 @@ export async function createProjectAction(formData: FormData): Promise<CreatePro
       niche: parsed.data.niche || null,
       product_url: parsed.data.product_url || null,
       description: parsed.data.description || null,
+      status: "brief_generating",
     })
     .select("id")
     .single();
@@ -72,7 +73,7 @@ export async function createProjectAction(formData: FormData): Promise<CreatePro
     .map((c) => c.trim())
     .filter(Boolean);
 
-  await supabase.from("product_briefs").insert({
+  const { data: brief } = await supabase.from("product_briefs").insert({
     project_id: project.id,
     target_customer: parsed.data.target_audience || null,
     offer: parsed.data.offer || null,
@@ -85,7 +86,14 @@ export async function createProjectAction(formData: FormData): Promise<CreatePro
       can_use_product_screenshots: true,
       can_use_ai_images: true,
     } as never,
-  });
+  }).select("id").single();
+
+  if (brief?.id) {
+    await supabase
+      .from("projects")
+      .update({ product_brief_id: brief.id, status: "brief_saved" })
+      .eq("id", project.id);
+  }
 
   // Also seed individual competitor rows for nav
   if (competitors.length) {

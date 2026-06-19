@@ -12,7 +12,7 @@ export function isProviderSetupError(err: unknown): err is ProviderSetupError {
 export function mapAutoBriefError(err: unknown, fetchFailed: boolean): string {
   if (isProviderSetupError(err)) {
     if (err.code === "openrouter_missing") {
-      return "OpenRouter is not configured on the server. Use manual entry or switch to mock provider for local testing.";
+      return err.message;
     }
     return err.message;
   }
@@ -23,9 +23,9 @@ export function mapAutoBriefError(err: unknown, fetchFailed: boolean): string {
     }
     if (err.message.includes("Failed to produce valid structured output")) {
       if (!fetchFailed) {
-        return "AutoBrief could not generate structured output. Try again, use manual entry, or switch to mock provider for local testing.";
+        return err.message;
       }
-      return "AutoBrief could not generate structured output from the available inputs. Try again, add manual details, or switch to mock provider for local testing.";
+      return `${err.message} Website extraction was weak; add manual homepage copy and try again.`;
     }
     if (err.message.includes("request failed")) {
       if (err.message.includes("404") || err.message.match(/\bmodel\b/i)) {

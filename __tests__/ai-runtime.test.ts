@@ -13,7 +13,7 @@ describe("AI runtime responseMode", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetch);
     process.env.OPENAI_API_KEY = "sk-test-key";
-    process.env.AUTOSCALE_DEFAULT_PROVIDER = "openai";
+    process.env.AUTOSCALE_AI_PROVIDER = "openai";
     process.env.AI_REQUEST_TIMEOUT_MS = "45000";
     mockFetch.mockResolvedValue({
       ok: true,
@@ -125,8 +125,8 @@ describe("AutoBrief error mapping", () => {
       "Failed to produce valid structured output after 2 retries: invalid",
       "openrouter"
     );
-    expect(mapAutoBriefError(err, false)).toContain("AutoBrief could not generate structured output");
-    expect(mapAutoBriefError(err, false)).toContain("manual entry");
+    expect(mapAutoBriefError(err, false)).toContain("Failed to produce valid structured output");
+    expect(mapAutoBriefError(err, false)).toContain("invalid");
   });
 
   it("maps ProviderSetupError for missing OpenRouter", () => {
@@ -158,15 +158,28 @@ describe("AutoBrief action error handling", () => {
         auth: {
           getUser: async () => ({ data: { user: { id: "user-1" } } }),
         },
+        from: vi.fn(() => ({
+          insert: vi.fn(() => ({
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({ data: { id: "11111111-1111-1111-1111-111111111111" }, error: null })),
+            })),
+          })),
+          update: vi.fn(() => ({
+            eq: vi.fn(async () => ({ error: null })),
+          })),
+        })),
       })),
     }));
 
     vi.doMock("@/services/autobrief/fetch-site", () => ({
+      normalizeProductUrl: vi.fn((url: string) => url),
       fetchSiteForAutoBrief: vi.fn(async () => ({
         ok: true,
+        finalUrl: "https://example.com",
         title: "Test",
         description: "Desc",
         textSnippet: "Snippet",
+        pages: [],
         url: "https://example.com",
       })),
     }));

@@ -55,7 +55,7 @@ export default async function ProjectsPage() {
                     {p.niche || p.product_url || "No niche set yet"}
                   </p>
                 </div>
-                <Badge variant={p.status === "active" ? "success" : "secondary"}>{p.status}</Badge>
+                <Badge variant={p.status === "active" || p.status === "brief_saved" ? "success" : p.status === "brief_failed" ? "destructive" : "secondary"}>{p.status}</Badge>
               </div>
 
               <div className="mt-5 grid grid-cols-3 gap-3 text-xs">
