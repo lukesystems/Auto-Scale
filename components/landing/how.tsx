@@ -1,33 +1,33 @@
 const STEPS = [
   {
     n: "01",
-    title: "Drop your product URL",
-    desc: "Add competitors, example posts, and a few founder inputs. AutoScale builds your structured growth brief.",
+    title: "Paste your product URL",
+    desc: "AutoBrief reads the site and creates a structured brief with ICP, pain, offer, positioning, and confidence notes.",
   },
   {
     n: "02",
-    title: "Run TrendWatch",
-    desc: "Reverse-engineers your niche, classifies sources, scores signal, flags distortion risk, and surfaces transferable formats.",
+    title: "Build the product memory",
+    desc: "The brief becomes project memory. Future findings, insights, hooks, and experiments must respect this saved context.",
   },
   {
     n: "03",
-    title: "Generate experiments",
-    desc: "Hooks → content ideas → carousel scripts → captions → CTA slides. Every artifact linked to an insight + hypothesis.",
+    title: "Map the market",
+    desc: "AutoScale organizes relevant pages, accounts, hooks, formats, audience pain language, and white space around the niche.",
   },
   {
     n: "04",
-    title: "Approve through Quality Gate",
-    desc: "Catches generic, off-brand, duplicated, or risky content before approval. You ship only what passes.",
+    title: "Turn patterns into experiments",
+    desc: "TrendWatch converts the evidence into hooks, ideas, campaign hypotheses, and tests tied to a clear reason.",
   },
   {
     n: "05",
-    title: "Schedule via Postiz or export",
-    desc: "Push approved content to Postiz for multi-platform scheduling, or grab a ZIP pack with slides, captions, and tracker.",
+    title: "Approve, export, or schedule",
+    desc: "Quality Gate catches generic or unsupported content. Approved posts can be exported or scheduled through Postiz.",
   },
   {
     n: "06",
-    title: "Track + compound",
-    desc: "Enter metrics, mark winners. Compound Engine spits out 10 variants per winner and writes next week&apos;s plan.",
+    title: "Track and compound",
+    desc: "Enter metrics, mark winners, generate variants, and write the learning back into memory so the next run gets sharper.",
   },
 ];
 
@@ -41,11 +41,10 @@ export function How() {
               Workflow
             </div>
             <h2 className="mt-4 font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
-              From product page to scheduled growth experiments.
+              From startup URL to source-backed experiments.
             </h2>
             <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance leading-relaxed">
-              Six steps. Real persistence. Real auth. Real AI runs. Real exports. Real metrics. Real compounding.
-              Not another AI content toy.
+              One URL starts the loop. AutoScale builds the context, maps the market, generates experiments, and remembers what worked.
             </p>
           </div>
 
