@@ -23,7 +23,7 @@ const IMPORTANT_PATH_TERMS = [
   "blog",
 ];
 
-const CRAWL4AI_API_URL = process.env.CRAWL4AI_API_URL?.trim() || null;
+const CRAWL4AI_API_URL = () => process.env.CRAWL4AI_API_URL?.trim() || null;
 
 export const crawl4aiAdapter: CrawlAdapter = {
   name: "crawl4ai",
@@ -39,8 +39,9 @@ export const crawl4aiAdapter: CrawlAdapter = {
       return failedPageForUnsafeUrl(input.url, error, "crawl4ai");
     }
 
-    if (CRAWL4AI_API_URL) {
-      const external = await crawlViaExternalService(input.url);
+    const externalApiUrl = CRAWL4AI_API_URL();
+    if (externalApiUrl) {
+      const external = await crawlViaExternalService(input.url, externalApiUrl);
       if (external) return external;
     }
 
@@ -66,9 +67,7 @@ export const crawl4aiAdapter: CrawlAdapter = {
   },
 };
 
-async function crawlViaExternalService(url: string): Promise<CrawledPageContent | null> {
-  if (!CRAWL4AI_API_URL) return null;
-
+async function crawlViaExternalService(url: string, apiUrl: string): Promise<CrawledPageContent | null> {
   try {
     await guardAdapterTargetUrl(url);
   } catch (error) {
@@ -76,7 +75,7 @@ async function crawlViaExternalService(url: string): Promise<CrawledPageContent 
   }
 
   try {
-    const response = await fetch(CRAWL4AI_API_URL, {
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, format: "markdown" }),
@@ -94,6 +93,12 @@ async function crawlViaExternalService(url: string): Promise<CrawledPageContent 
     };
 
     const finalUrl = payload.url ?? url;
+    try {
+      await guardAdapterTargetUrl(finalUrl);
+    } catch (error) {
+      return failedPageForUnsafeUrl(url, error, "crawl4ai");
+    }
+
     const html = payload.html ?? "";
     const meta = html ? extractPageMeta(html) : { title: payload.title ?? null, description: payload.description ?? null };
 

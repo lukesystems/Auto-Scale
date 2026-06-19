@@ -51,6 +51,11 @@ export const playwrightAdapter: CrawlAdapter = {
         const page = await browser.newPage();
         await page.goto(input.url, { waitUntil: "networkidle", timeout: 20_000 });
         const finalUrl = page.url();
+        try {
+          await guardAdapterTargetUrl(finalUrl);
+        } catch (error) {
+          return failedPageForUnsafeUrl(input.url, error, "playwright");
+        }
         const html = await page.content();
         const meta = extractPageMeta(html);
 
