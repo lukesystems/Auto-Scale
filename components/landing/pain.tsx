@@ -6,13 +6,13 @@ export function Pain() {
       <div className="container">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
-            You built the app.
+            You do not need more random content.
             <br />
-            <span className="text-muted-foreground">Nobody cares yet.</span>
+            <span className="text-muted-foreground">You need market evidence.</span>
           </h2>
           <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance">
-            Building software is no longer the bottleneck. AI tools made product creation faster and cheaper.
-            The new bottleneck is distribution — and most technical founders don&apos;t know where to start.
+            Product building is faster now. Distribution is still brutal. The founders who win do not just post more —
+            they study what the market already responds to and test from there.
           </p>
         </div>
 
@@ -21,12 +21,12 @@ export function Pain() {
             <div className="text-xs uppercase tracking-widest text-destructive font-semibold">Without AutoScale</div>
             <ul className="mt-5 space-y-3">
               {[
-                "You stare at a blank post editor every day",
-                "You copy random viral content with no context",
-                "You guess hashtags instead of analyzing signals",
-                "You burn out posting random things that don't convert",
-                "You can't tell what worked or why",
-                "You wonder if you should just hire an agency you can't afford",
+                "You guess what your audience cares about",
+                "You copy competitors without understanding the pattern",
+                "You treat likes as proof, even when they do not convert",
+                "You miss the shadow accounts and adjacent creators shaping the niche",
+                "You generate content before knowing what evidence supports it",
+                "You cannot tell which message deserves another test",
               ].map((line) => (
                 <li key={line} className="flex items-start gap-3 text-sm">
                   <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive/70" />
@@ -41,12 +41,12 @@ export function Pain() {
             <div className="text-xs uppercase tracking-widest text-primary font-semibold">With AutoScale</div>
             <ul className="mt-5 space-y-3">
               {[
-                "TrendWatch reverse-engineers your niche in minutes",
-                "Every post links to a proven pattern + hypothesis",
-                "Signal scoring filters noise from real transferable formats",
-                "Generate 30+ ideas, 20+ posts, all niche-specific",
-                "Quality Gate catches weak content before you ship it",
-                "Winners auto-spawn 10 variants. Losers get killed.",
+                "AutoBrief turns your URL into product intelligence",
+                "Competitor Intelligence maps public source signals around your niche",
+                "Pattern mining surfaces hooks, CTAs, formats, pains, and white space",
+                "TrendWatch turns evidence into experiments, not generic prompts",
+                "Quality Gate blocks weak content before it ships",
+                "Winners become variants. Weak tests get killed.",
               ].map((line) => (
                 <li key={line} className="flex items-start gap-3 text-sm">
                   <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
