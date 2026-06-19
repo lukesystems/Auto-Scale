@@ -782,6 +782,76 @@ export interface Database {
         Relationships: [];
       };
 
+      market_pattern_runs: {
+        Row: {
+          id: string;
+          project_id: string;
+          status: "running" | "success" | "partial" | "failed";
+          source_count: number;
+          pattern_count: number;
+          error: string | null;
+          metadata: Json;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["market_pattern_runs"]["Row"]> & {
+          project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_pattern_runs"]["Row"]>;
+        Relationships: [];
+      };
+
+      market_patterns: {
+        Row: {
+          id: string;
+          run_id: string;
+          project_id: string;
+          pattern_type: string;
+          label: string;
+          summary: string;
+          why_it_matters: string | null;
+          how_to_use: string | null;
+          support_count: number;
+          confidence: "low" | "medium" | "high";
+          source_ids: Json;
+          examples: Json;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["market_patterns"]["Row"]> & {
+          run_id: string;
+          project_id: string;
+          pattern_type: string;
+          label: string;
+          summary: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_patterns"]["Row"]>;
+        Relationships: [];
+      };
+
+      market_pattern_evidence: {
+        Row: {
+          id: string;
+          pattern_id: string;
+          source_id: string;
+          project_id: string;
+          source_url: string | null;
+          evidence_field: string;
+          evidence_text: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["market_pattern_evidence"]["Row"]> & {
+          pattern_id: string;
+          source_id: string;
+          project_id: string;
+          evidence_field: string;
+          evidence_text: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_pattern_evidence"]["Row"]>;
+        Relationships: [];
+      };
+
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

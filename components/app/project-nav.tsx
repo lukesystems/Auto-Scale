@@ -14,6 +14,7 @@ import {
   FlaskConical,
   Trophy,
   Network,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type PipelineStep } from "@/lib/project-pipeline";
@@ -27,14 +28,15 @@ const NAV_ITEMS = [
   { key: "overview", href: "", label: "Overview", icon: LayoutDashboard, step: 0 },
   { key: "brief", href: "/brief", label: "Brief", icon: FileText, step: 1 },
   { key: "sources", href: "/sources", label: "Sources", icon: Network, step: 2 },
-  { key: "trendwatch", href: "/trendwatch", label: "TrendWatch", icon: Brain, step: 3 },
-  { key: "ideas", href: "/ideas", label: "Ideas", icon: Lightbulb, step: 4 },
-  { key: "content", href: "/content", label: "Content", icon: Layers, step: 5 },
-  { key: "approval", href: "/approval", label: "Approval", icon: Shield, step: 6 },
-  { key: "exports", href: "/exports", label: "Exports", icon: Package, step: 7 },
-  { key: "schedule", href: "/schedule", label: "Schedule", icon: Send, step: 8 },
-  { key: "experiments", href: "/experiments", label: "Experiments", icon: FlaskConical, step: 9 },
-  { key: "winners", href: "/winners", label: "Winners", icon: Trophy, step: 10 },
+  { key: "patterns", href: "/patterns", label: "Patterns", icon: Sparkles, step: 3 },
+  { key: "trendwatch", href: "/trendwatch", label: "TrendWatch", icon: Brain, step: 4 },
+  { key: "ideas", href: "/ideas", label: "Ideas", icon: Lightbulb, step: 5 },
+  { key: "content", href: "/content", label: "Content", icon: Layers, step: 6 },
+  { key: "approval", href: "/approval", label: "Approval", icon: Shield, step: 7 },
+  { key: "exports", href: "/exports", label: "Exports", icon: Package, step: 8 },
+  { key: "schedule", href: "/schedule", label: "Schedule", icon: Send, step: 9 },
+  { key: "experiments", href: "/experiments", label: "Experiments", icon: FlaskConical, step: 10 },
+  { key: "winners", href: "/winners", label: "Winners", icon: Trophy, step: 11 },
 ] as const;
 
 export function ProjectNav({ projectId, pipeline = [] }: ProjectNavProps) {
