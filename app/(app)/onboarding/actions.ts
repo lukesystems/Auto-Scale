@@ -81,7 +81,7 @@ export async function fetchAndGenerateAutoBriefAction(input: {
   let fetchFailed = false;
 
   try {
-    siteFetch = await fetchSiteForAutoBrief({ url: normalizedUrl });
+    siteFetch = await fetchSiteForAutoBrief({ url: normalizedUrl, projectId });
     if (!siteFetch.ok) fetchFailed = true;
   } catch (err) {
     fetchFailed = true;
@@ -120,7 +120,13 @@ export async function fetchAndGenerateAutoBriefAction(input: {
       kind: "autobrief",
       provider: generated.provider,
       model: generated.model,
-      input: { productUrl: normalizedUrl, fetchFailed, pagesRead: siteFetch?.pages.length ?? 0 },
+      input: {
+        productUrl: normalizedUrl,
+        fetchFailed,
+        pagesRead: siteFetch?.pages.length ?? 0,
+        crawlId: siteFetch?.crawlId ?? null,
+        factsCount: siteFetch?.factsCount ?? 0,
+      },
       rawOutput: generated.raw,
       parsedOutput: generated.brief as never,
       status: "success",
@@ -145,7 +151,13 @@ export async function fetchAndGenerateAutoBriefAction(input: {
       kind: "autobrief",
       provider: isAIError(err) ? err.provider : "unknown",
       model: "unknown",
-      input: { productUrl: normalizedUrl, fetchFailed, pagesRead: siteFetch?.pages.length ?? 0 },
+      input: {
+        productUrl: normalizedUrl,
+        fetchFailed,
+        pagesRead: siteFetch?.pages.length ?? 0,
+        crawlId: siteFetch?.crawlId ?? null,
+        factsCount: siteFetch?.factsCount ?? 0,
+      },
       status: "failed",
       errorMessage,
     });

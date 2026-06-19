@@ -652,6 +652,136 @@ export interface Database {
         Relationships: [];
       };
 
+      product_site_crawls: {
+        Row: {
+          id: string;
+          project_id: string;
+          source_url: string;
+          status: "running" | "success" | "partial" | "failed";
+          primary_adapter: string;
+          fallback_adapters: Json;
+          pages_discovered: number;
+          pages_crawled: number;
+          pages_failed: number;
+          error: string | null;
+          metadata: Json;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["product_site_crawls"]["Row"]> & {
+          project_id: string;
+          source_url: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_site_crawls"]["Row"]>;
+        Relationships: [];
+      };
+
+      product_site_pages: {
+        Row: {
+          id: string;
+          crawl_id: string;
+          project_id: string;
+          url: string;
+          final_url: string | null;
+          page_type: string;
+          title: string | null;
+          description: string | null;
+          markdown: string | null;
+          body_text: string | null;
+          headings: Json;
+          ctas: Json;
+          adapter_used: string;
+          fetch_status: "pending" | "success" | "failed";
+          error: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["product_site_pages"]["Row"]> & {
+          crawl_id: string;
+          project_id: string;
+          url: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_site_pages"]["Row"]>;
+        Relationships: [];
+      };
+
+      product_site_facts: {
+        Row: {
+          id: string;
+          crawl_id: string;
+          page_id: string | null;
+          project_id: string;
+          fact_type: string;
+          fact_key: string | null;
+          fact_value: string;
+          confidence: "low" | "medium" | "high";
+          evidence_snippet: string | null;
+          source_url: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["product_site_facts"]["Row"]> & {
+          crawl_id: string;
+          project_id: string;
+          fact_type: string;
+          fact_value: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_site_facts"]["Row"]>;
+        Relationships: [];
+      };
+
+      source_discovery_runs: {
+        Row: {
+          id: string;
+          project_id: string;
+          status: "running" | "success" | "partial" | "failed";
+          queries: Json;
+          primary_adapter: string;
+          fallback_adapters: Json;
+          candidates_found: number;
+          error: string | null;
+          metadata: Json;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["source_discovery_runs"]["Row"]> & {
+          project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["source_discovery_runs"]["Row"]>;
+        Relationships: [];
+      };
+
+      source_candidates: {
+        Row: {
+          id: string;
+          discovery_run_id: string;
+          project_id: string;
+          url: string;
+          canonical_url: string | null;
+          title: string | null;
+          snippet: string | null;
+          source_type: string;
+          platform: string;
+          adapter: string;
+          discovery_query: string | null;
+          discovery_reason: string | null;
+          relevance_score: number;
+          enrich_status: "pending" | "enriched" | "failed" | "skipped";
+          review_status: "pending" | "accepted" | "rejected";
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["source_candidates"]["Row"]> & {
+          discovery_run_id: string;
+          project_id: string;
+          url: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["source_candidates"]["Row"]>;
+        Relationships: [];
+      };
+
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
