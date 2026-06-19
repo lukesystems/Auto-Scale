@@ -11,21 +11,21 @@ export function FinalCTA() {
       <div className="container">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-display text-4xl md:text-6xl font-semibold tracking-tight text-balance leading-[0.95]">
-            Stop guessing what to post.
+            Stop guessing the market.
             <br />
             <span className="text-gradient bg-[length:200%_auto] animate-gradient-shift">
-              Start compounding what works.
+              Start testing from evidence.
             </span>
           </h2>
           <p className="mt-6 text-base md:text-lg text-muted-foreground text-balance max-w-2xl mx-auto">
-            Build your AutoScale project, run TrendWatch on your niche, and have your first 30-day content experiment
-            batch ready to schedule.
+            Paste your product URL, build your product memory, map the market, and generate your first source-backed
+            growth experiments.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
             <Button asChild size="xl" variant="glow">
               <Link href="/auth/sign-up">
-                Build my growth engine
+                Analyze my product
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
