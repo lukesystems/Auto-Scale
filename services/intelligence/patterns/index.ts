@@ -1,6 +1,6 @@
 export { runPatternMining } from "./run-pattern-mining";
 export type { RunPatternMiningInput, RunPatternMiningResult } from "./run-pattern-mining";
-export { loadPatternMiningContext, sourceHasMineableSignals } from "./load-pattern-context";
+export { loadPatternMiningContext, sourceHasMineableSignals, countMineableSources } from "./load-pattern-context";
 export type { PatternMiningContext } from "./load-pattern-context";
 export { extractSourceSignals, extractSignalsFromSources } from "./extract-source-signals";
 export {

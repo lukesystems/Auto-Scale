@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { formatRelativeTime } from "@/lib/utils";
 import { RunPatternMiningButton } from "./run-pattern-mining-button";
+import { countMineableSources } from "@/services/intelligence/patterns/load-pattern-context";
 
 interface PageProps {
   params: { id: string };
@@ -25,12 +26,13 @@ const PATTERN_TYPE_LABELS: Record<string, string> = {
 };
 
 export default async function PatternsPage({ params }: PageProps) {
-  const [runs, patterns, evidence, sourceCount] = await Promise.all([
+  const [runs, latestRunData, sourceCount] = await Promise.all([
     loadRuns(params.id),
-    loadPatterns(params.id),
-    loadEvidence(params.id),
-    loadSourceCount(params.id),
+    loadLatestSuccessfulRunPatterns(params.id),
+    countMineableSources(params.id),
   ]);
+
+  const { latestRun, patterns, evidence } = latestRunData;
 
   const evidenceByPattern = new Map<string, typeof evidence>();
   for (const row of evidence) {
@@ -40,7 +42,7 @@ export default async function PatternsPage({ params }: PageProps) {
   }
 
   const grouped = groupPatternsByType(patterns);
-  const lastRun = runs[0];
+  const displayRun = latestRun ?? runs[0];
 
   return (
     <div className="container py-10 space-y-8">
@@ -70,22 +72,22 @@ export default async function PatternsPage({ params }: PageProps) {
         />
       ) : (
         <>
-          {lastRun && (
+          {displayRun && (
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="font-semibold tracking-tight">Last mining run</h3>
+                  <h3 className="font-semibold tracking-tight">Latest successful mining run</h3>
                   <p className="text-xs text-muted-foreground">
-                    {formatRelativeTime(lastRun.completed_at ?? lastRun.created_at)}
+                    {formatRelativeTime(displayRun.completed_at ?? displayRun.created_at)}
                   </p>
                 </div>
-                <Badge variant={lastRun.status === "success" ? "success" : lastRun.status === "failed" ? "destructive" : "secondary"}>
-                  {lastRun.status}
+                <Badge variant={displayRun.status === "success" ? "success" : displayRun.status === "failed" ? "destructive" : "secondary"}>
+                  {displayRun.status}
                 </Badge>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
-                <Stat label="Sources analyzed" value={String(lastRun.source_count)} />
-                <Stat label="Patterns found" value={String(lastRun.pattern_count)} />
+                <Stat label="Sources analyzed" value={String(displayRun.source_count)} />
+                <Stat label="Patterns found" value={String(displayRun.pattern_count)} />
                 <Stat label="Total runs" value={String(runs.length)} />
               </div>
             </div>
@@ -214,33 +216,47 @@ async function loadRuns(projectId: string) {
   return data ?? [];
 }
 
-async function loadPatterns(projectId: string) {
-  if (!isSupabaseConfigured()) return [];
+async function loadLatestSuccessfulRunPatterns(projectId: string) {
+  if (!isSupabaseConfigured()) {
+    return { latestRun: null, patterns: [], evidence: [] };
+  }
+
   const supabase = createSupabaseServerClient();
-  const { data } = await supabase
+
+  const { data: latestRun } = await supabase
+    .from("market_pattern_runs")
+    .select("id, status, source_count, pattern_count, created_at, completed_at")
+    .eq("project_id", projectId)
+    .eq("status", "success")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latestRun) {
+    return { latestRun: null, patterns: [], evidence: [] };
+  }
+
+  const { data: patterns } = await supabase
     .from("market_patterns")
     .select("*")
     .eq("project_id", projectId)
+    .eq("run_id", latestRun.id)
     .order("support_count", { ascending: false });
-  return data ?? [];
-}
 
-async function loadEvidence(projectId: string) {
-  if (!isSupabaseConfigured()) return [];
-  const supabase = createSupabaseServerClient();
-  const { data } = await supabase
+  const patternIds = (patterns ?? []).map((pattern) => pattern.id);
+  if (!patternIds.length) {
+    return { latestRun, patterns: [], evidence: [] };
+  }
+
+  const { data: evidence } = await supabase
     .from("market_pattern_evidence")
     .select("id, pattern_id, source_id, source_url, evidence_field, evidence_text")
-    .eq("project_id", projectId);
-  return data ?? [];
-}
+    .eq("project_id", projectId)
+    .in("pattern_id", patternIds);
 
-async function loadSourceCount(projectId: string) {
-  if (!isSupabaseConfigured()) return 0;
-  const supabase = createSupabaseServerClient();
-  const { count } = await supabase
-    .from("trendwatch_sources")
-    .select("id", { count: "exact", head: true })
-    .eq("project_id", projectId);
-  return count ?? 0;
+  return {
+    latestRun,
+    patterns: patterns ?? [],
+    evidence: evidence ?? [],
+  };
 }

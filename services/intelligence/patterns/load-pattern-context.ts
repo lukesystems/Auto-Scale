@@ -91,3 +91,8 @@ export async function loadPatternMiningContext(projectId: string): Promise<Patte
     sources: mineableSources,
   };
 }
+
+export async function countMineableSources(projectId: string): Promise<number> {
+  const context = await loadPatternMiningContext(projectId);
+  return context.sources.length;
+}
