@@ -1,40 +1,40 @@
-import { Eye, Wand2, Send, BarChart3, Repeat } from "lucide-react";
+import { BarChart3, Eye, Repeat, Search, Send, Wand2 } from "lucide-react";
 
 const STEPS = [
   {
     icon: Eye,
-    title: "TrendWatch",
-    subtitle: "Reverse-engineer what already works",
-    desc: "Analyze competitors, shadow accounts, partner accounts, and creator content. Classify formats, score signals, flag distortion risk, and surface transferable patterns specific to your niche.",
-    bullet: ["Competitor map", "Shadow accounts", "Hook extraction", "Signal scoring"],
+    title: "Product Intelligence",
+    subtitle: "Understand the founder's product first",
+    desc: "AutoBrief reads the product URL, extracts positioning, ICP, pain, offer, CTA, features, and missing context. The brief becomes the source of truth for everything else.",
+    bullet: ["URL brief", "ICP", "Pain map", "Positioning"],
+  },
+  {
+    icon: Search,
+    title: "Competitor Intelligence",
+    subtitle: "Discover public market signals",
+    desc: "AutoScale maps competitors, adjacent accounts, public sources, formats, hooks, CTAs, audience pain language, and market white space before generating content.",
+    bullet: ["Source map", "Competitors", "Shadow accounts", "White space"],
   },
   {
     icon: Wand2,
-    title: "Generate",
-    subtitle: "Turn proven patterns into experiments",
-    desc: "Every hook, idea, and post draft is linked to a TrendWatch source with a hypothesis and a metric to watch. No disconnected AI content. No generic vibes.",
-    bullet: ["30+ hooks", "Carousel scripts", "Captions", "CTA slides"],
+    title: "Experiment Generation",
+    subtitle: "Turn patterns into tests",
+    desc: "Every hook, idea, and post draft is linked to a source-backed insight with a hypothesis and a metric to watch. No disconnected AI content. No generic vibes.",
+    bullet: ["Hooks", "Scripts", "Carousels", "Hypotheses"],
   },
   {
     icon: Send,
-    title: "Distribute",
-    subtitle: "Schedule through Postiz or export",
-    desc: "Quality Gate first. Then push approved content directly to Postiz for multi-platform scheduling. Or grab a ZIP export with slides, captions, and a tracker for manual posting.",
-    bullet: ["Postiz scheduling", "ZIP export", "CSV / JSON", "Channel mapping"],
-  },
-  {
-    icon: BarChart3,
-    title: "Measure",
-    subtitle: "Every post is an experiment",
-    desc: "Track views, saves, save rate, shares, clicks, signups, and revenue. Manual or imported. Tag winners, neutrals, and losers with founder notes.",
-    bullet: ["Save rate", "CTR", "Signups", "Founder notes"],
+    title: "Distribution",
+    subtitle: "Approve, export, or schedule",
+    desc: "Quality Gate first. Then export approved content or schedule through Postiz. AutoScale keeps the strategy layer separate from the publishing pipe.",
+    bullet: ["Quality Gate", "Postiz", "ZIP export", "Tracker"],
   },
   {
     icon: Repeat,
     title: "Compound",
-    subtitle: "Winners spawn variants. Losers die.",
-    desc: "Compound Engine explains why a winner worked, generates 10 variants, builds next week's plan, and writes learnings into your project's memory.",
-    bullet: ["10 variants", "Weekly plan", "Learning memory", "Format remixing"],
+    subtitle: "Winners become new experiments",
+    desc: "Track signals, mark winners, diagnose why they worked, generate variants, and write learnings back into project memory.",
+    bullet: ["Metrics", "Winners", "Variants", "Memory"],
   },
 ];
 
@@ -44,13 +44,13 @@ export function Loop() {
       <div className="container">
         <div className="mx-auto max-w-3xl text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-background text-xs font-medium text-muted-foreground">
-            The Core Loop
+            The Intelligence Loop
           </div>
           <h2 className="mt-4 font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
-            Five layers. One compounding loop.
+            From product URL to source-backed growth experiments.
           </h2>
           <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance">
-            AutoScale isn&apos;t a content generator. It&apos;s a closed-loop system that gets smarter every week your project runs.
+            AutoScale is not a posting tool. It is a closed-loop intelligence system that gets sharper every time your project runs.
           </p>
         </div>
 
@@ -87,20 +87,18 @@ export function Loop() {
 
         <div className="mt-12 text-center">
           <div className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-5 py-2.5 font-mono text-xs">
-            <span className="text-muted-foreground">source</span>
+            <span className="text-muted-foreground">product</span>
+            <span className="text-primary">→</span>
+            <span className="text-muted-foreground">source map</span>
             <span className="text-primary">→</span>
             <span className="text-muted-foreground">insight</span>
             <span className="text-primary">→</span>
-            <span className="text-muted-foreground">hook</span>
+            <span className="text-muted-foreground">experiment</span>
             <span className="text-primary">→</span>
-            <span className="text-muted-foreground">post</span>
-            <span className="text-primary">→</span>
-            <span className="text-muted-foreground">metric</span>
-            <span className="text-primary">→</span>
-            <span className="font-semibold text-foreground">variant</span>
+            <span className="font-semibold text-foreground">winner</span>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Protected data chain. Every artifact traces back to a real market signal.
+            Protected evidence chain. Every serious claim should trace back to a source or be marked low confidence.
           </p>
         </div>
       </div>
