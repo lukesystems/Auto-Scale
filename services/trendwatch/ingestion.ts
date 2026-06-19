@@ -81,6 +81,33 @@ export async function isSafeHostname(hostname: string): Promise<boolean> {
   }
 }
 
+export class UnsafeUrlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnsafeUrlError";
+  }
+}
+
+/** Reject non-public HTTP(S) URLs before any adapter touches them. */
+export async function assertSafePublicHttpUrl(urlStr: string): Promise<URL> {
+  let url: URL;
+  try {
+    url = new URL(urlStr);
+  } catch {
+    throw new UnsafeUrlError(`Invalid URL: ${urlStr}`);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new UnsafeUrlError(`Rejected protocol: ${url.protocol}`);
+  }
+
+  if (!(await isSafeHostname(url.hostname))) {
+    throw new UnsafeUrlError(`SSRF prevention rejected hostname "${url.hostname}".`);
+  }
+
+  return url;
+}
+
 export function detectPlatform(url: string): string {
   const lower = url.toLowerCase();
   if (lower.includes("tiktok.com")) return "tiktok";

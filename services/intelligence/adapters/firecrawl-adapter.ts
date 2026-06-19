@@ -1,4 +1,5 @@
 import type { CrawlAdapter, CrawlPageInput, CrawledPageContent, SearchAdapter, SearchResult } from "../types";
+import { failedPageForUnsafeUrl, filterSafeResultUrls, guardAdapterTargetUrl } from "./guard-url";
 import {
   cleanText,
   extractBodyText,
@@ -19,6 +20,12 @@ export const firecrawlCrawlAdapter: CrawlAdapter = {
   },
 
   async crawlPage(input: CrawlPageInput): Promise<CrawledPageContent> {
+    try {
+      await guardAdapterTargetUrl(input.url);
+    } catch (error) {
+      return failedPageForUnsafeUrl(input.url, error, "firecrawl");
+    }
+
     if (!FIRECRAWL_API_KEY) {
       return failedPage(input.url, "FIRECRAWL_API_KEY is not configured.");
     }
@@ -46,9 +53,19 @@ export const firecrawlCrawlAdapter: CrawlAdapter = {
       const html = data?.html ?? "";
       const meta = html ? extractPageMeta(html) : { title: data?.metadata?.title ?? null, description: data?.metadata?.description ?? null };
 
+      let finalUrl = input.url;
+      if (data?.metadata?.sourceURL) {
+        try {
+          await guardAdapterTargetUrl(data.metadata.sourceURL);
+          finalUrl = data.metadata.sourceURL;
+        } catch {
+          return failedPage(input.url, "Firecrawl returned an unsafe redirect URL.");
+        }
+      }
+
       return {
         url: input.url,
-        finalUrl: data?.metadata?.sourceURL ?? input.url,
+        finalUrl,
         title: meta.title,
         description: meta.description,
         headings: html ? extractHeadings(html) : [],
@@ -96,14 +113,16 @@ export const firecrawlSearchAdapter: SearchAdapter = {
       data?: Array<{ url?: string; title?: string; description?: string }>;
     };
 
-    return (payload.data ?? [])
-      .filter((item) => item.url)
-      .map((item) => ({
-        url: item.url!,
-        title: item.title ?? null,
-        snippet: item.description ?? null,
-        publishedAt: null,
-      }));
+    return filterSafeResultUrls(
+      (payload.data ?? [])
+        .filter((item) => item.url)
+        .map((item) => ({
+          url: item.url!,
+          title: item.title ?? null,
+          snippet: item.description ?? null,
+          publishedAt: null,
+        }))
+    );
   },
 };
 

@@ -1,4 +1,5 @@
 import type { CrawlAdapter, CrawlPageInput, CrawledPageContent } from "../types";
+import { failedPageForUnsafeUrl, guardAdapterTargetUrl } from "./guard-url";
 
 const BROWSER_USE_API_URL = process.env.BROWSER_USE_API_URL?.trim() || null;
 
@@ -14,6 +15,12 @@ export const browserUseAdapter: CrawlAdapter = {
   },
 
   async crawlPage(input: CrawlPageInput): Promise<CrawledPageContent> {
+    try {
+      await guardAdapterTargetUrl(input.url);
+    } catch (error) {
+      return failedPageForUnsafeUrl(input.url, error, "browser-use");
+    }
+
     if (!BROWSER_USE_API_URL) {
       return failedPage(input.url, "BROWSER_USE_API_URL is not configured.");
     }
@@ -41,10 +48,20 @@ export const browserUseAdapter: CrawlAdapter = {
       };
 
       const bodyText = (payload.markdown ?? payload.text ?? "").slice(0, 12_000);
+      let finalUrl = input.url;
+
+      if (payload.url) {
+        try {
+          await guardAdapterTargetUrl(payload.url);
+          finalUrl = payload.url;
+        } catch {
+          return failedPage(input.url, "Browser-use returned an unsafe redirect URL.");
+        }
+      }
 
       return {
         url: input.url,
-        finalUrl: payload.url ?? input.url,
+        finalUrl,
         title: payload.title ?? null,
         description: null,
         headings: [],

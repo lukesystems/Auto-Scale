@@ -1,5 +1,6 @@
 import { safeFetchHtml } from "@/services/trendwatch/ingestion";
 import type { CrawlAdapter, CrawlPageInput, CrawledPageContent, DiscoveredLink } from "../types";
+import { failedPageForUnsafeUrl, guardAdapterTargetUrl } from "./guard-url";
 import {
   cleanText,
   decodeHtml,
@@ -32,6 +33,12 @@ export const crawl4aiAdapter: CrawlAdapter = {
   },
 
   async crawlPage(input: CrawlPageInput): Promise<CrawledPageContent> {
+    try {
+      await guardAdapterTargetUrl(input.url);
+    } catch (error) {
+      return failedPageForUnsafeUrl(input.url, error, "crawl4ai");
+    }
+
     if (CRAWL4AI_API_URL) {
       const external = await crawlViaExternalService(input.url);
       if (external) return external;
@@ -61,6 +68,12 @@ export const crawl4aiAdapter: CrawlAdapter = {
 
 async function crawlViaExternalService(url: string): Promise<CrawledPageContent | null> {
   if (!CRAWL4AI_API_URL) return null;
+
+  try {
+    await guardAdapterTargetUrl(url);
+  } catch (error) {
+    return failedPageForUnsafeUrl(url, error, "crawl4ai");
+  }
 
   try {
     const response = await fetch(CRAWL4AI_API_URL, {

@@ -1,4 +1,5 @@
 import type { CrawlAdapter, CrawlPageInput, CrawledPageContent } from "../types";
+import { failedPageForUnsafeUrl, guardAdapterTargetUrl } from "./guard-url";
 import {
   extractBodyText,
   extractCtas,
@@ -7,17 +8,25 @@ import {
   htmlToMarkdown,
 } from "./html-utils";
 
-const PLAYWRIGHT_ENABLED = process.env.PLAYWRIGHT_ENABLED === "1" || process.env.PLAYWRIGHT_ENABLED === "true";
+function isPlaywrightEnabled(): boolean {
+  return process.env.PLAYWRIGHT_ENABLED === "1" || process.env.PLAYWRIGHT_ENABLED === "true";
+}
 
 export const playwrightAdapter: CrawlAdapter = {
   name: "playwright",
 
   isAvailable() {
-    return PLAYWRIGHT_ENABLED;
+    return isPlaywrightEnabled();
   },
 
   async crawlPage(input: CrawlPageInput): Promise<CrawledPageContent> {
-    if (!PLAYWRIGHT_ENABLED) {
+    try {
+      await guardAdapterTargetUrl(input.url);
+    } catch (error) {
+      return failedPageForUnsafeUrl(input.url, error, "playwright");
+    }
+
+    if (!isPlaywrightEnabled()) {
       return {
         url: input.url,
         finalUrl: input.url,

@@ -3,6 +3,7 @@ import { crawl4aiAdapter } from "../adapters/crawl4ai-adapter";
 import { playwrightAdapter } from "../adapters/playwright-adapter";
 import { browserUseAdapter } from "../adapters/browser-use-adapter";
 import { firecrawlCrawlAdapter } from "../adapters/firecrawl-adapter";
+import { failedPageForUnsafeUrl, guardAdapterTargetUrl } from "../adapters/guard-url";
 import { needsBrowserRender } from "../adapters/html-utils";
 
 export interface ExtractPageInput {
@@ -13,6 +14,12 @@ export interface ExtractPageInput {
 }
 
 export async function extractPage(input: ExtractPageInput): Promise<CrawledPageContent> {
+  try {
+    await guardAdapterTargetUrl(input.url);
+  } catch (error) {
+    return failedPageForUnsafeUrl(input.url, error, "crawl4ai");
+  }
+
   let page = await crawl4aiAdapter.crawlPage({ url: input.url, reason: "primary" });
 
   const shouldFallback =

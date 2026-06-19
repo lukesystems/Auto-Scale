@@ -1,4 +1,5 @@
 import type { SearchAdapter, SearchResult } from "../types";
+import { filterSafeResultUrls } from "./guard-url";
 
 const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY?.trim() || null;
 
@@ -35,13 +36,15 @@ export const braveSearchAdapter: SearchAdapter = {
       web?: { results?: Array<{ url?: string; title?: string; description?: string }> };
     };
 
-    return (payload.web?.results ?? [])
-      .filter((item) => item.url)
-      .map((item) => ({
-        url: item.url!,
-        title: item.title ?? null,
-        snippet: item.description ?? null,
-        publishedAt: null,
-      }));
+    return filterSafeResultUrls(
+      (payload.web?.results ?? [])
+        .filter((item) => item.url)
+        .map((item) => ({
+          url: item.url!,
+          title: item.title ?? null,
+          snippet: item.description ?? null,
+          publishedAt: null,
+        }))
+    );
   },
 };

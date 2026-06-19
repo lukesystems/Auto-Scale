@@ -112,25 +112,29 @@ describe("V1.1 AutoBrief schema", () => {
 
 describe("V1.1 website fetch fallback", () => {
   it("marks fetch failure for manual fallback flow", async () => {
-    vi.mock("@/services/trendwatch/ingestion", () => ({
-      safeFetchHtml: vi.fn(async () => ({
-        ok: false,
-        url: "https://blocked.test",
-        finalUrl: "https://blocked.test",
-        html: null,
-        contentType: null,
-        error: "SSRF Prevention",
-      })),
-      safeFetchUrl: vi.fn(async () => ({
-        url: "https://blocked.test",
-        title: null,
-        description: null,
-        textSnippet: null,
-        platform: "other",
-        status: "failed",
-        error: "SSRF Prevention",
-      })),
-    }));
+    vi.mock("@/services/trendwatch/ingestion", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/services/trendwatch/ingestion")>();
+      return {
+        ...actual,
+        safeFetchHtml: vi.fn(async () => ({
+          ok: false,
+          url: "https://blocked.test",
+          finalUrl: "https://blocked.test",
+          html: null,
+          contentType: null,
+          error: "SSRF Prevention",
+        })),
+        safeFetchUrl: vi.fn(async () => ({
+          url: "https://blocked.test",
+          title: null,
+          description: null,
+          textSnippet: null,
+          platform: "other",
+          status: "failed",
+          error: "SSRF Prevention",
+        })),
+      };
+    });
 
     const { fetchSiteForAutoBrief } = await import("@/services/autobrief/fetch-site");
     const result = await fetchSiteForAutoBrief({ url: "https://blocked.test" });

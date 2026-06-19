@@ -1,4 +1,5 @@
 import type { SearchAdapter, SearchResult } from "../types";
+import { filterSafeResultUrls } from "./guard-url";
 
 const EXA_API_KEY = process.env.EXA_API_KEY?.trim() || null;
 
@@ -37,13 +38,15 @@ export const exaSearchAdapter: SearchAdapter = {
       results?: Array<{ url?: string; title?: string; text?: string; publishedDate?: string }>;
     };
 
-    return (payload.results ?? [])
-      .filter((item) => item.url)
-      .map((item) => ({
-        url: item.url!,
-        title: item.title ?? null,
-        snippet: item.text?.slice(0, 1000) ?? null,
-        publishedAt: item.publishedDate ?? null,
-      }));
+    return filterSafeResultUrls(
+      (payload.results ?? [])
+        .filter((item) => item.url)
+        .map((item) => ({
+          url: item.url!,
+          title: item.title ?? null,
+          snippet: item.text?.slice(0, 1000) ?? null,
+          publishedAt: item.publishedDate ?? null,
+        }))
+    );
   },
 };
