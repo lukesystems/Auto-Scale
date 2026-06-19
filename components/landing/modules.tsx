@@ -3,48 +3,48 @@ import { Brain, FileText, Filter, FlaskConical, Layers, Shield, Sparkles, Target
 const MODULES = [
   {
     icon: FileText,
-    name: "Product Brief Engine",
-    desc: "Turn your product URL + a few founder inputs into a structured growth brief with ICP, pain map, pillars, and positioning angles.",
+    name: "Product Intelligence Engine",
+    desc: "Turn a product URL into a structured brief with ICP, pain, offer, positioning, content pillars, and confidence notes.",
   },
   {
     icon: Brain,
-    name: "TrendWatch",
-    desc: "Market observation + competitor reverse-engineering + shadow account discovery. Not hashtag scraping.",
+    name: "Competitor Intelligence Engine",
+    desc: "Study the niche around competitors, adjacent accounts, public pages, repeated hooks, formats, audience pain, and market white space.",
   },
   {
     icon: Target,
     name: "Signal Scoring Engine",
-    desc: "Filters real transferable formats from follower-driven reach and entertainment-only virality.",
+    desc: "Filters transferable patterns from follower-driven reach, vanity engagement, and entertainment-only virality.",
   },
   {
     icon: Layers,
     name: "Content Conveyor",
-    desc: "Every output links to a TrendWatch insight, target pain, and a hypothesis. Carousels, scripts, captions, CTAs.",
+    desc: "Every output links to a source-backed insight, target pain, and hypothesis. Carousels, scripts, captions, and CTAs.",
   },
   {
     icon: Sparkles,
     name: "Visual Production",
-    desc: "Template-based, editable rendering. Text stays out of images. Brand stays consistent. AI doesn't bake in mistakes.",
+    desc: "Template-based, editable rendering. Text stays out of images. Brand stays consistent. AI does not bake in mistakes.",
   },
   {
     icon: Shield,
     name: "Quality Gate",
-    desc: "Hook clarity, claim believability, duplicate risk, source linkage, hypothesis present. Reject before approval.",
+    desc: "Hook clarity, claim believability, duplicate risk, source linkage, and hypothesis checks before approval.",
   },
   {
     icon: Filter,
-    name: "ViralOps",
-    desc: "Distribution execution layer. Postiz integration, channel mapping, gap-aware scheduling, manual export fallback.",
+    name: "Distribution Layer",
+    desc: "Postiz integration, channel mapping, gap-aware scheduling, and manual export fallback.",
   },
   {
     icon: FlaskConical,
     name: "Experiment Tracker",
-    desc: "Views, saves, save rate, shares, clicks, signups, revenue. Manual or imported. Every post is an experiment.",
+    desc: "Views, saves, save rate, shares, clicks, signups, revenue, and notes. Every post is treated as an experiment.",
   },
   {
     icon: TrendingUp,
     name: "Compound Engine",
-    desc: "Winner diagnosis, 10× variants, format remixing, weekly plan generation. Project memory that compounds.",
+    desc: "Winner diagnosis, variants, format remixing, weekly plan generation, and project memory that compounds.",
   },
 ];
 
@@ -57,11 +57,11 @@ export function Modules() {
             Inside AutoScale
           </div>
           <h2 className="mt-4 font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
-            Nine modules. One operating system.
+            Nine modules. One intelligence system.
           </h2>
           <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance">
-            Not a single AI prompt. Each module owns a part of the loop, validates structured outputs, and protects the
-            chain from source to variant.
+            Not a single prompt. Each module owns part of the chain, validates structured output, and protects the path
+            from product context to winner variants.
           </p>
         </div>
 
