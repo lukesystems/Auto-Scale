@@ -1,18 +1,24 @@
 import type { Json } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { MinedPattern } from "./schema";
+import type { PatternScore } from "../scoring/schema";
+
+export interface PatternWithScores {
+  pattern: MinedPattern;
+  scores: PatternScore;
+}
 
 export async function savePatterns(input: {
   runId: string;
   projectId: string;
-  patterns: MinedPattern[];
+  patterns: PatternWithScores[];
 }): Promise<string[]> {
   if (!input.patterns.length) return [];
 
   const supabase = createSupabaseServerClient();
   const patternIds: string[] = [];
 
-  for (const pattern of input.patterns) {
+  for (const { pattern, scores } of input.patterns) {
     if (!pattern.evidence.length) continue;
 
     const { data: savedPattern, error } = await supabase
@@ -29,6 +35,10 @@ export async function savePatterns(input: {
         confidence: pattern.confidence,
         source_ids: pattern.sourceIds as Json,
         examples: pattern.examples as Json,
+        strength_score: scores.strengthScore,
+        transferability_score: scores.transferabilityScore,
+        signal_confidence: scores.signalConfidence,
+        score_reasons: scores.scoreReasons as Json,
         metadata: {} as Json,
       })
       .select("id")
@@ -52,6 +62,26 @@ export async function savePatterns(input: {
     );
 
     if (evidenceError) throw new Error(evidenceError.message);
+
+    if (scores.sourceScores.length) {
+      const { error: sourceScoreError } = await supabase.from("market_pattern_source_scores").insert(
+        scores.sourceScores.map((sourceScore) => ({
+          pattern_id: savedPattern.id,
+          source_id: sourceScore.sourceId,
+          project_id: input.projectId,
+          relevance: sourceScore.relevance,
+          format_transferability: sourceScore.formatTransferability,
+          conversion_intent: sourceScore.conversionIntent,
+          account_fit: sourceScore.accountFit,
+          signal_score: sourceScore.signalScore,
+          confidence_score: sourceScore.confidenceScore,
+          distortion_risk: sourceScore.distortionRisk,
+          reasons: sourceScore.reasons as Json,
+        }))
+      );
+
+      if (sourceScoreError) throw new Error(sourceScoreError.message);
+    }
   }
 
   return patternIds;

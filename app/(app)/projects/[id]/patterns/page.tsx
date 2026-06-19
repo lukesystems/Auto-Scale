@@ -7,6 +7,11 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { formatRelativeTime } from "@/lib/utils";
 import { RunPatternMiningButton } from "./run-pattern-mining-button";
 import { countMineableSources } from "@/services/intelligence/patterns/load-pattern-context";
+import {
+  formatScorePercent,
+  loadLatestSuccessfulRunPatterns,
+  scoreBadgeVariant,
+} from "@/services/intelligence/patterns/load-latest-patterns";
 
 interface PageProps {
   params: { id: string };
@@ -32,13 +37,20 @@ export default async function PatternsPage({ params }: PageProps) {
     countMineableSources(params.id),
   ]);
 
-  const { latestRun, patterns, evidence } = latestRunData;
+  const { latestRun, patterns, evidence, sourceScores } = latestRunData;
 
   const evidenceByPattern = new Map<string, typeof evidence>();
   for (const row of evidence) {
     const list = evidenceByPattern.get(row.pattern_id) ?? [];
     list.push(row);
     evidenceByPattern.set(row.pattern_id, list);
+  }
+
+  const sourceScoresByPattern = new Map<string, typeof sourceScores>();
+  for (const row of sourceScores) {
+    const list = sourceScoresByPattern.get(row.pattern_id) ?? [];
+    list.push(row);
+    sourceScoresByPattern.set(row.pattern_id, list);
   }
 
   const grouped = groupPatternsByType(patterns);
@@ -48,7 +60,7 @@ export default async function PatternsPage({ params }: PageProps) {
     <div className="container py-10 space-y-8">
       <PageHeader
         title="Market Patterns"
-        description="Repeated hooks, pains, angles, formats, and CTAs mined from your accepted TrendWatch sources — with evidence."
+        description="Repeated hooks, pains, angles, formats, and CTAs mined from your accepted TrendWatch sources — with evidence and signal scores."
         actions={<RunPatternMiningButton projectId={params.id} disabled={sourceCount === 0} />}
       />
 
@@ -90,6 +102,11 @@ export default async function PatternsPage({ params }: PageProps) {
                 <Stat label="Patterns found" value={String(displayRun.pattern_count)} />
                 <Stat label="Total runs" value={String(runs.length)} />
               </div>
+              <div className="mt-4">
+                <Link href={`/projects/${params.id}/signals`} className="text-sm text-primary hover:underline">
+                  View ranked signal priorities →
+                </Link>
+              </div>
             </div>
           )}
 
@@ -101,6 +118,9 @@ export default async function PatternsPage({ params }: PageProps) {
               <div className="grid gap-4 lg:grid-cols-2">
                 {items.map((pattern) => {
                   const rows = evidenceByPattern.get(pattern.id) ?? [];
+                  const scores = sourceScoresByPattern.get(pattern.id) ?? [];
+                  const scoresBySource = new Map(scores.map((score) => [score.source_id, score]));
+
                   return (
                     <article key={pattern.id} className="rounded-xl border border-border bg-card p-5 space-y-3">
                       <div className="flex items-start justify-between gap-3">
@@ -118,6 +138,17 @@ export default async function PatternsPage({ params }: PageProps) {
                               }
                             >
                               {pattern.confidence}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant={scoreBadgeVariant(pattern.strength_score ?? 0)}>
+                              Strength {formatScorePercent(pattern.strength_score)}
+                            </Badge>
+                            <Badge variant={scoreBadgeVariant(pattern.transferability_score ?? 0)}>
+                              Transferability {formatScorePercent(pattern.transferability_score)}
+                            </Badge>
+                            <Badge variant={scoreBadgeVariant(pattern.signal_confidence ?? 0)}>
+                              Confidence {formatScorePercent(pattern.signal_confidence)}
                             </Badge>
                           </div>
                           <h4 className="mt-2 text-base font-semibold leading-snug">{pattern.label}</h4>
@@ -156,22 +187,37 @@ export default async function PatternsPage({ params }: PageProps) {
                       <div>
                         <p className="text-xs font-medium text-muted-foreground">Evidence ({rows.length})</p>
                         <ul className="mt-2 space-y-2">
-                          {rows.slice(0, 4).map((row) => (
-                            <li key={row.id} className="rounded-lg border border-border/70 bg-background/50 p-3 text-sm">
-                              <div className="text-xs text-muted-foreground">{row.evidence_field}</div>
-                              <p className="mt-1 text-foreground/85">{row.evidence_text}</p>
-                              {row.source_url && (
-                                <a
-                                  href={row.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                >
-                                  View source <ExternalLink className="h-3 w-3" />
-                                </a>
-                              )}
-                            </li>
-                          ))}
+                          {rows.slice(0, 4).map((row) => {
+                            const sourceScore = scoresBySource.get(row.source_id);
+                            return (
+                              <li key={row.id} className="rounded-lg border border-border/70 bg-background/50 p-3 text-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="text-xs text-muted-foreground">{row.evidence_field}</div>
+                                  {sourceScore && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      Source signal {formatScorePercent(sourceScore.signal_score)}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="mt-1 text-foreground/85">{row.evidence_text}</p>
+                                {sourceScore && (
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Distortion risk: {sourceScore.distortion_risk}
+                                  </p>
+                                )}
+                                {row.source_url && (
+                                  <a
+                                    href={row.source_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  >
+                                    View source <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     </article>
@@ -214,49 +260,4 @@ async function loadRuns(projectId: string) {
     .order("created_at", { ascending: false })
     .limit(5);
   return data ?? [];
-}
-
-async function loadLatestSuccessfulRunPatterns(projectId: string) {
-  if (!isSupabaseConfigured()) {
-    return { latestRun: null, patterns: [], evidence: [] };
-  }
-
-  const supabase = createSupabaseServerClient();
-
-  const { data: latestRun } = await supabase
-    .from("market_pattern_runs")
-    .select("id, status, source_count, pattern_count, created_at, completed_at")
-    .eq("project_id", projectId)
-    .eq("status", "success")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!latestRun) {
-    return { latestRun: null, patterns: [], evidence: [] };
-  }
-
-  const { data: patterns } = await supabase
-    .from("market_patterns")
-    .select("*")
-    .eq("project_id", projectId)
-    .eq("run_id", latestRun.id)
-    .order("support_count", { ascending: false });
-
-  const patternIds = (patterns ?? []).map((pattern) => pattern.id);
-  if (!patternIds.length) {
-    return { latestRun, patterns: [], evidence: [] };
-  }
-
-  const { data: evidence } = await supabase
-    .from("market_pattern_evidence")
-    .select("id, pattern_id, source_id, source_url, evidence_field, evidence_text")
-    .eq("project_id", projectId)
-    .in("pattern_id", patternIds);
-
-  return {
-    latestRun,
-    patterns: patterns ?? [],
-    evidence: evidence ?? [],
-  };
 }

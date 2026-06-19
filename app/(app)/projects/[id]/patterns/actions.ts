@@ -40,6 +40,7 @@ export async function runPatternMiningAction(projectId: string): Promise<Pattern
     });
 
     revalidatePath(`/projects/${parsed.data}/patterns`);
+    revalidatePath(`/projects/${parsed.data}/signals`);
 
     if (!result.ok) return { ok: false, error: result.error ?? "Pattern mining failed." };
     return {

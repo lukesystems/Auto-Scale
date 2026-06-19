@@ -8,6 +8,7 @@ import {
 import { savePatternRun } from "./save-pattern-run";
 import { savePatterns } from "./save-patterns";
 import type { MinedPattern } from "./schema";
+import { scorePatterns } from "../scoring/score-patterns";
 
 export interface RunPatternMiningInput {
   projectId: string;
@@ -61,6 +62,10 @@ export async function runPatternMining(input: RunPatternMiningInput): Promise<Ru
   const groups = groupSignalsDeterministically(buckets);
   const clustered = await clusterPatterns({ groups, context });
   const patterns = filterPatternsWithEvidence(clustered.patterns);
+  const scoredPatterns = scorePatterns(patterns, context.sources, context).map((scored) => ({
+    pattern: patterns[scored.patternIndex],
+    scores: scored.scores,
+  }));
 
   if (!patterns.length) {
     await savePatternRun({
@@ -86,7 +91,7 @@ export async function runPatternMining(input: RunPatternMiningInput): Promise<Ru
   }
 
   try {
-    await savePatterns({ runId, projectId: input.projectId, patterns });
+    await savePatterns({ runId, projectId: input.projectId, patterns: scoredPatterns });
   } catch (error) {
     await savePatternRun({
       runId,

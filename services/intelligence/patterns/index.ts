@@ -15,4 +15,6 @@ export {
   MinedPatternSchema,
   PatternConsolidationSchema,
 } from "./schema";
+export { loadLatestSuccessfulRunPatterns, formatScorePercent, scoreBadgeVariant } from "./load-latest-patterns";
+export type { LatestPatternRunData } from "./load-latest-patterns";
 export type { MinedPattern, PatternType, PatternSignalGroup, SourceSignalBucket } from "./schema";

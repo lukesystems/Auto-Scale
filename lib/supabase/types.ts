@@ -816,6 +816,10 @@ export interface Database {
           confidence: "low" | "medium" | "high";
           source_ids: Json;
           examples: Json;
+          strength_score: number;
+          transferability_score: number;
+          signal_confidence: number;
+          score_reasons: Json;
           metadata: Json;
           created_at: string;
         };
@@ -849,6 +853,31 @@ export interface Database {
           evidence_text: string;
         };
         Update: Partial<Database["public"]["Tables"]["market_pattern_evidence"]["Row"]>;
+        Relationships: [];
+      };
+
+      market_pattern_source_scores: {
+        Row: {
+          id: string;
+          pattern_id: string;
+          source_id: string;
+          project_id: string;
+          relevance: number | null;
+          format_transferability: number | null;
+          conversion_intent: number | null;
+          account_fit: number | null;
+          signal_score: number;
+          confidence_score: number;
+          distortion_risk: "low" | "medium" | "high";
+          reasons: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["market_pattern_source_scores"]["Row"]> & {
+          pattern_id: string;
+          source_id: string;
+          project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_pattern_source_scores"]["Row"]>;
         Relationships: [];
       };
 
