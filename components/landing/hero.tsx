@@ -16,37 +16,37 @@ export function Hero() {
           <div className="inline-flex">
             <Badge variant="outline" className="px-3 py-1.5 text-xs font-medium border-primary/30 bg-primary/5 text-primary">
               <Sparkles className="h-3 w-3" />
-              The AI growth operating system for builders
+              Competitor intelligence for founders who ship
             </Badge>
           </div>
 
           <h1 className="mt-6 font-display text-5xl md:text-7xl lg:text-8xl font-semibold tracking-tight text-balance leading-[0.95]">
-            Scale distribution,
+            Paste your startup URL.
             <br />
             <span className="text-gradient bg-[length:200%_auto] animate-gradient-shift">
-              not servers.
+              See what to test next.
             </span>
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            AutoScale reverse-engineers what already works in your niche, turns proven formats into content experiments,
-            schedules distribution, tracks performance, and compounds winners into repeatable growth.
+            AutoScale reads your product, builds a source-backed market map, studies competitor patterns, and turns the
+            strongest signals into growth experiments you can ship and measure.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
             <Button asChild size="xl" variant="glow" className="w-full sm:w-auto">
               <Link href="/auth/sign-up">
-                Build my growth engine
+                Analyze my product
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button asChild size="xl" variant="outline" className="w-full sm:w-auto">
-              <Link href="#loop">See how it works</Link>
+              <Link href="#loop">See the intelligence loop</Link>
             </Button>
           </div>
 
           <p className="mt-6 text-xs text-muted-foreground">
-            For technical founders who can build but can&apos;t get attention.
+            For technical founders who can build but can&apos;t consistently get attention.
             <span className="mx-2 text-border">•</span>
             No marketing degree required.
           </p>
@@ -63,11 +63,11 @@ export function Hero() {
 
 function HeroLoopVisual() {
   const steps = [
-    { label: "TrendWatch", desc: "Find what already works", color: "from-blue-500/20 to-blue-500/5" },
-    { label: "Generate", desc: "Turn patterns into experiments", color: "from-purple-500/20 to-purple-500/5" },
-    { label: "Distribute", desc: "Schedule through Postiz", color: "from-pink-500/20 to-pink-500/5" },
-    { label: "Measure", desc: "Track every signal", color: "from-amber-500/20 to-amber-500/5" },
-    { label: "Compound", desc: "Variants from winners", color: "from-primary/20 to-primary/5" },
+    { label: "Product Intel", desc: "Understand the URL", color: "from-blue-500/20 to-blue-500/5" },
+    { label: "Competitors", desc: "Map public signals", color: "from-purple-500/20 to-purple-500/5" },
+    { label: "Patterns", desc: "Find hooks and formats", color: "from-pink-500/20 to-pink-500/5" },
+    { label: "Experiments", desc: "Generate tests", color: "from-amber-500/20 to-amber-500/5" },
+    { label: "Compound", desc: "Repeat winners", color: "from-primary/20 to-primary/5" },
   ];
 
   return (
@@ -81,7 +81,7 @@ function HeroLoopVisual() {
             <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
           </div>
-          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscale.app / projects / acme-saas</div>
+          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscale.app / intelligence / acme-saas</div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 pt-6">
@@ -105,9 +105,9 @@ function HeroLoopVisual() {
         </div>
 
         <div className="mt-6 pt-6 border-t border-border/60 grid grid-cols-3 gap-4">
-          <Metric label="Sources analyzed" value="247" trend="+18 this week" />
-          <Metric label="Posts generated" value="38" trend="12 approved" />
-          <Metric label="Winner rate" value="22%" trend="+4.2pp" />
+          <Metric label="Sources mapped" value="247" trend="18 new signals" />
+          <Metric label="Patterns found" value="38" trend="12 high-fit" />
+          <Metric label="Tests ready" value="30" trend="source-backed" />
         </div>
       </div>
     </div>
