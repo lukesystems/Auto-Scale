@@ -10,7 +10,7 @@ import { fetchSiteForAutoBrief, normalizeProductUrl, type SiteFetchOutput } from
 import { generateAutoBrief } from "@/services/autobrief/generate";
 import { AutoBriefSchema, LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
 import { createBriefGeneratingProject, createProjectFromAutoBrief } from "@/services/autobrief/create-project";
-import { mapAutoBriefError, isAIError, isProviderSetupError } from "@/services/autobrief/map-error";
+import { mapAutoBriefError, isAIError } from "@/services/autobrief/map-error";
 import { logAIRun } from "@/services/ai/logger";
 
 const ProviderModeSchema = z.enum(["managed", "byok"]);
@@ -47,9 +47,6 @@ export async function saveProviderModeAction(mode: ProviderMode): Promise<Onboar
 
 export async function fetchAndGenerateAutoBriefAction(input: {
   productUrl: string;
-  manualProductName?: string;
-  manualDescription?: string;
-  skipFetch?: boolean;
 }): Promise<OnboardingActionResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
 
@@ -74,7 +71,6 @@ export async function fetchAndGenerateAutoBriefAction(input: {
     const project = await createBriefGeneratingProject({
       userId: user.id,
       productUrl: normalizedUrl,
-      productName: input.manualProductName,
     });
     projectId = project.projectId;
   } catch (err) {
@@ -84,39 +80,27 @@ export async function fetchAndGenerateAutoBriefAction(input: {
   let siteFetch: SiteFetchOutput | null = null;
   let fetchFailed = false;
 
-  if (!input.skipFetch) {
-    try {
-      siteFetch = await fetchSiteForAutoBrief({ url: normalizedUrl });
-      if (!siteFetch.ok) fetchFailed = true;
-    } catch (err) {
-      fetchFailed = true;
-      siteFetch = {
-        ok: false,
-        url: normalizedUrl,
-        finalUrl: null,
-        title: null,
-        description: null,
-        textSnippet: null,
-        pages: [],
-        error: err instanceof Error ? err.message : "Website fetch failed.",
-      };
-    }
+  try {
+    siteFetch = await fetchSiteForAutoBrief({ url: normalizedUrl });
+    if (!siteFetch.ok) fetchFailed = true;
+  } catch (err) {
+    fetchFailed = true;
+    siteFetch = {
+      ok: false,
+      url: normalizedUrl,
+      finalUrl: null,
+      title: null,
+      description: null,
+      textSnippet: null,
+      pages: [],
+      error: err instanceof Error ? err.message : "Website fetch failed.",
+    };
   }
 
-  const hasManualFallback = Boolean(input.manualDescription?.trim() || input.manualProductName?.trim());
-  if (input.skipFetch && !hasManualFallback) {
-    const error = "Paste homepage copy or describe your product before using manual entry.";
-    await supabase
-      .from("projects")
-      .update({ status: "brief_failed", description: error })
-      .eq("id", projectId);
-    return { ok: false, projectId, error };
-  }
-
-  if (fetchFailed && !hasManualFallback) {
+  if (fetchFailed) {
     const error = siteFetch?.error
-      ? `We could not read this website: ${siteFetch.error}. Paste your homepage copy or describe your product manually.`
-      : "We could not read this website. Paste your homepage copy or describe your product manually.";
+      ? `We could not read this website: ${siteFetch.error}. Check the URL and try again.`
+      : "We could not read this website. Check the URL and try again.";
     await supabase
       .from("projects")
       .update({ status: "brief_failed", description: error })
@@ -128,8 +112,6 @@ export async function fetchAndGenerateAutoBriefAction(input: {
     const generated = await generateAutoBrief({
       productUrl: normalizedUrl,
       siteFetch,
-      manualProductName: input.manualProductName,
-      manualDescription: input.manualDescription,
     });
 
     await logAIRun({
@@ -172,14 +154,6 @@ export async function fetchAndGenerateAutoBriefAction(input: {
       .from("projects")
       .update({ status: "brief_failed", description: errorMessage })
       .eq("id", projectId);
-
-    if (fetchFailed && !isProviderSetupError(err)) {
-      return {
-        ok: false,
-        projectId,
-        error: `${errorMessage} Website fetch failed; paste homepage copy or describe your product manually.`,
-      };
-    }
 
     return { ok: false, projectId, error: errorMessage };
   }
@@ -224,22 +198,3 @@ export async function confirmAutoBriefAction(input: {
   }
 }
 
-export async function skipOnboardingAction(): Promise<never> {
-  if (!isSupabaseConfigured()) redirect("/projects");
-
-  const supabase = createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/sign-in");
-
-  await supabase.from("user_settings").upsert(
-    {
-      owner_id: user.id,
-      onboarding_completed: true,
-    },
-    { onConflict: "owner_id" }
-  );
-
-  redirect("/projects/new");
-}

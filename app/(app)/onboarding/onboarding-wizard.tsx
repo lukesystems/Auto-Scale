@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { AlertTriangle, Globe, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Globe, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import type { ProviderMode } from "@/lib/provider-mode";
 import type { AutoBrief } from "@/services/autobrief/schema";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
-import { confirmAutoBriefAction, fetchAndGenerateAutoBriefAction, skipOnboardingAction } from "./actions";
+import { confirmAutoBriefAction, fetchAndGenerateAutoBriefAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,32 +17,64 @@ import { cn } from "@/lib/utils";
 type Step = "url" | "generating" | "review" | "error";
 const GENERATION_TIMEOUT_MS = 120_000;
 
+const GENERATION_STEPS = [
+  {
+    label: "Reading your website",
+    detail: "Scanning pages and extracting product signals from your site.",
+  },
+  {
+    label: "Understanding your product",
+    detail: "Mapping features, audience, and positioning from what we found.",
+  },
+  {
+    label: "Researching competitors & market",
+    detail: "Identifying alternatives, category context, and positioning gaps.",
+  },
+  {
+    label: "Thinking through video & content strategies",
+    detail: "Exploring hooks, angles, platforms, and distribution opportunities.",
+  },
+  {
+    label: "Building your growth brief",
+    detail: "Structuring findings into an editable product brief.",
+  },
+] as const;
+
+const PROGRESS_ADVANCE_MS = [0, 8_000, 22_000, 40_000, 58_000];
+
 export function OnboardingWizard({ initialProviderMode }: { initialProviderMode: ProviderMode }) {
   const [step, setStep] = useState<Step>("url");
   const [providerMode] = useState<ProviderMode>(initialProviderMode);
   const [productUrl, setProductUrl] = useState("");
-  const [manualName, setManualName] = useState("");
-  const [manualDescription, setManualDescription] = useState("");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [fetchFailed, setFetchFailed] = useState(false);
   const [lowConfidence, setLowConfidence] = useState(false);
   const [brief, setBrief] = useState<AutoBrief | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [slowGenerationHint, setSlowGenerationHint] = useState(false);
+  const [progressIndex, setProgressIndex] = useState(0);
   const [pending, startTransition] = useTransition();
   const generationIdRef = useRef(0);
 
   useEffect(() => {
     if (step !== "generating") {
       setSlowGenerationHint(false);
+      setProgressIndex(0);
       return;
     }
 
-    const timer = setTimeout(() => setSlowGenerationHint(true), 45_000);
-    return () => clearTimeout(timer);
+    const slowTimer = setTimeout(() => setSlowGenerationHint(true), 45_000);
+    const advanceTimers = PROGRESS_ADVANCE_MS.map((delay, index) =>
+      setTimeout(() => setProgressIndex(index), delay)
+    );
+
+    return () => {
+      clearTimeout(slowTimer);
+      advanceTimers.forEach(clearTimeout);
+    };
   }, [step]);
 
-  function onGenerate(skipFetch = false) {
+  function onGenerate() {
     if (!productUrl.trim()) {
       toast.error("Paste your product URL first.");
       return;
@@ -56,12 +88,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
       let result: Awaited<ReturnType<typeof fetchAndGenerateAutoBriefAction>>;
       try {
         result = await withTimeout(
-          fetchAndGenerateAutoBriefAction({
-            productUrl,
-            manualProductName: manualName || undefined,
-            manualDescription: manualDescription || undefined,
-            skipFetch,
-          }),
+          fetchAndGenerateAutoBriefAction({ productUrl }),
           GENERATION_TIMEOUT_MS
         );
       } catch (err) {
@@ -114,11 +141,6 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
   if (step === "url") {
     return (
       <div className="space-y-5">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Globe className="h-4 w-4" />
-          Loop 1 is intentionally narrow: URL in, editable product brief out.
-        </div>
-
         <div className="space-y-1.5">
           <Label htmlFor="product_url">Product URL</Label>
           <Input
@@ -126,56 +148,20 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
             value={productUrl}
             onChange={(e) => setProductUrl(e.target.value)}
             placeholder="https://yourproduct.com"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !pending) onGenerate();
+            }}
           />
           <p className="text-xs text-muted-foreground">
-            AutoScale reads your website and drafts product understanding, market guesses, and distribution context.
+            AutoScale reads your website, researches your market, and drafts product understanding plus distribution context.
           </p>
         </div>
 
-        {fetchFailed && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-            <p className="font-medium text-foreground">We could not read this page properly.</p>
-            <p className="mt-1 text-muted-foreground">
-              Paste your homepage copy or product description below, then generate from manual context.
-            </p>
-          </div>
-        )}
-
-        <details className="rounded-lg border border-border bg-background/60 p-4">
-          <summary className="cursor-pointer text-sm font-medium">Advanced context / manual fallback</summary>
-          <div className="mt-4 grid gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="manual_name">Product name</Label>
-              <Input id="manual_name" value={manualName} onChange={(e) => setManualName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="manual_description">Homepage copy or product description</Label>
-              <Textarea
-                id="manual_description"
-                value={manualDescription}
-                onChange={(e) => setManualDescription(e.target.value)}
-                rows={5}
-                placeholder="Paste homepage copy here if the site cannot be read."
-              />
-            </div>
-          </div>
-        </details>
-
-        <div className="flex justify-between pt-2 gap-2 flex-wrap">
-          <Button type="button" variant="ghost" onClick={() => startTransition(() => skipOnboardingAction())}>
-            Skip for now
+        <div className="flex justify-end pt-2">
+          <Button type="button" disabled={pending} onClick={onGenerate}>
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Generate Brief
           </Button>
-          <div className="flex gap-2">
-            {fetchFailed && (
-              <Button type="button" variant="secondary" disabled={pending} onClick={() => onGenerate(true)}>
-                Use manual entry
-              </Button>
-            )}
-            <Button type="button" disabled={pending} onClick={() => onGenerate(false)}>
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate Brief
-            </Button>
-          </div>
         </div>
       </div>
     );
@@ -183,28 +169,63 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
 
   if (step === "generating") {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="font-medium">Generating your editable product brief...</p>
-        <ul className="text-sm text-muted-foreground space-y-1 text-left">
-          <li>Reading website</li>
-          <li>Extracting product details</li>
-          <li>Identifying audience</li>
-          <li>Mapping niche and positioning</li>
-          <li>Finding content angles</li>
-          <li>Preparing editable brief</li>
-        </ul>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          This can take 20-60 seconds depending on the model and website.
+      <div className="py-8 space-y-6">
+        <div className="text-center space-y-2">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <Globe className="h-6 w-6 text-primary animate-pulse" />
+          </div>
+          <p className="font-medium text-lg">Analyzing your product...</p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            AutoScale is reading your site, researching competitors, and thinking through content strategies in real time.
+          </p>
+        </div>
+
+        <ol className="space-y-3 max-w-lg mx-auto">
+          {GENERATION_STEPS.map((item, index) => {
+            const isComplete = index < progressIndex;
+            const isActive = index === progressIndex;
+            const isPending = index > progressIndex;
+
+            return (
+              <li
+                key={item.label}
+                className={cn(
+                  "rounded-lg border p-4 transition-all duration-500",
+                  isActive && "border-primary/40 bg-primary/5 shadow-sm",
+                  isComplete && "border-border/60 bg-background/40",
+                  isPending && "border-border/40 bg-background/20 opacity-60"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">
+                    {isComplete ? (
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                    ) : isActive ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    ) : (
+                      <div className="h-5 w-5 rounded-full border-2 border-muted-foreground/30" />
+                    )}
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className={cn("text-sm font-medium", isActive && "text-foreground")}>{item.label}</p>
+                    {(isActive || isComplete) && (
+                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{item.detail}</p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        <p className="text-center text-sm text-muted-foreground">
+          This usually takes 20–60 seconds depending on the model and website.
         </p>
         {slowGenerationHint && (
-          <p className="text-sm text-amber-600 dark:text-amber-500 max-w-sm">
-            Still working? Use manual entry or try again with shorter pasted homepage copy.
+          <p className="text-center text-sm text-amber-600 dark:text-amber-500 max-w-sm mx-auto">
+            Still working — complex sites and deeper market research can take a bit longer.
           </p>
         )}
-        <Button type="button" variant="outline" onClick={returnToUrl}>
-          Use manual entry
-        </Button>
       </div>
     );
   }
@@ -219,9 +240,6 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
         <div className="flex gap-2 flex-wrap">
           <Button type="button" onClick={returnToUrl}>
             Try again
-          </Button>
-          <Button type="button" variant="secondary" onClick={returnToUrl}>
-            Use manual entry
           </Button>
         </div>
       </div>
@@ -357,7 +375,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
             Back
           </Button>
           <div className="flex gap-2">
-            <Button type="button" variant="secondary" disabled={pending} onClick={() => onGenerate(false)}>
+            <Button type="button" variant="secondary" disabled={pending} onClick={onGenerate}>
               Regenerate
             </Button>
             <Button type="button" disabled={pending} onClick={onConfirm}>
@@ -451,7 +469,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
     timer = setTimeout(() => {
       reject(
         new Error(
-          `AutoBrief generation timed out after ${Math.round(timeoutMs / 1000)} seconds. The server may still finish in the background; try again with manual homepage copy or check /debug/ai-runs.`
+          `AutoBrief generation timed out after ${Math.round(timeoutMs / 1000)} seconds. Try again or check /debug/ai-runs for details.`
         )
       );
     }, timeoutMs);
