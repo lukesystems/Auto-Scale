@@ -1,19 +1,22 @@
 # Managed Mode
 
-AutoScale V1.1 defaults to **Managed Mode** for non-technical founders.
+AutoScale defaults to **Managed Mode** for non-technical founders.
+
+Managed Mode means AutoScale owns the server-side provider configuration. Users should not need to bring OpenRouter or Postiz keys to complete onboarding and run the first growth loop.
 
 ## What it means
 
-- AutoScale uses server-side environment variables for OpenRouter, Postiz, and (future) Fal.
-- Users do not enter API keys during onboarding or day-to-day use.
-- Missing AI keys fail loudly with the real configuration error. Scheduling still supports the local/manual export path.
+- AutoScale uses server-side environment variables for OpenRouter, Postiz, and future provider-backed services.
+- Users do not enter API keys during onboarding or normal use.
+- Missing AI keys fail loudly with the real configuration error.
+- Scheduling still supports local/manual export when Postiz is not configured.
 
 ## Provider modes
 
 | Mode | Who brings keys | Default |
 |------|-----------------|---------|
-| `managed` | AutoScale (env vars) | Yes |
-| `byok` | User (Advanced settings) | No |
+| `managed` | AutoScale server env | Yes |
+| `byok` | User / Advanced settings where supported | No |
 
 Stored in `user_settings.provider_mode`.
 
@@ -32,18 +35,49 @@ AUTOSCALE_MODEL_COMPOUND=
 AUTOSCALE_MODEL_DEFAULT=
 ```
 
-Optional: `FAL_KEY` (foundation only — media generation not active).
+Optional: `FAL_KEY` for future media generation foundation.
+
+## Scraping Engine direction
+
+The Scraping Engine should also run in Managed Mode.
+
+Founders should not need to configure scraping/search providers before value is proven. Server-side adapters should handle public discovery and source enrichment.
+
+Future managed provider config may include:
+
+```env
+AUTOSCALE_SEARCH_PROVIDER=
+AUTOSCALE_SEARCH_API_KEY=
+AUTOSCALE_MODEL_SOURCE_DISCOVERY=
+AUTOSCALE_MODEL_SOURCE_CLASSIFICATION=
+AUTOSCALE_MODEL_PATTERN_MINING=
+```
+
+Do not make these required until implementation exists.
 
 ## User flow
 
-1. Sign up / sign in
-2. Redirect to `/onboarding` if `onboarding_completed = false`
-3. Choose Managed (default) or Advanced
-4. AutoBrief → project created → workspace
+1. Sign up / sign in.
+2. Redirect to `/onboarding` if `onboarding_completed = false`.
+3. Use Managed Mode by default.
+4. AutoBrief reads the product URL and creates a Product Brief.
+5. Scraping Engine discovers/enriches public competitor/source candidates.
+6. TrendWatch analyzes enriched sources.
+7. User generates experiments, exports/schedules, measures, and compounds.
 
 ## Settings
 
 - `/settings/providers` — redacted status, model routing summary, warnings
 - `/settings/postiz` — "Managed by AutoScale" in Managed Mode; BYOK form in Advanced Mode
 
-See also: [MODEL_ROUTING.md](./MODEL_ROUTING.md), [PROVIDER_SECURITY.md](./PROVIDER_SECURITY.md).
+Future scraping settings should show status only:
+
+```txt
+Search provider configured: yes/no
+Discovery adapters enabled: web/search/manual/social adapter status
+Last discovery run: timestamp/status
+```
+
+Never show raw provider keys to the client.
+
+See also: [MODEL_ROUTING.md](./MODEL_ROUTING.md), [SCRAPING_ENGINE.md](./SCRAPING_ENGINE.md), [PROVIDER_SECURITY.md](./PROVIDER_SECURITY.md).
