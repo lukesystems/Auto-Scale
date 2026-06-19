@@ -14,6 +14,7 @@ export interface SourceCandidateInput {
   discoveryQuery?: string | null;
   discoveryReason?: string | null;
   relevanceScore?: number;
+  enrichStatus?: "pending" | "enriched" | "failed" | "skipped";
   metadata?: Json;
 }
 
@@ -22,26 +23,24 @@ export async function saveSourceCandidates(candidates: SourceCandidateInput[]): 
 
   const supabase = createSupabaseServerClient();
 
-  const { data, error } = await supabase
-    .from("source_candidates")
-    .insert(
-      candidates.map((candidate) => ({
-        discovery_run_id: candidate.discoveryRunId,
-        project_id: candidate.projectId,
-        url: candidate.url,
-        canonical_url: candidate.canonicalUrl ?? candidate.url,
-        title: candidate.title ?? null,
-        snippet: candidate.snippet ?? null,
-        source_type: candidate.sourceType ?? "unknown",
-        platform: candidate.platform ?? "other",
-        adapter: candidate.adapter ?? "exa",
-        discovery_query: candidate.discoveryQuery ?? null,
-        discovery_reason: candidate.discoveryReason ?? null,
-        relevance_score: candidate.relevanceScore ?? 0,
-        metadata: (candidate.metadata ?? {}) as Json,
-      }))
-    )
-    .select("id");
+  const rows = candidates.map((candidate) => ({
+    discovery_run_id: candidate.discoveryRunId,
+    project_id: candidate.projectId,
+    url: candidate.url,
+    canonical_url: candidate.canonicalUrl ?? candidate.url,
+    title: candidate.title ?? null,
+    snippet: candidate.snippet ?? null,
+    source_type: candidate.sourceType ?? "unknown",
+    platform: candidate.platform ?? "other",
+    adapter: candidate.adapter ?? "exa",
+    discovery_query: candidate.discoveryQuery ?? null,
+    discovery_reason: candidate.discoveryReason ?? null,
+    relevance_score: candidate.relevanceScore ?? 0,
+    enrich_status: candidate.enrichStatus ?? "pending",
+    metadata: (candidate.metadata ?? {}) as Json,
+  }));
+
+  const { data, error } = await supabase.from("source_candidates").insert(rows).select("id");
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => row.id);

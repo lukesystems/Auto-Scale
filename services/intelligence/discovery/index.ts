@@ -1,12 +1,19 @@
-// Phase 2 stubs — discovery planner and runner.
-// LLM decides queries; deterministic code executes search, dedupe, enrich, and storage.
-
-export { saveSourceCandidates } from "../memory/save-source-candidates";
-
-export async function planDiscovery(): Promise<never> {
-  throw new Error("Discovery planner is Phase 2. Implement plan-discovery.ts first.");
-}
-
-export async function runDiscovery(): Promise<never> {
-  throw new Error("Discovery runner is Phase 2. Implement run-discovery.ts first.");
-}
+export { planDiscovery, buildFallbackDiscoveryPlan } from "./plan-discovery";
+export { runDiscovery } from "./run-discovery";
+export type { RunDiscoveryInput, RunDiscoveryResult } from "./run-discovery";
+export { loadDiscoveryContext, formatDiscoveryContextForPrompt } from "./load-context";
+export type { DiscoveryContext } from "./load-context";
+export {
+  canonicalizeUrl,
+  dedupeCandidates,
+  normalizeSearchResults,
+  inferSourceType,
+} from "./dedupe-candidates";
+export type { NormalizedCandidate } from "./dedupe-candidates";
+export { enrichCandidate, enrichCandidates } from "./enrich-candidate";
+export {
+  DiscoveryPlanSchema,
+  DiscoveryQuerySchema,
+  DiscoveryIntentSchema,
+} from "./schema";
+export type { DiscoveryPlan, DiscoveryQuery, DiscoveryIntent } from "./schema";

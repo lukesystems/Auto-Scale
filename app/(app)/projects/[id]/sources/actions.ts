@@ -7,6 +7,9 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
+import { runDiscovery } from "@/services/intelligence/discovery/run-discovery";
+import { promoteCandidateToSource } from "@/services/intelligence/memory/promote-candidate";
+import { logAIRun } from "@/services/ai/logger";
 
 const PlatformEnum = z.enum([
   "tiktok", "instagram", "x", "linkedin", "youtube", "threads", "pinterest", "reddit", "facebook", "other",
@@ -144,6 +147,101 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
     .eq("id", inserted.id);
 
   revalidatePath(`/projects/${parsed.data.project_id}/sources`);
+  return { ok: true };
+}
+
+export async function runDiscoveryAction(projectId: string): Promise<SourceActionResult & { candidatesSaved?: number }> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+
+  const parsed = z.string().uuid().safeParse(projectId);
+  if (!parsed.success) return { ok: false, error: "Invalid project." };
+
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  try {
+    const result = await runDiscovery({ projectId: parsed.data, enrich: true });
+
+    await logAIRun({
+      ownerId: user.id,
+      projectId: parsed.data,
+      kind: "source_discovery",
+      provider: result.usedFallbackPlan ? "deterministic" : "openrouter",
+      model: result.usedFallbackPlan ? "fallback" : "trendwatch-routed",
+      input: {
+        queries: result.plan?.queries.length ?? 0,
+        adaptersUsed: result.adaptersUsed,
+      },
+      rawOutput: result.plan ? JSON.stringify(result.plan) : undefined,
+      parsedOutput: result as never,
+      status: result.ok ? "success" : "failed",
+      errorMessage: result.error,
+    });
+
+    revalidatePath(`/projects/${parsed.data}/sources`);
+
+    if (!result.ok) return { ok: false, error: result.error ?? "Discovery found no candidates." };
+    return { ok: true, candidatesSaved: result.candidatesSaved };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Discovery failed." };
+  }
+}
+
+export async function acceptCandidateAction(input: {
+  projectId: string;
+  candidateId: string;
+}): Promise<SourceActionResult> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+
+  const projectParsed = z.string().uuid().safeParse(input.projectId);
+  const candidateParsed = z.string().uuid().safeParse(input.candidateId);
+  if (!projectParsed.success || !candidateParsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  try {
+    await promoteCandidateToSource({
+      projectId: projectParsed.data,
+      candidateId: candidateParsed.data,
+    });
+    revalidatePath(`/projects/${projectParsed.data}/sources`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Failed to accept candidate." };
+  }
+}
+
+export async function rejectCandidateAction(input: {
+  projectId: string;
+  candidateId: string;
+}): Promise<SourceActionResult> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+
+  const projectParsed = z.string().uuid().safeParse(input.projectId);
+  const candidateParsed = z.string().uuid().safeParse(input.candidateId);
+  if (!projectParsed.success || !candidateParsed.success) {
+    return { ok: false, error: "Invalid input." };
+  }
+
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("source_candidates")
+    .update({ review_status: "rejected" })
+    .eq("id", candidateParsed.data)
+    .eq("project_id", projectParsed.data);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/projects/${projectParsed.data}/sources`);
   return { ok: true };
 }
 

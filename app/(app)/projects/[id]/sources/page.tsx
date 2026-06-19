@@ -8,15 +8,20 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { AddSourceForm } from "./add-source-form";
 import { AddCompetitorForm } from "./add-competitor-form";
 import { DeleteSourceButton } from "./delete-source-button";
+import { DiscoverSourcesButton } from "./discover-sources-button";
+import { CandidateReviewButtons } from "./candidate-review-buttons";
+import { getProductBrief } from "../queries";
 
 interface PageProps { params: { id: string } }
 
 export const metadata = { title: "Sources" };
 
 export default async function SourcesPage({ params }: PageProps) {
-  const [competitors, sources] = await Promise.all([
+  const [competitors, sources, candidates, brief] = await Promise.all([
     loadCompetitors(params.id),
     loadSources(params.id),
+    loadCandidates(params.id),
+    getProductBrief(params.id),
   ]);
 
   return (
@@ -25,11 +30,14 @@ export default async function SourcesPage({ params }: PageProps) {
         title="Competitors & sources"
         description="Add the URLs, accounts, and posts TrendWatch should learn from. The richer the input, the sharper the analysis."
         actions={
-          <Button asChild>
-            <Link href={`/projects/${params.id}/trendwatch`}>
-              <Brain className="h-4 w-4" /> Run TrendWatch
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <DiscoverSourcesButton projectId={params.id} hasBrief={Boolean(brief)} />
+            <Button asChild>
+              <Link href={`/projects/${params.id}/trendwatch`}>
+                <Brain className="h-4 w-4" /> Run TrendWatch
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -53,6 +61,55 @@ export default async function SourcesPage({ params }: PageProps) {
         </div>
 
         <div className="space-y-6">
+          {candidates.length > 0 && (
+            <section>
+              <h3 className="font-semibold tracking-tight">Discovered candidates ({candidates.length})</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Review auto-discovered sources. Accept to add them to TrendWatch evidence.
+              </p>
+              <div className="mt-3 space-y-2">
+                {candidates.map((candidate) => (
+                  <div key={candidate.id} className="rounded-lg border border-border bg-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">{candidate.platform}</Badge>
+                        <Badge variant="secondary">{candidate.source_type}</Badge>
+                        <Badge variant="outline">{candidate.adapter}</Badge>
+                        <Badge
+                          variant={
+                            candidate.enrich_status === "enriched"
+                              ? "success"
+                              : candidate.enrich_status === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {candidate.enrich_status}
+                        </Badge>
+                      </div>
+                      <CandidateReviewButtons projectId={params.id} candidateId={candidate.id} />
+                    </div>
+                    {candidate.title && <div className="mt-2 text-sm font-medium">{candidate.title}</div>}
+                    <a
+                      href={candidate.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground truncate max-w-full"
+                    >
+                      {candidate.url} <ExternalLink className="h-3 w-3" />
+                    </a>
+                    {candidate.snippet && (
+                      <p className="mt-2 line-clamp-3 text-sm text-foreground/80">{candidate.snippet}</p>
+                    )}
+                    {candidate.discovery_reason && (
+                      <p className="mt-2 text-xs text-muted-foreground">{candidate.discovery_reason}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h3 className="font-semibold tracking-tight">Competitors ({competitors.length})</h3>
             <div className="mt-3 space-y-2">
@@ -162,4 +219,19 @@ async function loadSources(projectId: string) {
     ...row,
     screenshot_signed_url: row.screenshot_url ? signedByPath.get(row.screenshot_url) ?? null : null,
   }));
+}
+
+async function loadCandidates(projectId: string) {
+  if (!isSupabaseConfigured()) return [];
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("source_candidates")
+    .select(
+      "id, url, title, snippet, platform, source_type, adapter, discovery_query, discovery_reason, relevance_score, enrich_status, review_status"
+    )
+    .eq("project_id", projectId)
+    .eq("review_status", "pending")
+    .order("relevance_score", { ascending: false })
+    .limit(50);
+  return data ?? [];
 }
