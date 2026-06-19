@@ -6,32 +6,36 @@ import { cn } from "@/lib/utils";
 
 const FAQS = [
   {
-    q: "Isn't this just another AI content generator?",
-    a: "No. AI content generators give you disconnected text. AutoScale protects a data chain: source → insight → hook → content idea → generated post → experiment → metric → learning → variant. Every artifact traces back to a real market signal and a testable hypothesis.",
+    q: "Is this just another AI content generator?",
+    a: "No. AI content generators give you disconnected text. AutoScale protects a chain: product context → market evidence → insight → hook → experiment → metric → learning → variant. The point is not more content. The point is better tests.",
   },
   {
-    q: "I'm not a marketer. Will I get lost?",
-    a: "AutoScale is built specifically for technical founders. You drop a product URL, add competitors, and run TrendWatch. The system tells you what to post, why, what hypothesis you're testing, and what to measure. No marketing instincts required.",
+    q: "What happens after I paste my startup URL?",
+    a: "AutoBrief reads your product page, creates a structured product brief, and saves it as project memory. From there, the Competitor Intelligence Engine uses that context to map relevant market patterns before content is generated.",
   },
   {
-    q: "Why TrendWatch instead of scraping TikTok?",
-    a: "Full social scraping is brittle and often violates platform rules. TrendWatch supports manual URLs, screenshots, CSV imports, and public metadata. Full scraping arrives in V2 through proper APIs. The intelligence layer matters more than the data pipe.",
+    q: "Why competitor intelligence instead of a normal content calendar?",
+    a: "Calendars create activity. Intelligence creates leverage. AutoScale studies public patterns around your niche, then turns the useful ones into experiments with hypotheses and metrics.",
+  },
+  {
+    q: "Does AutoScale automatically pull from every social platform?",
+    a: "Not blindly. The system is designed around public and permitted sources, manual source input, imports, and provider-backed adapters where available. Platform-specific automation should be added carefully, not hacked in a brittle way.",
   },
   {
     q: "Does AutoScale post for me automatically?",
-    a: "Not blindly. V1 ships with basic Postiz scheduling for approved content — you decide what goes live. Fully autonomous posting arrives in V3, after enough project data proves the loop. Autonomy is earned by data.",
+    a: "Not blindly. V1 supports approved-content scheduling through Postiz and manual exports. Full autonomy comes later, after enough project data proves the loop. Autonomy is earned by evidence.",
   },
   {
     q: "What about my existing tools?",
-    a: "AutoScale is the intelligence layer above your scheduler. It decides what to post, why, and what to learn. Postiz handles publishing. You can also export ZIP packs for manual posting anywhere — Buffer, Hypefury, native, whatever.",
+    a: "AutoScale is the intelligence layer above your scheduler. It decides what to test, why, and what to learn. Postiz handles publishing. You can also export ZIP packs for manual posting anywhere.",
   },
   {
     q: "Can I use my own AI provider?",
-    a: "Yes. AutoScale uses a model abstraction layer — OpenAI, Anthropic, Gemini, OpenRouter, or local. Configure once in /settings. You're never locked to a single provider.",
+    a: "Yes. AutoScale uses a model abstraction layer across supported providers and OpenRouter-style routing. Configure once in settings. You should not be locked to one model.",
   },
   {
-    q: "What does the V1 actually include?",
-    a: "Real Supabase auth + RLS, projects, product brief, competitor & source input, TrendWatch with signal scoring, hook + content idea + post generation, Quality Gate, approval queue, ZIP exports, basic Postiz scheduling, manual experiment tracker, and winner-to-variants. Full SaaS foundation, focused loop.",
+    q: "What does the current V1 include?",
+    a: "Real Supabase auth + RLS, projects, AutoBrief, product brief memory, competitor/source input, TrendWatch with signal scoring, hook + idea + post generation, Quality Gate, approval queue, ZIP exports, basic Postiz scheduling, manual experiment tracker, and winner-to-variants.",
   },
 ];
 
