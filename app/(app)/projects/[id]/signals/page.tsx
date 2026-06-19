@@ -34,14 +34,19 @@ export default async function SignalsPage({ params }: PageProps) {
   ]);
 
   const { patterns, evidence, sourceScores } = latestRunData;
-  const evidenceCountByPattern = new Map<string, number>();
+
+  const evidenceByPattern = new Map<string, typeof evidence>();
   for (const row of evidence) {
-    evidenceCountByPattern.set(row.pattern_id, (evidenceCountByPattern.get(row.pattern_id) ?? 0) + 1);
+    const list = evidenceByPattern.get(row.pattern_id) ?? [];
+    list.push(row);
+    evidenceByPattern.set(row.pattern_id, list);
   }
 
-  const sourceScoreCountByPattern = new Map<string, number>();
+  const sourceScoresByPattern = new Map<string, typeof sourceScores>();
   for (const row of sourceScores) {
-    sourceScoreCountByPattern.set(row.pattern_id, (sourceScoreCountByPattern.get(row.pattern_id) ?? 0) + 1);
+    const list = sourceScoresByPattern.get(row.pattern_id) ?? [];
+    list.push(row);
+    sourceScoresByPattern.set(row.pattern_id, list);
   }
 
   return (
@@ -76,6 +81,9 @@ export default async function SignalsPage({ params }: PageProps) {
             const scoreReasons = Array.isArray(pattern.score_reasons)
               ? (pattern.score_reasons as string[])
               : [];
+            const rows = evidenceByPattern.get(pattern.id) ?? [];
+            const scores = sourceScoresByPattern.get(pattern.id) ?? [];
+            const scoresBySource = new Map(scores.map((score) => [score.source_id, score]));
 
             return (
               <article key={pattern.id} className="rounded-xl border border-border bg-card p-5 space-y-3">
@@ -114,11 +122,50 @@ export default async function SignalsPage({ params }: PageProps) {
                   </div>
                 )}
 
+                {rows.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Top evidence ({Math.min(rows.length, 3)} of {rows.length})
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {rows.slice(0, 3).map((row) => {
+                        const sourceScore = scoresBySource.get(row.source_id);
+                        return (
+                          <li key={row.id} className="rounded-lg border border-border/70 bg-background/50 p-3 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-xs text-muted-foreground">{row.evidence_field}</div>
+                              {sourceScore && (
+                                <Badge variant="outline" className="text-[10px]">
+                                  Source signal {formatScorePercent(sourceScore.signal_score)}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="mt-1 text-foreground/85">{row.evidence_text}</p>
+                            {sourceScore && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Distortion risk: {sourceScore.distortion_risk}
+                              </p>
+                            )}
+                            {row.source_url && (
+                              <a
+                                href={row.source_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                View source <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                  <span>{evidenceCountByPattern.get(pattern.id) ?? 0} evidence items</span>
-                  <span>{sourceScoreCountByPattern.get(pattern.id) ?? 0} scored sources</span>
                   <Link href={`/projects/${params.id}/patterns`} className="text-primary hover:underline">
-                    View on Patterns page
+                    Full pattern detail →
                   </Link>
                 </div>
 
@@ -132,13 +179,6 @@ export default async function SignalsPage({ params }: PageProps) {
                 {Array.isArray(pattern.examples) && pattern.examples.length > 0 && (
                   <p className="text-sm text-foreground/75">
                     Example: “{(pattern.examples as string[])[0]}”
-                  </p>
-                )}
-
-                {Array.isArray(pattern.source_ids) && (pattern.source_ids as string[]).length > 0 && (
-                  <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    Backed by {(pattern.source_ids as string[]).length} source(s)
-                    <ExternalLink className="h-3 w-3" />
                   </p>
                 )}
               </article>
