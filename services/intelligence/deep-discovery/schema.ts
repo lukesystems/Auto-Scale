@@ -17,7 +17,7 @@ export const DeepDiscoveryActionSchema = z.object({
     .describe("Working hypotheses about competitors and what seems to be driving distribution."),
   next_queries: z
     .array(DiscoveryQuerySchema)
-    .max(8)
+    .max(5)
     .describe("Queries to run this round. Empty when the model decides to stop."),
   should_continue: z
     .boolean()
