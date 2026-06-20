@@ -14,7 +14,7 @@ Hard rules (protect the evidence chain):
 - Prefer patterns confirmed across multiple sources. A pattern seen once is low confidence.
 - transferability is 0-1 for how applicable a pattern is to this founder's product, ICP, and pain.
 - white_space = angles/formats the audience cares about that competitors underuse.
-- recommended_experiments must be concrete and tied to observed patterns.
+- suggested_opportunities = intelligence gaps or distribution angles worth studying later. Do NOT propose content experiments, posts, hooks to publish, or A/B tests.
 - If evidence is thin, say so honestly with low overall_confidence and explicit caveats. Do not pad.
 - Return JSON matching the schema.`;
 
@@ -51,7 +51,7 @@ ${hypothesesBlock}
 GATHERED EVIDENCE (discovered + fetched sources — cite these URLs only):
 ${input.evidenceDigest || "(no usable evidence was gathered)"}
 
-Produce the structured synthesis. Consolidate sources into competitor/account profiles, extract repeated market patterns with transferability, identify white space, and propose experiments. Be rigorous about confidence and caveats.`;
+Produce the structured synthesis. Consolidate sources into competitor/account profiles, extract repeated market patterns with transferability, and identify white space. Note suggested opportunities only as intelligence follow-ups — not experiments. Be rigorous about confidence and caveats.`;
 
   try {
     const result = await generateObject({
@@ -79,7 +79,7 @@ Produce the structured synthesis. Consolidate sources into competitor/account pr
         competitors: [],
         market_patterns: [],
         white_space: [],
-        recommended_experiments: [],
+        suggested_opportunities: [],
         overall_confidence: "low",
         caveats: ["AI synthesis unavailable — review the gathered source candidates manually."],
       },

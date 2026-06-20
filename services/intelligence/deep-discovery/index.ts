@@ -17,5 +17,5 @@ export type {
   MarketSynthesis,
   CompetitorStrategyProfile,
   MarketPattern,
-  RecommendedExperiment,
+  SuggestedOpportunity,
 } from "./schema";

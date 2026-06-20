@@ -81,15 +81,20 @@ export const MarketPatternSchema = z.object({
 
 export type MarketPattern = z.infer<typeof MarketPatternSchema>;
 
-export const RecommendedExperimentSchema = z.object({
-  hypothesis: z.string().min(1),
-  format: z.string(),
-  platform: z.string(),
-  rationale: z.string().describe("Why this experiment, tied to observed evidence."),
-  source_pattern: z.string().nullable().default(null),
+/**
+ * Intelligence-only follow-up angle — not a content experiment or post to run.
+ * Deferred to later phases (TrendWatch / Content Conveyor).
+ */
+export const SuggestedOpportunitySchema = z.object({
+  title: z.string().min(1),
+  description: z
+    .string()
+    .describe("What to study or monitor next based on evidence — not a content experiment."),
+  platform: z.string().nullable().default(null),
+  evidence_urls: z.array(z.string()).default([]),
 });
 
-export type RecommendedExperiment = z.infer<typeof RecommendedExperimentSchema>;
+export type SuggestedOpportunity = z.infer<typeof SuggestedOpportunitySchema>;
 
 /**
  * Final synthesis the deep loop produces after gathering evidence. Separates
@@ -104,7 +109,10 @@ export const MarketSynthesisSchema = z.object({
     .array(z.string())
     .default([])
     .describe("Underused angles/formats where this founder could differentiate."),
-  recommended_experiments: z.array(RecommendedExperimentSchema).default([]),
+  suggested_opportunities: z
+    .array(SuggestedOpportunitySchema)
+    .default([])
+    .describe("Intelligence gaps or angles worth deeper study — not experiments to run."),
   overall_confidence: ConfidenceSchema.default("low"),
   caveats: z.array(z.string()).default([]),
 });
