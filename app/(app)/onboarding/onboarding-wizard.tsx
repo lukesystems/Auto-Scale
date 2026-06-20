@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type Step = "url" | "generating" | "review" | "error";
-const GENERATION_TIMEOUT_MS = 120_000;
+const GENERATION_TIMEOUT_MS = 240_000;
 
 const GENERATION_STEPS = [
   {
@@ -40,7 +40,7 @@ const GENERATION_STEPS = [
   },
 ] as const;
 
-const PROGRESS_ADVANCE_MS = [0, 8_000, 22_000, 40_000, 58_000];
+const PROGRESS_ADVANCE_MS = [0, 12_000, 35_000, 65_000, 100_000];
 
 export function OnboardingWizard({ initialProviderMode }: { initialProviderMode: ProviderMode }) {
   const [step, setStep] = useState<Step>("url");
@@ -63,7 +63,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
       return;
     }
 
-    const slowTimer = setTimeout(() => setSlowGenerationHint(true), 45_000);
+    const slowTimer = setTimeout(() => setSlowGenerationHint(true), 90_000);
     const advanceTimers = PROGRESS_ADVANCE_MS.map((delay, index) =>
       setTimeout(() => setProgressIndex(index), delay)
     );
@@ -100,6 +100,14 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
 
       if (generationIdRef.current !== generationId) return;
 
+      if (!result) {
+        setErrorMessage(
+          "AutoBrief generation failed unexpectedly. Try again or check /debug/ai-runs for details."
+        );
+        setStep("error");
+        return;
+      }
+
       if (!result.ok || !result.brief) {
         if (!result.ok && result.projectId) setProjectId(result.projectId);
         setErrorMessage(result.ok ? "Generation failed." : result.error);
@@ -124,6 +132,10 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
 
     startTransition(async () => {
       const result = await confirmAutoBriefAction({ projectId, brief, providerMode });
+      if (!result) {
+        toast.error("Failed to save product brief. Try again.");
+        return;
+      }
       if (!result.ok) toast.error(result.error);
     });
   }
@@ -219,11 +231,11 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
         </ol>
 
         <p className="text-center text-sm text-muted-foreground">
-          This usually takes 20–60 seconds depending on the model and website.
+          This usually takes 30–90 seconds depending on the model and website. Reasoning models may take longer.
         </p>
         {slowGenerationHint && (
           <p className="text-center text-sm text-amber-600 dark:text-amber-500 max-w-sm mx-auto">
-            Still working — complex sites and deeper market research can take a bit longer.
+            Still working — reasoning models like DeepSeek V4 Pro think deeply before responding. This can take 1–3 minutes.
           </p>
         )}
       </div>
@@ -469,7 +481,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
     timer = setTimeout(() => {
       reject(
         new Error(
-          `AutoBrief generation timed out after ${Math.round(timeoutMs / 1000)} seconds. Try again or check /debug/ai-runs for details.`
+          `AutoBrief generation timed out after ${Math.round(timeoutMs / 1000)} seconds. Reasoning models (e.g. DeepSeek V4 Pro) may need more time. Try again or switch to a faster model like deepseek/deepseek-v4-flash.`
         )
       );
     }, timeoutMs);

@@ -5,7 +5,7 @@ import {
   isByokMode,
 } from "@/lib/provider-mode";
 import { getClientSafeProviderStatus } from "@/services/providers/status";
-import { resolveModelForTask, getModelRoutingSummary } from "@/services/ai/model-router";
+import { resolveModelForTask, getModelRoutingSummary, isUnstableStructuredJsonModel, resolveSafeStructuredModel } from "@/services/ai/model-router";
 import { AutoBriefSchema } from "@/services/autobrief/schema";
 import { getManagedProviderConfig, redactSecret } from "@/services/providers/config";
 import { getFalProviderStatus } from "@/services/media/fal-config";
@@ -77,6 +77,27 @@ describe("V1.1 model router", () => {
     const summary = getModelRoutingSummary();
     expect(summary.autobrief).toBe("anthropic/claude-3.5-sonnet");
     expect(summary.quality_gate).toBe("openrouter/auto");
+  });
+
+  it("detects unstable structured JSON models", () => {
+    expect(isUnstableStructuredJsonModel("nex-agi/nex-r2-pro:free")).toBe(true);
+    expect(isUnstableStructuredJsonModel("openai/gpt-4o-mini")).toBe(false);
+  });
+
+  it("replaces unstable structured JSON models with provider fallback", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(
+      resolveSafeStructuredModel("nex-agi/nex-r2-pro:free", "openrouter", "autobrief")
+    ).toBe("openai/gpt-4o-mini");
+    expect(
+      resolveSafeStructuredModel("nex-agi/nex-r2-pro:free", "openai", "trendwatch")
+    ).toBe("gpt-4o-mini");
+    expect(
+      resolveSafeStructuredModel("nex-agi/nex-r2-pro:free", "openrouter", "content")
+    ).toBe("nex-agi/nex-r2-pro:free");
+
+    warnSpy.mockRestore();
   });
 });
 

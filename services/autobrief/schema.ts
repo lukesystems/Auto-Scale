@@ -3,6 +3,11 @@ import { z } from "zod";
 export const BriefConfidenceLevelSchema = z.enum(["low", "medium", "high"]);
 export type BriefConfidenceLevel = z.infer<typeof BriefConfidenceLevelSchema>;
 
+export const StringArraySchema = z.preprocess((value) => {
+  if (typeof value === "string") return value.trim() ? [value] : [];
+  return value;
+}, z.array(z.string()).default([]));
+
 export const AutoBriefCompetitorSchema = z.object({
   name: z.string(),
   url: z.string().nullable().optional(),
@@ -33,26 +38,26 @@ export const AutoBriefSchema = z.object({
   product_summary: z.string(),
   what_it_does: z.string().default(""),
   target_customer: z.string(),
-  target_audience: z.array(z.string()).default([]),
+  target_audience: StringArraySchema,
   primary_pain: z.string(),
-  user_pain_points: z.array(z.string()).default([]),
+  user_pain_points: StringArraySchema,
   core_promise: z.string(),
-  key_features: z.array(z.string()).default([]),
-  key_benefits: z.array(z.string()).default([]),
+  key_features: StringArraySchema,
+  key_benefits: StringArraySchema,
   offer: z.string().nullable().optional(),
   cta: z.string().nullable().optional(),
   niche: z.string(),
-  alternative_solutions: z.array(z.string()).default([]),
+  alternative_solutions: StringArraySchema,
   market_category: z.string().default(""),
-  positioning_angles: z.array(z.string()).default([]),
-  content_pillars: z.array(z.string()).default([]),
-  content_angles: z.array(z.string()).default([]),
+  positioning_angles: StringArraySchema,
+  content_pillars: StringArraySchema,
+  content_angles: StringArraySchema,
   platform_recommendations: z
     .array(z.object({ platform: z.string(), reason: z.string() }))
     .default([]),
-  cta_suggestions: z.array(z.string()).default([]),
-  founder_led_opportunities: z.array(z.string()).default([]),
-  positioning_gaps: z.array(z.string()).default([]),
+  cta_suggestions: StringArraySchema,
+  founder_led_opportunities: StringArraySchema,
+  positioning_gaps: StringArraySchema,
   brand_voice: z.string().nullable().optional(),
   production_constraints: AutoBriefProductionConstraintsSchema.default({
     can_make_carousels: true,
@@ -77,9 +82,9 @@ export const AutoBriefSchema = z.object({
       competitors: "low",
       positioning: "medium",
     }),
-  extraction_notes: z.array(z.string()).default([]),
+  extraction_notes: StringArraySchema,
   confidence_score: z.number().min(0).max(1),
-  missing_information: z.array(z.string()).default([]),
+  missing_information: StringArraySchema,
 });
 
 export type AutoBrief = z.infer<typeof AutoBriefSchema>;

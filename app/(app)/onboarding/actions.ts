@@ -48,6 +48,20 @@ export async function saveProviderModeAction(mode: ProviderMode): Promise<Onboar
 export async function fetchAndGenerateAutoBriefAction(input: {
   productUrl: string;
 }): Promise<OnboardingActionResult> {
+  try {
+    return await fetchAndGenerateAutoBriefActionImpl(input);
+  } catch (err) {
+    console.error("[onboarding] fetchAndGenerateAutoBriefAction failed", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "AutoBrief generation failed unexpectedly.",
+    };
+  }
+}
+
+async function fetchAndGenerateAutoBriefActionImpl(input: {
+  productUrl: string;
+}): Promise<OnboardingActionResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
 
   const urlParsed = UrlSchema.safeParse(input.productUrl);
@@ -193,6 +207,7 @@ export async function confirmAutoBriefAction(input: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  let savedProjectId: string;
   try {
     const { projectId } = await createProjectFromAutoBrief({
       userId: user.id,
@@ -200,13 +215,15 @@ export async function confirmAutoBriefAction(input: {
       brief: briefParsed.data,
       providerMode: modeParsed.data,
     });
+    savedProjectId = projectId;
 
     revalidatePath("/projects");
     revalidatePath(`/projects/${projectId}`);
     revalidatePath("/onboarding");
-    redirect(`/projects/${projectId}`);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to save product brief." };
   }
+
+  redirect(`/projects/${savedProjectId}`);
 }
 

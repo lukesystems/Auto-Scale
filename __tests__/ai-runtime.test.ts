@@ -94,9 +94,61 @@ describe("AI runtime responseMode", () => {
       })
     ).rejects.toMatchObject({
       name: "AIError",
-      message: expect.stringContaining("empty message content"),
+      message: expect.stringMatching(/empty message content.*stable JSON-capable model/i),
       provider: "openai",
     });
+  });
+
+  it("generateObject falls back from unstable free model on structured tasks", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.AUTOSCALE_MODEL_AUTOBRIEF = "nex-agi/nex-r2-pro:free";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.AUTOSCALE_AI_PROVIDER = "openrouter";
+    delete process.env.OPENAI_API_KEY;
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"name":"test"}' } }],
+      }),
+    });
+
+    const schema = z.object({ name: z.string() });
+    await generateObject({
+      prompt: "[[test]] give name",
+      schema,
+      taskType: "autobrief",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0]![1]!.body as string);
+    expect(body.model).toBe("openai/gpt-4o-mini");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[ai_model_router] unstable structured JSON model replaced",
+      expect.objectContaining({
+        taskType: "autobrief",
+        provider: "openrouter",
+        requestedModel: "nex-agi/nex-r2-pro:free",
+        fallbackModel: "openai/gpt-4o-mini",
+      })
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("generateText keeps free models for non-structured text tasks", async () => {
+    process.env.AUTOSCALE_MODEL_CONTENT = "nex-agi/nex-r2-pro:free";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.AUTOSCALE_AI_PROVIDER = "openrouter";
+    delete process.env.OPENAI_API_KEY;
+
+    await generateText({
+      prompt: "Write a hook",
+      taskType: "content",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0]![1]!.body as string);
+    expect(body.model).toBe("nex-agi/nex-r2-pro:free");
+    expect(body.response_format).toBeUndefined();
   });
 
   it("generateObject logs safe debug info when JSON.parse fails", async () => {

@@ -1,6 +1,7 @@
 import { AIError, type AIAdapter, type AdapterContext, type GenerateTextParams, type GenerateTextResult } from "../types";
+import { STRUCTURED_JSON_EMPTY_HINT } from "../model-router";
 
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 90_000;
 
 function getRequestTimeoutMs(): number {
   const raw = process.env.AI_REQUEST_TIMEOUT_MS?.trim();
@@ -80,7 +81,7 @@ export const openaiAdapter: AIAdapter = {
     if (!text.trim()) {
       const usage = json.usage;
       throw new AIError(
-        `${provider} returned empty message content (status ${response.status}, model ${body.model as string}, usage: prompt=${usage?.prompt_tokens ?? "n/a"}, completion=${usage?.completion_tokens ?? "n/a"})`,
+        `${provider} returned empty message content (status ${response.status}, model ${body.model as string}, usage: prompt=${usage?.prompt_tokens ?? "n/a"}, completion=${usage?.completion_tokens ?? "n/a"}). ${STRUCTURED_JSON_EMPTY_HINT}`,
         provider
       );
     }

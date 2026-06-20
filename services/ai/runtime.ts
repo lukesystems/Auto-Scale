@@ -24,7 +24,7 @@ import { openaiAdapter } from "./adapters/openai";
 
 import { anthropicAdapter } from "./adapters/anthropic";
 
-import { resolveModelForTask } from "./model-router";
+import { resolveModelForTask, resolveSafeStructuredModel, STRUCTURED_JSON_EMPTY_HINT } from "./model-router";
 
 import { getManagedOpenRouterCredentials, getManagedProviderConfig, ProviderSetupError } from "@/services/providers/config";
 
@@ -163,7 +163,11 @@ export async function generateText(params: GenerateTextParams): Promise<Generate
 
   const taskType = params.taskType ?? "default";
 
-  const model = params.model ?? defaultModel(provider, taskType);
+  let model = params.model ?? defaultModel(provider, taskType);
+
+  if (params.responseMode === "json") {
+    model = resolveSafeStructuredModel(model, provider, taskType);
+  }
 
   const adapter = ADAPTERS[provider];
 
@@ -254,7 +258,10 @@ export async function generateObject<T extends ZodTypeAny>(
     lastResult = result;
 
     if (!result.text.trim()) {
-      throw new AIError("AI provider returned empty response text", result.provider);
+      throw new AIError(
+        `AI provider returned empty response text. ${STRUCTURED_JSON_EMPTY_HINT}`,
+        result.provider
+      );
     }
 
     const text = stripMarkdownFences(result.text);
