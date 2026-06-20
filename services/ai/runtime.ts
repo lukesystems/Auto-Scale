@@ -227,6 +227,8 @@ export async function generateObject<T extends ZodTypeAny>(
 
 
 
+  const taskType = params.taskType ?? "default";
+
   while (retries <= maxRetries) {
 
     const result = await generateText({
@@ -235,7 +237,7 @@ export async function generateObject<T extends ZodTypeAny>(
 
       model: params.model,
 
-      taskType: params.taskType,
+      taskType,
 
       system: fullSystem,
 
@@ -251,7 +253,9 @@ export async function generateObject<T extends ZodTypeAny>(
 
     lastResult = result;
 
-
+    if (!result.text.trim()) {
+      throw new AIError("AI provider returned empty response text", result.provider);
+    }
 
     const text = stripMarkdownFences(result.text);
 
@@ -282,6 +286,16 @@ export async function generateObject<T extends ZodTypeAny>(
     } catch (err) {
 
       lastError = err instanceof Error ? err : new Error(String(err));
+
+      console.warn("[ai_runtime] structured output parse failed", {
+        provider: result.provider,
+        model: result.model,
+        taskType,
+        responseTextLength: result.text.length,
+        responseTextPreview: result.text.slice(0, 300),
+        retryCount: retries,
+        parseError: lastError.message,
+      });
 
       retries++;
 

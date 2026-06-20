@@ -77,6 +77,14 @@ export const openaiAdapter: AIAdapter = {
     };
     const text = json.choices?.[0]?.message?.content ?? "";
 
+    if (!text.trim()) {
+      const usage = json.usage;
+      throw new AIError(
+        `${provider} returned empty message content (status ${response.status}, model ${body.model as string}, usage: prompt=${usage?.prompt_tokens ?? "n/a"}, completion=${usage?.completion_tokens ?? "n/a"})`,
+        provider
+      );
+    }
+
     return {
       text,
       provider,

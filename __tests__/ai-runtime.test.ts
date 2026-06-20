@@ -75,6 +75,67 @@ describe("AI runtime responseMode", () => {
     const body = JSON.parse(mockFetch.mock.calls[0]![1]!.body as string);
     expect(body.response_format).toEqual({ type: "json_object" });
   });
+
+  it("generateObject throws on empty response text", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "" } }],
+        usage: { prompt_tokens: 12, completion_tokens: 0 },
+      }),
+    });
+
+    const schema = z.object({ name: z.string() });
+    await expect(
+      generateObject({
+        prompt: "[[test]] give name",
+        schema,
+        provider: "openai",
+      })
+    ).rejects.toMatchObject({
+      name: "AIError",
+      message: expect.stringContaining("empty message content"),
+      provider: "openai",
+    });
+  });
+
+  it("generateObject logs safe debug info when JSON.parse fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "not valid json" } }],
+      }),
+    });
+
+    const schema = z.object({ name: z.string() });
+    await expect(
+      generateObject({
+        prompt: "[[test]] give name",
+        schema,
+        provider: "openai",
+        taskType: "autobrief",
+      })
+    ).rejects.toThrow(AIError);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[ai_runtime] structured output parse failed",
+      expect.objectContaining({
+        provider: "openai",
+        taskType: "autobrief",
+        responseTextLength: "not valid json".length,
+        responseTextPreview: "not valid json",
+        parseError: expect.any(String),
+      })
+    );
+
+    const loggedPayload = warnSpy.mock.calls[0]![1] as Record<string, unknown>;
+    expect(loggedPayload).not.toHaveProperty("apiKey");
+    expect(loggedPayload).not.toHaveProperty("prompt");
+
+    warnSpy.mockRestore();
+  });
 });
 
 describe("AI request timeout", () => {
