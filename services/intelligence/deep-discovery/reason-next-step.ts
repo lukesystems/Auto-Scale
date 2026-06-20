@@ -14,7 +14,7 @@ Your job across rounds:
 - React to what you just found: chase promising leads, fill gaps, and confirm patterns across multiple accounts.
 
 Rules:
-- Output 2-6 focused next_queries per round (fewer as evidence saturates).
+- Output 2-5 focused next_queries per round (fewer as evidence saturates).
 - Do NOT repeat queries already run. Build on what the evidence revealed (specific competitor names, handles, formats, communities surfaced so far).
 - Prefer queries that confirm a pattern across multiple sources over chasing single viral posts.
 - Mix platform-specific queries (site:x.com, site:reddit.com, site:youtube.com, site:linkedin.com, site:tiktok.com) with category, pain, alternative, and comparison queries.
@@ -64,7 +64,7 @@ Decide the next searches. If this is round 1, cast a focused but broad net to fi
       prompt,
       schema: DeepDiscoveryActionSchema,
       schemaName: "DeepDiscoveryAction",
-      taskType: "trendwatch",
+      taskType: "discovery_reasoning",
       temperature: 0.5,
       maxTokens: 2500,
     });
@@ -104,7 +104,7 @@ function buildFallbackAction(input: ReasonNextStepInput): DeepDiscoveryAction {
   const seen = new Set(input.alreadyRunQueries.map((q) => q.toLowerCase()));
   const next = plan.queries
     .filter((q) => !seen.has(q.query.toLowerCase()))
-    .slice(0, 6);
+    .slice(0, 5);
 
   return {
     thought: "Deterministic opening plan derived from the product brief (AI reasoner unavailable).",
