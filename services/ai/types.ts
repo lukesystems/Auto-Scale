@@ -5,6 +5,7 @@ export type AIProvider = "openai" | "anthropic" | "openrouter";
 export type AITaskType =
   | "autobrief"
   | "trendwatch"
+  | "discovery_reasoning"
   | "content"
   | "quality_gate"
   | "compound"

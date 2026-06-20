@@ -167,6 +167,13 @@ export interface Database {
           name: string;
           url: string | null;
           notes: string | null;
+          discovery_run_id: string | null;
+          kind: "direct" | "indirect" | "creator" | "audience_magnet" | "community" | "unknown";
+          confidence: "low" | "medium" | "high";
+          strategy_profile: Json;
+          evidence_urls: Json;
+          discovered_at: string | null;
+          source: "manual" | "deep_discovery";
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["competitors"]["Row"]> & {
@@ -187,6 +194,7 @@ export interface Database {
           url: string | null;
           account_type: AccountType;
           follower_count: number | null;
+          discovery_run_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["competitor_accounts"]["Row"]> & {

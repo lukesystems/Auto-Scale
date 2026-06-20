@@ -8,6 +8,7 @@ import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
 import { runDiscovery } from "@/services/intelligence/discovery/run-discovery";
+import { runDeepDiscovery } from "@/services/intelligence/deep-discovery";
 import { promoteCandidateToSource } from "@/services/intelligence/memory/promote-candidate";
 import { logAIRun } from "@/services/ai/logger";
 
@@ -187,6 +188,60 @@ export async function runDiscoveryAction(projectId: string): Promise<SourceActio
     return { ok: true, candidatesSaved: result.candidatesSaved };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Discovery failed." };
+  }
+}
+
+export async function runDeepDiscoveryAction(
+  projectId: string
+): Promise<SourceActionResult & { candidatesSaved?: number; rounds?: number; competitorsPromoted?: number }> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+
+  const parsed = z.string().uuid().safeParse(projectId);
+  if (!parsed.success) return { ok: false, error: "Invalid project." };
+
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  try {
+    const result = await runDeepDiscovery({ projectId: parsed.data });
+
+    await logAIRun({
+      ownerId: user.id,
+      projectId: parsed.data,
+      kind: "deep_source_discovery",
+      provider: result.usedFallbackSynthesis ? "deterministic" : "openrouter",
+      model: result.usedFallbackSynthesis ? "fallback" : "discovery-reasoning-routed",
+      input: {
+        rounds: result.rounds,
+        adaptersUsed: result.adaptersUsed,
+        hypotheses: result.hypotheses.length,
+      },
+      rawOutput: result.synthesis ? JSON.stringify(result.synthesis) : undefined,
+      parsedOutput: {
+        candidatesFound: result.candidatesFound,
+        candidatesSaved: result.candidatesSaved,
+        competitorsPromoted: result.competitorsPromoted,
+        competitorAccountsPromoted: result.competitorAccountsPromoted,
+        trace: result.trace,
+      } as never,
+      status: result.ok ? "success" : "failed",
+      errorMessage: result.error,
+    });
+
+    revalidatePath(`/projects/${parsed.data}/sources`);
+
+    if (!result.ok) return { ok: false, error: result.error ?? "Deep discovery found no candidates." };
+    return {
+      ok: true,
+      candidatesSaved: result.candidatesSaved,
+      rounds: result.rounds,
+      competitorsPromoted: result.competitorsPromoted,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Deep discovery failed." };
   }
 }
 

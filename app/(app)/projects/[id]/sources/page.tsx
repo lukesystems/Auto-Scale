@@ -17,12 +17,21 @@ interface PageProps { params: { id: string } }
 export const metadata = { title: "Sources" };
 
 export default async function SourcesPage({ params }: PageProps) {
-  const [competitors, sources, candidates, brief] = await Promise.all([
+  const [competitors, competitorAccounts, sources, candidates, brief] = await Promise.all([
     loadCompetitors(params.id),
+    loadCompetitorAccounts(params.id),
     loadSources(params.id),
     loadCandidates(params.id),
     getProductBrief(params.id),
   ]);
+
+  const accountsByCompetitor = new Map<string, typeof competitorAccounts>();
+  for (const account of competitorAccounts) {
+    if (!account.competitor_id) continue;
+    const list = accountsByCompetitor.get(account.competitor_id) ?? [];
+    list.push(account);
+    accountsByCompetitor.set(account.competitor_id, list);
+  }
 
   return (
     <div className="container py-10 space-y-8">
@@ -118,21 +127,67 @@ export default async function SourcesPage({ params }: PageProps) {
                   No competitors yet. Add a few above.
                 </div>
               ) : (
-                competitors.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-border bg-card px-4 py-3 flex items-center gap-3">
-                    <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">
-                      {c.name.slice(0, 1).toUpperCase()}
+                competitors.map((c) => {
+                  const strategy = parseStrategyProfile(c.strategy_profile);
+                  const accounts = accountsByCompetitor.get(c.id) ?? [];
+                  return (
+                  <div key={c.id} className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
+                        {c.name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-sm font-medium truncate">{c.name}</div>
+                          {c.kind && c.kind !== "unknown" && (
+                            <Badge variant="outline">{c.kind.replace("_", " ")}</Badge>
+                          )}
+                          {c.confidence && (
+                            <Badge
+                              variant={
+                                c.confidence === "high"
+                                  ? "success"
+                                  : c.confidence === "medium"
+                                    ? "secondary"
+                                    : "outline"
+                              }
+                            >
+                              {c.confidence} confidence
+                            </Badge>
+                          )}
+                          {c.source === "deep_discovery" && (
+                            <Badge variant="secondary">AI discovered</Badge>
+                          )}
+                        </div>
+                        {c.url && (
+                          <a href={c.url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 truncate">
+                            {c.url} <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{c.name}</div>
-                      {c.url && (
-                        <a href={c.url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 truncate">
-                          {c.url} <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
+                    {(strategy?.what_they_do || c.notes) && (
+                      <p className="text-sm text-foreground/80 line-clamp-3">
+                        {strategy?.what_they_do ?? c.notes}
+                      </p>
+                    )}
+                    {strategy?.working_patterns && strategy.working_patterns.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Patterns: {strategy.working_patterns.slice(0, 3).join(" · ")}
+                      </p>
+                    )}
+                    {accounts.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {accounts.map((account) => (
+                          <Badge key={account.id} variant="outline">
+                            {account.platform} @{account.handle}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
@@ -195,10 +250,35 @@ async function loadCompetitors(projectId: string) {
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
     .from("competitors")
-    .select("id, name, url, notes")
+    .select("id, name, url, notes, kind, confidence, source, strategy_profile")
     .eq("project_id", projectId)
     .order("created_at", { ascending: true });
   return data ?? [];
+}
+
+async function loadCompetitorAccounts(projectId: string) {
+  if (!isSupabaseConfigured()) return [];
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("competitor_accounts")
+    .select("id, competitor_id, platform, handle")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+function parseStrategyProfile(value: unknown): {
+  what_they_do?: string;
+  working_patterns?: string[];
+} | null {
+  if (!value || typeof value !== "object") return null;
+  const profile = value as Record<string, unknown>;
+  return {
+    what_they_do: typeof profile.what_they_do === "string" ? profile.what_they_do : undefined,
+    working_patterns: Array.isArray(profile.working_patterns)
+      ? profile.working_patterns.filter((item): item is string => typeof item === "string")
+      : undefined,
+  };
 }
 
 async function loadSources(projectId: string) {

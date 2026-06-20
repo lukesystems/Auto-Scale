@@ -1,11 +1,10 @@
 import type { Json } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getAvailableSearchAdapter, searchAdapters } from "../adapters";
-import type { SearchAdapterName } from "../types";
 import { loadDiscoveryContext } from "./load-context";
 import { planDiscovery } from "./plan-discovery";
 import { dedupeCandidates, normalizeSearchResults, canonicalizeUrl } from "./dedupe-candidates";
 import { enrichCandidates } from "./enrich-candidate";
+import { searchWithFallback } from "./search-runner";
 import { saveDiscoveryRun } from "../memory/save-discovery-run";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import type { DiscoveryPlan } from "./schema";
@@ -164,36 +163,7 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
   };
 }
 
-async function searchWithFallback(
-  query: string,
-  limit: number
-): Promise<{ adapter: string; results: Awaited<ReturnType<typeof import("../adapters").searchAdapters[0]["search"]>> } | null> {
-  const preferred: SearchAdapterName[] = ["exa", "brave", "firecrawl"];
-
-  for (const name of preferred) {
-    const adapter = searchAdapters.find((item) => item.name === name);
-    if (!adapter?.isAvailable()) continue;
-
-    try {
-      const results = await adapter.search(query, { limit });
-      if (results.length) return { adapter: adapter.name, results };
-    } catch {
-      // try next adapter
-    }
-  }
-
-  const fallback = await getAvailableSearchAdapter("exa");
-  if (!fallback) return null;
-
-  try {
-    const results = await fallback.search(query, { limit });
-    return results.length ? { adapter: fallback.name, results } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function loadExistingCandidateUrls(projectId: string): Promise<Set<string>> {
+export async function loadExistingCandidateUrls(projectId: string): Promise<Set<string>> {
   const supabase = createSupabaseServerClient();
   const urls = new Set<string>();
 

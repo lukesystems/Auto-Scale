@@ -22,6 +22,7 @@ export interface ManagedProviderConfig {
   models: {
     autobrief: string | null;
     trendwatch: string | null;
+    discovery_reasoning: string | null;
     content: string | null;
     quality_gate: string | null;
     compound: string | null;
@@ -71,6 +72,7 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
     models: {
       autobrief: readEnv("AUTOSCALE_MODEL_AUTOBRIEF"),
       trendwatch: readEnv("AUTOSCALE_MODEL_TRENDWATCH"),
+      discovery_reasoning: readEnv("AUTOSCALE_MODEL_DISCOVERY_REASONING"),
       content: readEnv("AUTOSCALE_MODEL_CONTENT"),
       quality_gate: readEnv("AUTOSCALE_MODEL_QUALITY_GATE"),
       compound: readEnv("AUTOSCALE_MODEL_COMPOUND"),
