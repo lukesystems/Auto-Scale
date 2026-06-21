@@ -11,6 +11,15 @@ export {
 } from "./dedupe-candidates";
 export type { NormalizedCandidate } from "./dedupe-candidates";
 export { enrichCandidate, enrichCandidates } from "./enrich-candidate";
+export { searchWithCoverage, mergeSearchHits, normalizeCoverageResults } from "./search-coverage";
+export type { MergedSearchHit, SearchCoverageRun } from "./search-coverage";
+export {
+  buildScoringContextFromDiscovery,
+  scoreCandidate,
+  scoreCandidates,
+} from "./score-candidate";
+export type { BriefScoringContext, CandidateQualityScore } from "./score-candidate";
+export { buildCandidateSaveMetadata } from "./candidate-metadata";
 export {
   DiscoveryPlanSchema,
   DiscoveryQuerySchema,

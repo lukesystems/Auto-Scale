@@ -84,7 +84,7 @@ describe("discovery.dedupe-candidates", () => {
     });
 
     expect(normalized[0]?.platform).toBe("reddit");
-    expect(normalized[0]?.sourceType).toBe("community");
+    expect(normalized[0]?.sourceType).toBe("community_pain");
   });
 });
 

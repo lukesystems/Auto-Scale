@@ -3,11 +3,15 @@ import { loadDiscoveryContext } from "../discovery/load-context";
 import { loadExistingCandidateUrls } from "../discovery/run-discovery";
 import {
   dedupeCandidates,
-  normalizeSearchResults,
   type NormalizedCandidate,
 } from "../discovery/dedupe-candidates";
 import { enrichCandidates, type EnrichedCandidate } from "../discovery/enrich-candidate";
-import { searchWithFallback } from "../discovery/search-runner";
+import { normalizeCoverageResults, searchWithCoverage } from "../discovery/search-coverage";
+import {
+  buildScoringContextFromDiscovery,
+  scoreCandidates,
+} from "../discovery/score-candidate";
+import { buildCandidateSaveMetadata } from "../discovery/candidate-metadata";
 import { saveDiscoveryRun } from "../memory/save-discovery-run";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import type { DiscoveryQuery } from "../discovery/schema";
@@ -108,6 +112,7 @@ export async function runDeepDiscovery(
   const adaptersUsed = new Set<string>();
   const hypotheses: string[] = [];
   const trace: DeepDiscoveryRoundTrace[] = [];
+  const intentsByQuery = new Map<string, DiscoveryQuery["intent"]>();
 
   let roundsRun = 0;
 
@@ -138,14 +143,13 @@ export async function runDeepDiscovery(
       ranQueryKeys.add(key);
       ranQueries.push(query.query);
       allQueryObjects.push(query);
+      intentsByQuery.set(query.query, query.intent);
 
-      const searchResult = await searchWithFallback(query.query, MAX_RESULTS_PER_QUERY);
-      if (!searchResult) continue;
-      adaptersUsed.add(searchResult.adapter);
+      const coverage = await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY);
+      for (const adapter of coverage.adaptersUsed) adaptersUsed.add(adapter);
 
-      const batch = normalizeSearchResults({
-        results: searchResult.results,
-        adapter: searchResult.adapter,
+      const batch = normalizeCoverageResults({
+        hits: coverage.results,
         query: query.query,
         reason: query.reason,
         intent: query.intent,
@@ -178,33 +182,41 @@ export async function runDeepDiscovery(
   }
 
   const deduped = dedupeCandidates(gathered);
-  const enriched: EnrichedCandidate[] = deduped.length ? await enrichCandidates(deduped) : [];
+  const scoringContext = buildScoringContextFromDiscovery(context);
+  const scored = scoreCandidates(deduped, intentsByQuery, scoringContext);
+  const qualityByUrl = new Map(
+    scored.map((row) => [row.candidate.canonicalUrl, row.quality] as const)
+  );
+  const rankedCandidates = scored
+    .map((row) => row.candidate)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const enriched: EnrichedCandidate[] = rankedCandidates.length
+    ? await enrichCandidates(rankedCandidates)
+    : [];
 
   let candidatesSaved = 0;
   if (runId && enriched.length) {
     try {
       const ids = await saveSourceCandidates(
-        enriched.map((candidate) => ({
-          discoveryRunId: runId!,
-          projectId: input.projectId,
-          url: candidate.url,
-          canonicalUrl: candidate.canonicalUrl,
-          title: candidate.enrichedTitle ?? candidate.title,
-          snippet: candidate.enrichedSnippet ?? candidate.snippet,
-          sourceType: candidate.sourceType,
-          platform: candidate.platform,
-          adapter: candidate.adapter,
-          discoveryQuery: candidate.discoveryQuery,
-          discoveryReason: candidate.discoveryReason,
-          relevanceScore: candidate.relevanceScore,
-          enrichStatus: candidate.enrichStatus,
-          metadata: {
-            account_handle: candidate.accountHandle,
-            enrich_status: candidate.enrichStatus,
-            enrich_error: candidate.enrichError,
-            fetch_metadata: candidate.fetchMetadata,
-          } as Json,
-        }))
+        enriched.map((candidate) => {
+          const quality = qualityByUrl.get(candidate.canonicalUrl);
+          return {
+            discoveryRunId: runId!,
+            projectId: input.projectId,
+            url: candidate.url,
+            canonicalUrl: candidate.canonicalUrl,
+            title: candidate.enrichedTitle ?? candidate.title,
+            snippet: candidate.enrichedSnippet ?? candidate.snippet,
+            sourceType: candidate.sourceType,
+            platform: candidate.platform,
+            adapter: candidate.adapter,
+            discoveryQuery: candidate.discoveryQuery,
+            discoveryReason: candidate.discoveryReason,
+            relevanceScore: candidate.relevanceScore,
+            enrichStatus: candidate.enrichStatus,
+            metadata: buildCandidateSaveMetadata(candidate, quality),
+          };
+        })
       );
       candidatesSaved = ids.length;
     } catch (error) {

@@ -54,24 +54,84 @@ export function extractAccountHandle(url: string, platform: string): string | nu
 
 export function inferSourceType(url: string, intent: DiscoveryIntent): string {
   const lower = url.toLowerCase();
-  if (lower.includes("reddit.com") || lower.includes("discourse.") || lower.includes("community.")) {
-    return "community";
+
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+    const host = parsed.hostname.replace(/^www\./, "");
+
+    if (/\/pricing|\/plans|\/plan\b/.test(path)) return "competitor_pricing";
+    if (/\/docs|\/documentation|readthedocs|\/api\b/.test(path) || host.includes("docs.")) {
+      return "documentation";
+    }
+    if (/\/blog\b|medium\.com|substack\.com/.test(lower)) return "competitor_blog";
+    if (host.includes("g2.com") || host.includes("capterra") || host.includes("trustpilot")) {
+      return "review";
+    }
+    if (/\/vs\b|alternative|compare|comparison/.test(lower)) return "comparison";
+    if (
+      host.includes("reddit.com") &&
+      (path.includes("/comments/") || path.startsWith("/r/"))
+    ) {
+      return "community_pain";
+    }
+    if (
+      host.includes("devforum.") ||
+      host.includes("discourse.") ||
+      host.includes("community.")
+    ) {
+      return intent === "pain" || intent === "community" ? "community_pain" : "community";
+    }
+    if (
+      (host.includes("youtube.com") || host.includes("youtu.be")) &&
+      (path.includes("/watch") || path.includes("/shorts"))
+    ) {
+      return "video";
+    }
+    if (host.includes("tiktok.com") && path.includes("/video/")) return "video";
+    if (
+      (host.includes("x.com") || host.includes("twitter.com")) &&
+      (path.includes("/status/") || path.includes("/statuses/"))
+    ) {
+      return "social_post";
+    }
+    if (host.includes("linkedin.com") && path.includes("/posts/")) return "social_post";
+    if (
+      host.includes("youtube.com") &&
+      (path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/"))
+    ) {
+      return "creator_account";
+    }
+    if (
+      (host.includes("x.com") || host.includes("twitter.com") || host.includes("tiktok.com")) &&
+      path.split("/").filter(Boolean).length === 1
+    ) {
+      return intent === "creator" ? "creator_account" : "social_post";
+    }
+    if (
+      host.includes("gumroad.com") ||
+      host.includes("etsy.com") ||
+      host.includes("roblox.com") && path.includes("/catalog")
+    ) {
+      return "marketplace";
+    }
+    if (intent === "competitor" || intent === "indirect_competitor") {
+      const segments = path.split("/").filter(Boolean);
+      if (segments.length <= 1) return "competitor_homepage";
+      return "competitor_blog";
+    }
+    if (intent === "creator") return "creator_account";
+    if (intent === "community" || intent === "pain") return "community_pain";
+    if (intent === "comparison" || intent === "alternative") return "comparison";
+    if (lower.includes("youtube.com") || lower.includes("youtu.be") || lower.includes("tiktok.com")) {
+      return "video";
+    }
+    if (lower.includes("reddit.com")) return "community";
+    if (lower.includes("medium.com") || lower.includes("/blog")) return "article";
+  } catch {
+    // fall through
   }
-  if (lower.includes("g2.com") || lower.includes("capterra") || lower.includes("trustpilot") || lower.includes("review")) {
-    return "review";
-  }
-  if (lower.includes("vs") || lower.includes("alternative") || lower.includes("compare")) {
-    return "comparison";
-  }
-  if (intent === "creator") return "creator";
-  if (intent === "competitor" || intent === "indirect_competitor") return "competitor";
-  if (intent === "community") return "community";
-  if (lower.includes("youtube.com") || lower.includes("youtu.be") || lower.includes("tiktok.com")) {
-    return "video";
-  }
-  if (lower.includes("medium.com") || lower.includes("/blog")) {
-    return "article";
-  }
+
   return "unknown";
 }
 

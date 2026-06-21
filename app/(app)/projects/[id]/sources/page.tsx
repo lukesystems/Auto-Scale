@@ -82,8 +82,31 @@ export default async function SourcesPage({ params }: PageProps) {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline">{candidate.platform}</Badge>
-                        <Badge variant="secondary">{candidate.source_type}</Badge>
+                        <Badge variant="secondary">{candidate.source_type.replace(/_/g, " ")}</Badge>
                         <Badge variant="outline">{candidate.adapter}</Badge>
+                        {candidate.quality?.strategicValue != null && (
+                          <Badge variant="outline">
+                            Strategic {Math.round(candidate.quality.strategicValue * 100)}%
+                          </Badge>
+                        )}
+                        {candidate.quality?.competitorLikelihood != null && (
+                          <Badge variant="outline">
+                            Competitor {Math.round(candidate.quality.competitorLikelihood * 100)}%
+                          </Badge>
+                        )}
+                        {candidate.quality?.confidence != null && (
+                          <Badge
+                            variant={
+                              candidate.quality.confidence >= 0.65
+                                ? "success"
+                                : candidate.quality.confidence >= 0.4
+                                  ? "secondary"
+                                  : "outline"
+                            }
+                          >
+                            Confidence {Math.round(candidate.quality.confidence * 100)}%
+                          </Badge>
+                        )}
                         <Badge
                           variant={
                             candidate.enrich_status === "enriched"
@@ -113,6 +136,13 @@ export default async function SourcesPage({ params }: PageProps) {
                     {candidate.discovery_reason && (
                       <p className="mt-2 text-xs text-muted-foreground">{candidate.discovery_reason}</p>
                     )}
+                    {candidate.quality?.reasons?.length ? (
+                      <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                        {candidate.quality.reasons.slice(0, 2).map((reason) => (
+                          <li key={reason}>· {reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -307,11 +337,35 @@ async function loadCandidates(projectId: string) {
   const { data } = await supabase
     .from("source_candidates")
     .select(
-      "id, url, title, snippet, platform, source_type, adapter, discovery_query, discovery_reason, relevance_score, enrich_status, review_status"
+      "id, url, title, snippet, platform, source_type, adapter, discovery_query, discovery_reason, relevance_score, enrich_status, review_status, metadata"
     )
     .eq("project_id", projectId)
     .eq("review_status", "pending")
     .order("relevance_score", { ascending: false })
     .limit(50);
-  return data ?? [];
+  return (data ?? []).map((row) => ({
+    ...row,
+    quality: parseCandidateQuality(row.metadata),
+  }));
+}
+
+function parseCandidateQuality(metadata: unknown): {
+  competitorLikelihood: number | null;
+  strategicValue: number | null;
+  confidence: number | null;
+  reasons: string[];
+} | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const quality = (metadata as Record<string, unknown>).quality;
+  if (!quality || typeof quality !== "object") return null;
+  const q = quality as Record<string, unknown>;
+  return {
+    competitorLikelihood:
+      typeof q.competitor_likelihood === "number" ? q.competitor_likelihood : null,
+    strategicValue: typeof q.strategic_value === "number" ? q.strategic_value : null,
+    confidence: typeof q.confidence === "number" ? q.confidence : null,
+    reasons: Array.isArray(q.reasons)
+      ? q.reasons.filter((item): item is string => typeof item === "string")
+      : [],
+  };
 }

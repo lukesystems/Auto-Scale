@@ -1,10 +1,14 @@
-import type { Json } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadDiscoveryContext } from "./load-context";
 import { planDiscovery } from "./plan-discovery";
-import { dedupeCandidates, normalizeSearchResults, canonicalizeUrl } from "./dedupe-candidates";
+import { dedupeCandidates, canonicalizeUrl } from "./dedupe-candidates";
 import { enrichCandidates } from "./enrich-candidate";
-import { searchWithFallback } from "./search-runner";
+import { normalizeCoverageResults, searchWithCoverage } from "./search-coverage";
+import {
+  buildScoringContextFromDiscovery,
+  scoreCandidates,
+} from "./score-candidate";
+import { buildCandidateSaveMetadata } from "./candidate-metadata";
 import { saveDiscoveryRun } from "../memory/save-discovery-run";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import type { DiscoveryPlan } from "./schema";
@@ -69,17 +73,16 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
 
   const existingUrls = await loadExistingCandidateUrls(input.projectId);
   const normalized = [];
+  const intentsByQuery = new Map(planned.plan.queries.map((q) => [q.query, q.intent]));
 
   for (const query of planned.plan.queries) {
     if (normalized.length >= MAX_TOTAL_CANDIDATES) break;
 
-    const searchResult = await searchWithFallback(query.query, MAX_RESULTS_PER_QUERY);
-    if (!searchResult) continue;
+    const coverage = await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY);
+    for (const adapter of coverage.adaptersUsed) adaptersUsed.add(adapter);
 
-    adaptersUsed.add(searchResult.adapter);
-    const batch = normalizeSearchResults({
-      results: searchResult.results,
-      adapter: searchResult.adapter,
+    const batch = normalizeCoverageResults({
+      hits: coverage.results,
       query: query.query,
       reason: query.reason,
       intent: query.intent,
@@ -94,38 +97,45 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
   }
 
   const deduped = dedupeCandidates(normalized);
-  const enriched = input.enrich === false ? deduped.map((candidate) => ({
+  const scoringContext = buildScoringContextFromDiscovery(context);
+  const scored = scoreCandidates(deduped, intentsByQuery, scoringContext);
+  const qualityByUrl = new Map(
+    scored.map((row) => [row.candidate.canonicalUrl, row.quality] as const)
+  );
+  const rankedCandidates = scored
+    .map((row) => row.candidate)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const enriched = input.enrich === false ? rankedCandidates.map((candidate) => ({
     ...candidate,
     enrichStatus: "skipped" as const,
     enrichError: null,
     enrichedTitle: candidate.title,
     enrichedSnippet: candidate.snippet,
     fetchMetadata: {},
-  })) : await enrichCandidates(deduped);
+  })) : await enrichCandidates(rankedCandidates);
 
   let candidatesSaved = 0;
   if (runId && enriched.length) {
     const ids = await saveSourceCandidates(
-      enriched.map((candidate) => ({
-        discoveryRunId: runId!,
-        projectId: input.projectId,
-        url: candidate.url,
-        canonicalUrl: candidate.canonicalUrl,
-        title: candidate.enrichedTitle ?? candidate.title,
-        snippet: candidate.enrichedSnippet ?? candidate.snippet,
-        sourceType: candidate.sourceType,
-        platform: candidate.platform,
-        adapter: candidate.adapter,
-        discoveryQuery: candidate.discoveryQuery,
-        discoveryReason: candidate.discoveryReason,
-        relevanceScore: candidate.relevanceScore,
-        metadata: {
-          account_handle: candidate.accountHandle,
-          enrich_status: candidate.enrichStatus,
-          enrich_error: candidate.enrichError,
-          fetch_metadata: candidate.fetchMetadata,
-        } as Json,
-      }))
+      enriched.map((candidate) => {
+        const quality = qualityByUrl.get(candidate.canonicalUrl);
+        return {
+          discoveryRunId: runId!,
+          projectId: input.projectId,
+          url: candidate.url,
+          canonicalUrl: candidate.canonicalUrl,
+          title: candidate.enrichedTitle ?? candidate.title,
+          snippet: candidate.enrichedSnippet ?? candidate.snippet,
+          sourceType: candidate.sourceType,
+          platform: candidate.platform,
+          adapter: candidate.adapter,
+          discoveryQuery: candidate.discoveryQuery,
+          discoveryReason: candidate.discoveryReason,
+          relevanceScore: candidate.relevanceScore,
+          enrichStatus: candidate.enrichStatus,
+          metadata: buildCandidateSaveMetadata(candidate, quality),
+        };
+      })
     );
     candidatesSaved = ids.length;
   }
