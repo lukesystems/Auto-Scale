@@ -6,6 +6,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { generateProductBrief } from "@/services/product-brief/generate";
 import { logAIRun } from "@/services/ai/logger";
+import {
+  computeCompetitorConfidence,
+  type BriefCompetitorEntry,
+} from "@/services/intelligence/memory/merge-brief-competitors";
 
 const BriefUpdateSchema = z.object({
   project_id: z.string().uuid(),
@@ -86,6 +90,22 @@ export async function saveBriefAction(formData: FormData): Promise<BriefResult> 
   const targetAudience = lines(parsed.data.target_audience);
   const competitors = lines(parsed.data.competitors);
 
+  // Preserve evidence-backed (verified) competitors from deep discovery so a
+  // founder edit does not silently downgrade them back to low-confidence guesses.
+  const { data: existingBrief } = await supabase
+    .from("product_briefs")
+    .select("likely_competitors, confidence")
+    .eq("project_id", parsed.data.project_id)
+    .maybeSingle();
+
+  const likelyCompetitors = mergeFounderEditedCompetitors(competitors, existingBrief?.likely_competitors);
+  const competitorsConfidence = computeCompetitorConfidence(likelyCompetitors);
+  const existingConfidence =
+    existingBrief?.confidence && typeof existingBrief.confidence === "object" && !Array.isArray(existingBrief.confidence)
+      ? (existingBrief.confidence as Record<string, unknown>)
+      : {};
+  const nextConfidence = { ...existingConfidence, competitors: competitorsConfidence };
+
   const { data: savedBrief, error } = await supabase
     .from("product_briefs")
     .upsert({
@@ -108,7 +128,8 @@ export async function saveBriefAction(formData: FormData): Promise<BriefResult> 
       cta: parsed.data.cta || null,
       brand_voice: parsed.data.brand_voice || null,
       competitors: competitors as never,
-      likely_competitors: competitors.map((name) => ({ name, reason: "Founder edited guess", confidence: "low" })) as never,
+      likely_competitors: likelyCompetitors as never,
+      confidence: nextConfidence as never,
       alternative_solutions: lines(parsed.data.alternative_solutions) as never,
       market_category: parsed.data.market_category || null,
       content_angles: contentAngles as never,
@@ -147,6 +168,51 @@ function lines(value?: string): string[] {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * Rebuild `likely_competitors` from the founder's edited name list while keeping
+ * any verified (evidence-backed) entries intact. New names the founder adds are
+ * stored as unverified low-confidence guesses; verified entries the founder
+ * removed are dropped.
+ */
+function mergeFounderEditedCompetitors(
+  names: string[],
+  existingLikely: unknown
+): BriefCompetitorEntry[] {
+  const verifiedByName = new Map<string, BriefCompetitorEntry>();
+  if (Array.isArray(existingLikely)) {
+    for (const item of existingLikely) {
+      if (!item || typeof item !== "object" || !("name" in item)) continue;
+      const entry = item as Partial<BriefCompetitorEntry> & { name?: unknown };
+      const name = String(entry.name ?? "").trim();
+      if (!name || entry.verification !== "verified") continue;
+      verifiedByName.set(name.toLowerCase(), {
+        name,
+        url: entry.url ?? null,
+        reason: entry.reason ?? "",
+        confidence: (entry.confidence as BriefCompetitorEntry["confidence"]) ?? "medium",
+        verification: "verified",
+        evidence_count: typeof entry.evidence_count === "number" ? entry.evidence_count : 0,
+        evidence_urls: Array.isArray(entry.evidence_urls) ? (entry.evidence_urls as string[]) : [],
+        kind: entry.kind,
+      });
+    }
+  }
+
+  return names.map((name) => {
+    const verified = verifiedByName.get(name.toLowerCase());
+    if (verified) return verified;
+    return {
+      name,
+      url: null,
+      reason: "Founder edited guess",
+      confidence: "low",
+      verification: "unverified",
+      evidence_count: 0,
+      evidence_urls: [],
+    };
+  });
 }
 
 function parsePlatformRecommendation(value: string): { platform: string; reason: string } {

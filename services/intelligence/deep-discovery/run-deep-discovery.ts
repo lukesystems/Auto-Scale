@@ -14,6 +14,7 @@ import type { DiscoveryQuery } from "../discovery/schema";
 import { reasonNextStep } from "./reason-next-step";
 import { synthesizeFindings } from "./synthesize-findings";
 import { promoteSynthesisCompetitors } from "../memory/promote-synthesis-competitors";
+import { refreshBriefCompetitorsFromSynthesis } from "../memory/refresh-brief-competitors";
 import type { MarketSynthesis } from "./schema";
 
 const MAX_ROUNDS = 4;
@@ -257,6 +258,20 @@ export async function runDeepDiscovery(
     } catch (error) {
       console.warn(
         "[deep-discovery] competitor promotion failed",
+        error instanceof Error ? error.message : error
+      );
+    }
+
+    // Close the loop: push evidence-backed competitors back into the brief the
+    // founder reads, replacing the original model guesses with verified entries.
+    try {
+      await refreshBriefCompetitorsFromSynthesis({
+        projectId: input.projectId,
+        synthesis: synthesisResult.synthesis,
+      });
+    } catch (error) {
+      console.warn(
+        "[deep-discovery] brief competitor refresh failed",
         error instanceof Error ? error.message : error
       );
     }
