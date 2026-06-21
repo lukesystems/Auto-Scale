@@ -14,8 +14,15 @@ export interface SourceCandidateInput {
   discoveryQuery?: string | null;
   discoveryReason?: string | null;
   relevanceScore?: number;
-  enrichStatus?: "pending" | "enriched" | "failed" | "skipped";
+  enrichStatus?: "pending" | "enriched" | "failed" | "skipped" | "deep_enriched";
   metadata?: Json;
+}
+
+function normalizeEnrichStatus(
+  status: SourceCandidateInput["enrichStatus"]
+): "pending" | "enriched" | "failed" | "skipped" {
+  if (status === "deep_enriched") return "enriched";
+  return status ?? "pending";
 }
 
 export async function saveSourceCandidates(candidates: SourceCandidateInput[]): Promise<string[]> {
@@ -36,7 +43,7 @@ export async function saveSourceCandidates(candidates: SourceCandidateInput[]): 
     discovery_query: candidate.discoveryQuery ?? null,
     discovery_reason: candidate.discoveryReason ?? null,
     relevance_score: candidate.relevanceScore ?? 0,
-    enrich_status: candidate.enrichStatus ?? "pending",
+    enrich_status: normalizeEnrichStatus(candidate.enrichStatus),
     metadata: (candidate.metadata ?? {}) as Json,
   }));
 

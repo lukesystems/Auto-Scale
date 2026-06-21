@@ -7,6 +7,8 @@ export function buildCandidateSaveMetadata(
   quality?: CandidateQualityScore,
   extras?: Record<string, unknown>
 ): Json {
+  const deepEnrichment = candidate.deepEnrichment;
+
   return {
     account_handle: candidate.accountHandle,
     enrich_status: candidate.enrichStatus,
@@ -22,6 +24,24 @@ export function buildCandidateSaveMetadata(
             strategic_value: quality.strategicValue,
             confidence: quality.confidence,
             reasons: quality.reasons,
+          },
+        }
+      : {}),
+    ...(deepEnrichment
+      ? {
+          deep_enrichment: {
+            status: deepEnrichment.status,
+            crawled_at: deepEnrichment.crawledAt,
+            pages_crawled: deepEnrichment.pages.length,
+            pages_successful: deepEnrichment.pages.filter((p) => p.status === "success").length,
+            consolidated: deepEnrichment.consolidated,
+            pages: deepEnrichment.pages.map((p) => ({
+              url: p.url,
+              page_type: p.pageType,
+              status: p.status,
+              title: p.title,
+              extracted: p.extracted,
+            })),
           },
         }
       : {}),

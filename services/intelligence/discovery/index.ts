@@ -11,6 +11,20 @@ export {
 } from "./dedupe-candidates";
 export type { NormalizedCandidate } from "./dedupe-candidates";
 export { enrichCandidate, enrichCandidates } from "./enrich-candidate";
+export type { EnrichedCandidate, CandidateEnrichStatus } from "./enrich-candidate";
+export {
+  deepEnrichSource,
+  deepEnrichCandidate,
+  shouldDeepEnrich,
+  discoverCompetitorPages,
+} from "../enrichment/deep-enrich-source";
+export type {
+  DeepEnrichmentResult,
+  DeepEnrichStatus,
+  CompetitorPageEnrichment,
+  CompetitorIntelligence,
+  CompetitorPageType,
+} from "../enrichment/deep-enrich-source";
 export { searchWithCoverage, mergeSearchHits, normalizeCoverageResults } from "./search-coverage";
 export type { MergedSearchHit, SearchCoverageRun } from "./search-coverage";
 export {
