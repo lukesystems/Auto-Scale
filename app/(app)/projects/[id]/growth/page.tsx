@@ -50,8 +50,29 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           A Growth Run is one full closed loop for {project.data?.name ?? "this project"}:
           product brief → video trend report → strategy → loadout → video concepts →
           scripts → storyboards → assets → approval → multi-account scheduling → tracking →
-          compound. Paste the URL, click Run AutoScale, approve the videos.
+          compound. Click Run AutoScale, then approve the videos.
         </p>
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <span className="font-medium text-muted-foreground">Product URL:</span>
+          {project.data?.product_url ? (
+            <a
+              href={project.data.product_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-foreground underline break-all"
+            >
+              {project.data.product_url}
+            </a>
+          ) : (
+            <span className="text-amber-600 dark:text-amber-400">
+              No product URL saved.{" "}
+              <Link href={`/projects/${projectId}/brief`} className="underline">
+                Set it in the Brief
+              </Link>{" "}
+              so the run can understand your product.
+            </span>
+          )}
+        </div>
       </header>
 
       <section className="rounded-lg border bg-card p-4 space-y-3">

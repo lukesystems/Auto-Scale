@@ -44,18 +44,57 @@ export async function scheduleApprovedVideos(
   const supabase = createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
 
-  // Approved videos in this run, with concept + captions + accounts.
-  const { data: videos, error: vErr } = await supabase
+  // Approved videos in this run. A video is only schedulable when it has a
+  // real rendered final asset — never schedule "captions without a video".
+  const { data: candidateVideos, error: vErr } = await supabase
     .from("videos")
     .select(
-      "id, concept_id, project_id, growth_run_id, status, approval_status, duration_seconds, aspect_ratio"
+      "id, concept_id, project_id, growth_run_id, status, approval_status, final_asset_id, duration_seconds, aspect_ratio"
     )
     .eq("growth_run_id", input.growthRunId)
     .in("approval_status", ["approved", "auto_approved"])
-    .neq("status", "killed");
+    .eq("status", "ready");
   if (vErr) throw new Error(`videos load: ${vErr.message}`);
-  if (!videos?.length) {
+  if (!candidateVideos?.length) {
     return { scheduledCount: 0, skippedCount: 0, failureCount: 0, diagnostics: [] };
+  }
+
+  const diagnostics: MultiAccountScheduleResult["diagnostics"] = [];
+  let scheduledCount = 0;
+  let skippedCount = 0;
+  let failureCount = 0;
+
+  // Resolve a real, publicly-fetchable media URL per video. Drop any video
+  // whose final asset has not succeeded or has no public URL.
+  const videoMedia = new Map<string, string>();
+  const videos: typeof candidateVideos = [];
+  for (const v of candidateVideos) {
+    if (!v.final_asset_id) {
+      skippedCount++;
+      diagnostics.push({ videoId: v.id, accountId: "n/a", outcome: "skipped", reason: "no final asset" });
+      continue;
+    }
+    const { data: asset } = await supabase
+      .from("generated_assets")
+      .select("status, public_url")
+      .eq("id", v.final_asset_id)
+      .maybeSingle();
+    if (!asset || asset.status !== "succeeded" || !asset.public_url) {
+      skippedCount++;
+      diagnostics.push({
+        videoId: v.id,
+        accountId: "n/a",
+        outcome: "skipped",
+        reason: "final asset not rendered (status/public_url missing)",
+      });
+      continue;
+    }
+    videoMedia.set(v.id, asset.public_url);
+    videos.push(v);
+  }
+
+  if (!videos.length) {
+    return { scheduledCount: 0, skippedCount, failureCount: 0, diagnostics };
   }
 
   const { data: loadout, error: lErr } = await supabase
@@ -75,10 +114,6 @@ export async function scheduleApprovedVideos(
   const credentials = await resolvePostizCredentials(input.ownerId, providerMode);
   const postizEnabled = !!credentials?.apiKey && !!credentials?.apiUrl;
 
-  const diagnostics: MultiAccountScheduleResult["diagnostics"] = [];
-  let scheduledCount = 0;
-  let skippedCount = 0;
-  let failureCount = 0;
   const startAt = input.startAt ?? new Date();
 
   // Per-account counters within this scheduling pass.
@@ -163,6 +198,7 @@ export async function scheduleApprovedVideos(
       const trackedUrl = buildTrackedUrl({ baseUrl: input.baseAppUrl, shortCode });
 
       const captionWithLink = `${caption.caption}\n\n${trackedUrl}`;
+      const mediaUrl = videoMedia.get(video.id)!;
 
       const { data: scheduleRow, error: sErr } = await supabase
         .from("schedule_items")
@@ -180,6 +216,7 @@ export async function scheduleApprovedVideos(
             caption: captionWithLink,
             hashtags: caption.hashtags,
             cta: caption.cta,
+            media_url: mediaUrl,
             tracked_link_id: trackedLinkId,
             tracked_url: trackedUrl,
           } as never,
@@ -222,6 +259,7 @@ export async function scheduleApprovedVideos(
         channel: account.postiz_account_id,
         scheduledFor: scheduledFor.toISOString(),
         caption: captionWithLink,
+        imageUrls: [mediaUrl],
         cta: caption.cta ?? undefined,
         externalRef: `gr_${input.growthRunId.slice(0, 8)}/v_${video.id.slice(0, 8)}`,
         platform: account.platform,
@@ -237,9 +275,11 @@ export async function scheduleApprovedVideos(
             postiz_response: (resp.raw ?? {}) as never,
           })
           .eq("id", scheduleRow!.id);
+        // The post is scheduled in Postiz, not yet live. Reflect that the
+        // video is queued for publishing — do NOT mark it "posted" here.
         await supabase
           .from("videos")
-          .update({ status: "posted" })
+          .update({ status: "approved" })
           .eq("id", video.id);
         diagnostics.push({ videoId: video.id, accountId, outcome: "scheduled" });
       } else {

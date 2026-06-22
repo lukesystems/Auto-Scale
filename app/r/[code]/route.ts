@@ -56,22 +56,24 @@ export async function GET(req: NextRequest, { params }: { params: { code: string
     req.headers.get("x-real-ip") ??
     null;
 
-  // Fire-and-forget logging — don't block the redirect.
-  void admin
-    .from("link_click_events")
-    .insert({
+  // Await the writes so serverless runtimes don't kill them after the
+  // response is returned. A failed write must not break the redirect, so we
+  // swallow errors but never skip the await.
+  try {
+    await admin.from("link_click_events").insert({
       tracked_link_id: link.id,
       project_id: link.project_id,
       user_agent: req.headers.get("user-agent"),
       referrer: req.headers.get("referer"),
       ip_hash: hashIp(ip),
-    })
-    .then(() =>
-      admin
-        .from("tracked_links")
-        .update({ click_count: (link.click_count ?? 0) + 1 })
-        .eq("id", link.id)
-    );
+    });
+    await admin
+      .from("tracked_links")
+      .update({ click_count: (link.click_count ?? 0) + 1 })
+      .eq("id", link.id);
+  } catch {
+    // Logging failure should never block the user's redirect.
+  }
 
   return NextResponse.redirect(destination.toString(), 302);
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { verifyWebhookAuth } from "@/services/tracking/webhook-auth";
 import { createHash } from "node:crypto";
 
 /**
@@ -10,9 +11,9 @@ import { createHash } from "node:crypto";
  * their backend whenever a new user signs up; we attach attribution back
  * to the tracked link / video that drove it.
  *
- * Auth: `Authorization: Bearer <project_id>.<webhook_secret>` — secret is
- * stored on the project's brand_constraints. For v1 we accept the
- * tracked_link_id alone as proof of attribution when no secret is set.
+ * Auth (required): `Authorization: Bearer <project_id>.<webhook_secret>`.
+ * The secret is derived per-project via HMAC from AUTOSCALE_WEBHOOK_SIGNING_KEY
+ * (see services/tracking/webhook-auth.ts). Unauthenticated inserts are rejected.
  */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest) {
   if (!projectId) {
     return NextResponse.json({ ok: false, error: "project_id required" }, { status: 400 });
   }
+
+  const auth = verifyWebhookAuth(req.headers.get("authorization"), projectId);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+  }
+
   const admin = createSupabaseAdminClient();
 
   let trackedLinkId =

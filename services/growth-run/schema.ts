@@ -130,7 +130,9 @@ export const PerAccountPlanSchema = z.object({
 });
 
 export const PostingLoadoutSchema = z.object({
-  per_account_plan: z.array(PerAccountPlanSchema).min(1),
+  // May be empty: AutoScale still generates videos and keeps them in an
+  // internal queue / export mode when no Postiz accounts are connected.
+  per_account_plan: z.array(PerAccountPlanSchema).default([]),
   total_videos_planned: z.number().int().min(1),
   duration_days: z.number().int().min(1).max(60).default(7),
 });

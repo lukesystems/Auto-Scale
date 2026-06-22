@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { verifyWebhookAuth } from "@/services/tracking/webhook-auth";
 
 /**
  * POST /api/events/payment
@@ -33,6 +34,11 @@ export async function POST(req: NextRequest) {
       { ok: false, error: "project_id and amount_cents (or amount) required" },
       { status: 400 }
     );
+  }
+
+  const auth = verifyWebhookAuth(req.headers.get("authorization"), projectId);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
   }
 
   const admin = createSupabaseAdminClient();

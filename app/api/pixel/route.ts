@@ -21,21 +21,31 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
  *     metadata?: Record<string, unknown>;
  *   }
  */
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+} as const;
+
+function pixelJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: CORS_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
-    return NextResponse.json({ ok: false, error: "supabase not configured" }, { status: 503 });
+    return pixelJson({ ok: false, error: "supabase not configured" }, 503);
   }
   let body: Record<string, unknown> = {};
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+    return pixelJson({ ok: false, error: "invalid json" }, 400);
   }
 
   const projectId = typeof body.project_id === "string" ? body.project_id : null;
   const eventName = typeof body.event_name === "string" ? body.event_name : null;
   if (!projectId || !eventName) {
-    return NextResponse.json({ ok: false, error: "project_id and event_name required" }, { status: 400 });
+    return pixelJson({ ok: false, error: "project_id and event_name required" }, 400);
   }
 
   const admin = createSupabaseAdminClient();
@@ -70,17 +80,11 @@ export async function POST(req: NextRequest) {
     metadata: ((body.metadata as Record<string, unknown>) ?? {}) as never,
   });
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return pixelJson({ ok: false, error: error.message }, 500);
   }
-  return NextResponse.json({ ok: true });
+  return pixelJson({ ok: true });
 }
 
 export async function OPTIONS() {
-  return new NextResponse(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
+  return new NextResponse(null, { headers: CORS_HEADERS });
 }
