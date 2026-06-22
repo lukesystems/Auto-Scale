@@ -354,7 +354,12 @@ export function buildEnrichedDigest(candidates: EnrichedCandidate[]): string {
 
   for (const c of candidates.slice(0, MAX_DIGEST_LINES)) {
     const handle = c.accountHandle ? ` @${c.accountHandle}` : "";
-    const status = c.enrichStatus === "enriched" || c.enrichStatus === "deep_enriched" ? "fetched" : `${c.enrichStatus}`;
+    const status =
+      c.enrichStatus === "deep_enriched"
+        ? "deep_enriched"
+        : c.enrichStatus === "enriched"
+          ? "fetched"
+          : `${c.enrichStatus}`;
     const title = c.enrichedTitle ?? c.title ?? c.url;
     const snippet = c.enrichedSnippet ? ` — ${c.enrichedSnippet.slice(0, 200)}` : "";
     lines.push(`- [${c.platform}/${c.sourceType}] (${status})${handle} ${title} (${c.url})${snippet}`);

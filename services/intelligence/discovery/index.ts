@@ -10,7 +10,7 @@ export {
   inferSourceType,
 } from "./dedupe-candidates";
 export type { NormalizedCandidate } from "./dedupe-candidates";
-export { enrichCandidate, enrichCandidates } from "./enrich-candidate";
+export { enrichCandidate, enrichCandidates, pickDeepEnrichCandidateIndices, MAX_DEEP_ENRICH_PER_RUN } from "./enrich-candidate";
 export type { EnrichedCandidate, CandidateEnrichStatus } from "./enrich-candidate";
 export {
   deepEnrichSource,

@@ -38,6 +38,26 @@ describe("deep-discovery.buildEnrichedDigest", () => {
     expect(digest).toContain("RoUI");
     expect(digest).toContain("https://roui.dev");
     expect(digest).toContain("Build Roblox interfaces faster.");
+    expect(digest).toContain("(fetched)");
+    expect(digest).not.toContain("(deep_enriched)");
+  });
+
+  it("labels deep-enriched sources as (deep_enriched) not (fetched)", () => {
+    const digest = buildEnrichedDigest([
+      baseCandidate({
+        enrichStatus: "deep_enriched",
+        deepEnrichment: {
+          status: "enriched",
+          error: null,
+          baseUrl: "https://roui.dev",
+          crawledAt: new Date().toISOString(),
+          pages: [],
+          consolidated: { positioning: "Roblox UI toolkit" },
+        },
+      }),
+    ]);
+    expect(digest).toContain("(deep_enriched)");
+    expect(digest).not.toMatch(/\(fetched\).*positioning:/s);
   });
 
   it("includes deep_enrichment consolidated fields when present", () => {

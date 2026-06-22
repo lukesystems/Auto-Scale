@@ -8,6 +8,23 @@ import {
 
 export type CandidateEnrichStatus = "pending" | "enriched" | "failed" | "skipped" | "deep_enriched";
 
+/** Max candidates that receive multi-page deep enrichment per discovery run (×4 pages each). */
+export const MAX_DEEP_ENRICH_PER_RUN = 5;
+
+export function pickDeepEnrichCandidateIndices(
+  candidates: NormalizedCandidate[],
+  max = MAX_DEEP_ENRICH_PER_RUN
+): Set<number> {
+  const indices = new Set<number>();
+  for (let i = 0; i < candidates.length && indices.size < max; i++) {
+    const candidate = candidates[i];
+    if (shouldDeepEnrich(candidate.sourceType, candidate.relevanceScore)) {
+      indices.add(i);
+    }
+  }
+  return indices;
+}
+
 export interface EnrichedCandidate extends NormalizedCandidate {
   enrichStatus: CandidateEnrichStatus;
   enrichError: string | null;
@@ -88,9 +105,14 @@ export async function enrichCandidate(
 
 export async function enrichCandidates(
   candidates: NormalizedCandidate[],
-  options?: { concurrency?: number; enableDeepEnrich?: boolean }
+  options?: { concurrency?: number; enableDeepEnrich?: boolean; maxDeepEnrich?: number }
 ): Promise<EnrichedCandidate[]> {
   const concurrency = options?.concurrency ?? 3;
+  const deepEnrichEnabled = options?.enableDeepEnrich !== false;
+  const deepEnrichIndices = deepEnrichEnabled
+    ? pickDeepEnrichCandidateIndices(candidates, options?.maxDeepEnrich)
+    : new Set<number>();
+
   const results: EnrichedCandidate[] = new Array(candidates.length);
   let index = 0;
 
@@ -99,7 +121,7 @@ export async function enrichCandidates(
       const current = index;
       index += 1;
       results[current] = await enrichCandidate(candidates[current], {
-        enableDeepEnrich: options?.enableDeepEnrich,
+        enableDeepEnrich: deepEnrichIndices.has(current),
       });
     }
   }

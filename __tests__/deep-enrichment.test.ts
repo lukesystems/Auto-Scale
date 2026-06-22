@@ -9,6 +9,11 @@ import {
   consolidateIntelligence,
   type CompetitorPageEnrichment,
 } from "@/services/intelligence/enrichment/deep-enrich-source";
+import {
+  pickDeepEnrichCandidateIndices,
+  MAX_DEEP_ENRICH_PER_RUN,
+} from "@/services/intelligence/discovery/enrich-candidate";
+import type { NormalizedCandidate } from "@/services/intelligence/discovery/dedupe-candidates";
 
 describe("deep-enrichment.shouldDeepEnrich", () => {
   it("returns true for competitor homepages with high relevance", () => {
@@ -268,5 +273,60 @@ describe("deep-enrichment.consolidateIntelligence", () => {
     const result = consolidateIntelligence(pages);
     expect(result?.repeatedTerms).toContain("developer");
     expect(result?.repeatedTerms?.length).toBeLessThanOrEqual(10);
+  });
+});
+
+function mockCandidate(
+  overrides: Partial<NormalizedCandidate> & { url: string }
+): NormalizedCandidate {
+  return {
+    canonicalUrl: overrides.canonicalUrl ?? overrides.url,
+    title: overrides.title ?? "Example",
+    snippet: overrides.snippet ?? null,
+    platform: overrides.platform ?? "other",
+    sourceType: overrides.sourceType ?? "competitor_homepage",
+    adapter: overrides.adapter ?? "exa",
+    discoveryQuery: overrides.discoveryQuery ?? "q",
+    discoveryReason: overrides.discoveryReason ?? "r",
+    relevanceScore: overrides.relevanceScore ?? 0.8,
+    accountHandle: overrides.accountHandle ?? null,
+    url: overrides.url,
+  };
+}
+
+describe("enrichment.pickDeepEnrichCandidateIndices", () => {
+  it("caps deep enrichment to MAX_DEEP_ENRICH_PER_RUN qualifying candidates", () => {
+    const candidates = Array.from({ length: 12 }, (_, i) =>
+      mockCandidate({
+        url: `https://competitor-${i}.dev`,
+        sourceType: "competitor_homepage",
+        relevanceScore: 0.9 - i * 0.01,
+      })
+    );
+
+    const indices = pickDeepEnrichCandidateIndices(candidates);
+    expect(indices.size).toBe(MAX_DEEP_ENRICH_PER_RUN);
+    expect(indices.has(0)).toBe(true);
+    expect(indices.has(4)).toBe(true);
+    expect(indices.has(5)).toBe(false);
+  });
+
+  it("skips candidates that do not qualify for deep enrichment", () => {
+    const candidates = [
+      mockCandidate({ url: "https://a.dev", sourceType: "community_pain", relevanceScore: 0.9 }),
+      mockCandidate({ url: "https://b.dev", sourceType: "competitor_homepage", relevanceScore: 0.4 }),
+      mockCandidate({ url: "https://c.dev", sourceType: "competitor_homepage", relevanceScore: 0.8 }),
+    ];
+
+    const indices = pickDeepEnrichCandidateIndices(candidates);
+    expect(indices).toEqual(new Set([2]));
+  });
+
+  it("respects a custom max cap", () => {
+    const candidates = Array.from({ length: 6 }, (_, i) =>
+      mockCandidate({ url: `https://c${i}.dev`, relevanceScore: 0.8 })
+    );
+
+    expect(pickDeepEnrichCandidateIndices(candidates, 2).size).toBe(2);
   });
 });
