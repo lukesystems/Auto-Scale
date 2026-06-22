@@ -1,0 +1,178 @@
+import "server-only";
+
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  GrowthRunOptionsSchema,
+  type GrowthRunOptions,
+} from "./schema";
+import {
+  completeRun,
+  createGrowthRun,
+  markPhaseStatus,
+  setPhase,
+} from "./repository";
+import { generateVideoTrendReport } from "@/services/videotrend/generate";
+import { generateVideoStrategy } from "@/services/video-strategy/generate";
+import { generateVideoConcepts } from "@/services/video-factory/concepts";
+import { buildVideosForRun } from "@/services/video-factory";
+
+/**
+ * runGrowthRun(): the "Run AutoScale" button.
+ *
+ * Sequences the closed loop: brief → videotrend → strategy → loadout →
+ * concepts → scripts → storyboards → assets → videos → captions →
+ * awaiting_approval. Posting + tracking + compound run as separate phases
+ * after the user (or autopilot) approves the videos.
+ *
+ * Errors in any phase mark the run failed but persist progress so a retry
+ * picks up from the failed phase.
+ */
+
+export interface StartGrowthRunInput {
+  projectId: string;
+  ownerId: string;
+  options?: Partial<GrowthRunOptions>;
+  trigger?: "manual" | "autopilot" | "scheduled";
+}
+
+export interface StartGrowthRunResult {
+  growthRunId: string;
+  status: string;
+  videoIds: string[];
+  failures: Array<{ conceptId: string; error: string }>;
+}
+
+export async function startGrowthRun(
+  input: StartGrowthRunInput
+): Promise<StartGrowthRunResult> {
+  const options = GrowthRunOptionsSchema.parse(input.options ?? {});
+  const supabase = createSupabaseServerClient();
+
+  const run = await createGrowthRun({
+    projectId: input.projectId,
+    options,
+    trigger: input.trigger ?? "manual",
+    approvalMode: options.approval_mode,
+    postingAggressiveness: options.posting_aggressiveness,
+    targetPlatforms: options.target_platforms,
+    brandConstraints: options.brand_constraints,
+  });
+
+  const runId = run.id;
+  try {
+    await setPhase(supabase, runId, "brief", { status: "running" });
+    await markPhaseStatus(supabase, runId, "brief", "succeeded");
+
+    // VideoTrend
+    await setPhase(supabase, runId, "videotrend");
+    await markPhaseStatus(supabase, runId, "videotrend", "running");
+    const { report } = await generateVideoTrendReport({
+      projectId: input.projectId,
+      growthRunId: runId,
+      ownerId: input.ownerId,
+    });
+    await markPhaseStatus(supabase, runId, "videotrend", "succeeded", {
+      confidence: report.confidence,
+      structures: report.winning_structures.length,
+    });
+
+    // Strategy + loadout
+    await setPhase(supabase, runId, "strategy");
+    await markPhaseStatus(supabase, runId, "strategy", "running");
+    const { strategy, loadout } = await generateVideoStrategy({
+      projectId: input.projectId,
+      growthRunId: runId,
+      ownerId: input.ownerId,
+      trendReport: report,
+      options,
+    });
+    await markPhaseStatus(supabase, runId, "strategy", "succeeded");
+    await markPhaseStatus(supabase, runId, "loadout", "succeeded", {
+      total: loadout.total_videos_planned,
+    });
+
+    // Concepts
+    await setPhase(supabase, runId, "concepts");
+    await markPhaseStatus(supabase, runId, "concepts", "running");
+    const { conceptIds } = await generateVideoConcepts({
+      projectId: input.projectId,
+      growthRunId: runId,
+      ownerId: input.ownerId,
+      trendReport: report,
+      strategy,
+      loadout,
+      options,
+    });
+    await markPhaseStatus(supabase, runId, "concepts", "succeeded", {
+      count: conceptIds.length,
+    });
+
+    // Scripts → storyboards → assets → videos → captions
+    await setPhase(supabase, runId, "videos");
+    await markPhaseStatus(supabase, runId, "scripts", "running");
+    const { videoIds, failures } = await buildVideosForRun({
+      growthRunId: runId,
+      projectId: input.projectId,
+      conceptIds,
+      connectedAccountIds: options.connected_account_ids,
+    });
+    await markPhaseStatus(supabase, runId, "scripts", "succeeded");
+    await markPhaseStatus(supabase, runId, "storyboards", "succeeded");
+    await markPhaseStatus(supabase, runId, "assets", "succeeded", { failures: failures.length });
+    await markPhaseStatus(supabase, runId, "videos", "succeeded", { count: videoIds.length });
+    await markPhaseStatus(supabase, runId, "captions", "succeeded");
+
+    await setPhase(supabase, runId, "approval", { status: "awaiting_approval" });
+
+    // If the run was created in autopilot mode, auto-approve everything and
+    // hand off to the scheduling phase. Manual mode stops here for review.
+    if (options.approval_mode === "autopilot") {
+      await supabase
+        .from("videos")
+        .update({
+          status: "approved",
+          approval_status: "auto_approved",
+          approved_at: new Date().toISOString(),
+        })
+        .eq("growth_run_id", runId)
+        .in("status", ["rendering", "ready"]);
+    } else if (options.approval_mode === "per_format") {
+      await supabase
+        .from("videos")
+        .update({
+          status: "approved",
+          approval_status: "auto_approved",
+          approved_at: new Date().toISOString(),
+        })
+        .eq("growth_run_id", runId)
+        .in(
+          "concept_id",
+          (
+            await supabase
+              .from("video_concepts")
+              .select("id")
+              .eq("growth_run_id", runId)
+              .in("video_type", ["slide", "founder_pov", "pain_led"])
+          ).data?.map((r) => r.id) ?? []
+        );
+    }
+
+    return {
+      growthRunId: runId,
+      status: "awaiting_approval",
+      videoIds,
+      failures,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await supabase
+      .from("growth_runs")
+      .update({
+        status: "failed",
+        error: message,
+      })
+      .eq("id", runId);
+    await completeRun(supabase, runId, "failed");
+    throw err;
+  }
+}

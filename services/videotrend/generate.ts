@@ -1,0 +1,163 @@
+import "server-only";
+
+import { generateObject } from "@/services/ai/runtime";
+import { logAIRun } from "@/services/ai/logger";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  loadVideoEvidence,
+  loadVideoPatterns,
+  loadProductBrief,
+} from "@/services/growth-run/repository";
+import { VideoTrendReportSchema, type VideoTrendReport } from "@/services/growth-run/schema";
+
+/**
+ * VideoTrend Agent.
+ *
+ * Wraps the existing video_evidence + video_patterns intelligence into a
+ * structured VideoTrendReport for a Growth Run. This is the single source
+ * of truth fed into the Video Strategy and Script generators downstream.
+ *
+ * The doc was explicit: "VideoTrend must output video patterns, not just
+ * topic ideas." Output shape enforces winning structures, hooks, opening
+ * frames, CTA patterns, platform patterns, competitor gaps, repurposable
+ * formats — exactly what the strategy agent needs.
+ */
+
+export async function generateVideoTrendReport(opts: {
+  projectId: string;
+  growthRunId: string;
+  ownerId: string;
+}): Promise<{ report: VideoTrendReport; evidenceVideoIds: string[]; recordId: string }> {
+  const [brief, evidence, patterns] = await Promise.all([
+    loadProductBrief(opts.projectId),
+    loadVideoEvidence(opts.projectId, 80),
+    loadVideoPatterns(opts.projectId),
+  ]);
+
+  // Compact evidence packets so the prompt stays small.
+  const evidencePackets = evidence.slice(0, 40).map((e) => ({
+    id: e.id,
+    platform: e.platform,
+    handle: e.account_handle ?? null,
+    hook: e.detected_hook ?? null,
+    cta: e.detected_cta ?? null,
+    format: e.format_guess ?? null,
+    topic: e.topic_guess ?? null,
+    duration: e.duration_seconds ?? null,
+    views: e.view_count ?? null,
+    likes: e.like_count ?? null,
+    shares: e.share_count ?? null,
+    caption: (e.caption ?? "").slice(0, 240),
+  }));
+
+  const patternPackets = patterns.slice(0, 60).map((p) => ({
+    type: p.pattern_type,
+    label: p.label,
+    description: (p.description ?? "").slice(0, 240),
+    evidence_count: p.evidence_count,
+    confidence: p.confidence,
+  }));
+
+  const briefPacket = brief
+    ? {
+        product: brief.product_name ?? brief.one_line_description ?? null,
+        target_customer: brief.target_customer ?? null,
+        primary_pain: brief.primary_pain ?? null,
+        cta: brief.cta ?? null,
+      }
+    : null;
+
+  const prompt = [
+    "You are AutoScale's VideoTrend Agent.",
+    "You output reusable short-form video patterns for TikTok / Instagram Reels / YouTube Shorts.",
+    "Be evidence-driven. Do not invent metrics. Where evidence is thin, set confidence accordingly.",
+    "",
+    "Product brief:",
+    JSON.stringify(briefPacket),
+    "",
+    "Recent video evidence (truncated):",
+    JSON.stringify(evidencePackets),
+    "",
+    "Mined patterns (truncated):",
+    JSON.stringify(patternPackets),
+    "",
+    "Produce a strict JSON object matching the VideoTrendReport schema:",
+    "- winning_structures[]: named beat sequences (e.g. 'Painful manual → product shortcut → result reveal')",
+    "- hook_patterns[]: reusable opening hook templates",
+    "- opening_frames[]: 0-2s visual ideas that earn the watch",
+    "- cta_patterns[]: closing calls to action",
+    "- platform_patterns[]: per-platform length/aspect/notes",
+    "- recommended_experiments[]: concrete hypotheses to test next",
+    "- competitor_gaps[]: angles competitors are not covering",
+    "- repurposable_formats[]: formats that translate across platforms",
+    "- audience_language[]: phrases the target actually uses",
+    "- confidence: 0..1, lower when evidence is sparse.",
+  ].join("\n");
+
+  let result: VideoTrendReport;
+  let raw = "";
+  try {
+    const res = await generateObject({
+      schema: VideoTrendReportSchema,
+      schemaDescription:
+        "VideoTrendReport per AutoScale spec: winning_structures, hook_patterns, opening_frames, cta_patterns, audience_language, platform_patterns, recommended_experiments, competitor_gaps, repurposable_formats, confidence.",
+      taskType: "trendwatch",
+      system:
+        "You convert real video evidence into reusable short-form video patterns. Never invent. Cite via the recommended_experiments rationale field.",
+      prompt,
+      temperature: 0.4,
+    });
+    result = res.object;
+    raw = res.raw;
+    await logAIRun({
+      ownerId: opts.ownerId,
+      projectId: opts.projectId,
+      kind: "videotrend.report",
+      provider: res.provider,
+      model: res.model,
+      status: "success",
+      latencyMs: res.latencyMs,
+      retryCount: res.retries,
+      input: { evidenceCount: evidencePackets.length, patternCount: patternPackets.length },
+      parsedOutput: res.object,
+    });
+  } catch (err) {
+    await logAIRun({
+      ownerId: opts.ownerId,
+      projectId: opts.projectId,
+      kind: "videotrend.report",
+      provider: "openrouter",
+      model: "unknown",
+      status: "failed",
+      input: { evidenceCount: evidencePackets.length },
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+
+  const supabase = createSupabaseServerClient();
+  const evidenceVideoIds = evidence.slice(0, 40).map((e) => e.id);
+  const { data, error } = await supabase
+    .from("video_trend_reports")
+    .insert({
+      growth_run_id: opts.growthRunId,
+      project_id: opts.projectId,
+      winning_structures: result.winning_structures as never,
+      hook_patterns: result.hook_patterns as never,
+      opening_frames: result.opening_frames as never,
+      cta_patterns: result.cta_patterns as never,
+      audience_language: result.audience_language as never,
+      platform_patterns: result.platform_patterns as never,
+      recommended_experiments: result.recommended_experiments as never,
+      competitor_gaps: result.competitor_gaps as never,
+      repurposable_formats: result.repurposable_formats as never,
+      evidence_video_ids: evidenceVideoIds as never,
+      confidence: result.confidence,
+      raw_output: { text: raw } as never,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`video_trend_reports insert failed: ${error.message}`);
+
+  return { report: result, evidenceVideoIds, recordId: data!.id };
+}

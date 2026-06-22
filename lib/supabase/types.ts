@@ -973,6 +973,612 @@ export interface Database {
         Relationships: [];
       };
 
+      // ===================================================================
+      // Growth Run spine (migration 0014_growth_run.sql)
+      // Closed video loop: brief → trend → strategy → loadout → concepts →
+      // scripts → storyboards → assets → videos → schedule → tracking →
+      // compound → learning. Columns below are the v1 touched surface;
+      // DB defaults cover anything not listed in Insert.
+      // ===================================================================
+
+      growth_runs: {
+        Row: {
+          id: string;
+          project_id: string;
+          status:
+            | "pending" | "running" | "awaiting_approval" | "scheduled"
+            | "live" | "completed" | "failed" | "cancelled";
+          trigger: "manual" | "autopilot" | "scheduled";
+          approval_mode: "manual" | "per_format" | "autopilot";
+          posting_aggressiveness: "conservative" | "balanced" | "aggressive";
+          brand_constraints: Json;
+          target_platforms: Json;
+          phase:
+            | "brief" | "videotrend" | "strategy" | "loadout" | "concepts"
+            | "scripts" | "storyboards" | "assets" | "videos" | "captions"
+            | "approval" | "schedule" | "live" | "compound" | "done";
+          phase_status: Json;
+          options: Json;
+          error: string | null;
+          notes: string | null;
+          parent_run_id: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["growth_runs"]["Row"]> & { project_id: string };
+        Update: Partial<Database["public"]["Tables"]["growth_runs"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_trend_reports: {
+        Row: {
+          id: string;
+          growth_run_id: string;
+          project_id: string;
+          winning_structures: Json;
+          hook_patterns: Json;
+          opening_frames: Json;
+          cta_patterns: Json;
+          audience_language: Json;
+          platform_patterns: Json;
+          recommended_experiments: Json;
+          competitor_gaps: Json;
+          repurposable_formats: Json;
+          evidence_video_ids: Json;
+          confidence: number;
+          raw_output: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_trend_reports"]["Row"]> & {
+          growth_run_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_trend_reports"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_strategies: {
+        Row: {
+          id: string;
+          growth_run_id: string;
+          project_id: string;
+          platform_mix: Json;
+          video_type_mix: Json;
+          campaign_hypotheses: Json;
+          rationale: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_strategies"]["Row"]> & {
+          growth_run_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_strategies"]["Row"]>;
+        Relationships: [];
+      };
+
+      posting_loadouts: {
+        Row: {
+          id: string;
+          growth_run_id: string;
+          project_id: string;
+          per_account_plan: Json;
+          total_videos_planned: number;
+          duration_days: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["posting_loadouts"]["Row"]> & {
+          growth_run_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["posting_loadouts"]["Row"]>;
+        Relationships: [];
+      };
+
+      connected_accounts: {
+        Row: {
+          id: string;
+          project_id: string;
+          platform: "tiktok" | "instagram" | "youtube";
+          handle: string;
+          display_name: string | null;
+          postiz_account_id: string | null;
+          postiz_provider_id: string | null;
+          status: "active" | "paused" | "disconnected" | "flagged";
+          max_posts_per_day: number;
+          min_minutes_between_posts: number;
+          persona: string | null;
+          notes: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["connected_accounts"]["Row"]> & {
+          project_id: string; platform: "tiktok" | "instagram" | "youtube"; handle: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["connected_accounts"]["Row"]>;
+        Relationships: [];
+      };
+
+      account_health_log: {
+        Row: {
+          id: string;
+          connected_account_id: string;
+          project_id: string;
+          event: string;
+          severity: "info" | "warn" | "critical";
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["account_health_log"]["Row"]> & {
+          connected_account_id: string; project_id: string; event: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["account_health_log"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_concepts: {
+        Row: {
+          id: string;
+          growth_run_id: string;
+          project_id: string;
+          video_type:
+            | "slide" | "demo" | "founder_pov" | "pain_led"
+            | "trend_remix" | "ai_broll" | "objection" | "comparison";
+          platform: "tiktok" | "instagram" | "youtube";
+          target_length_seconds: number;
+          hook: string;
+          angle: string | null;
+          promise: string | null;
+          cta: string | null;
+          hypothesis: string | null;
+          source_pattern_id: string | null;
+          evidence_video_ids: Json;
+          status: "draft" | "scripted" | "approved" | "killed";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_concepts"]["Row"]> & {
+          growth_run_id: string;
+          project_id: string;
+          video_type: Database["public"]["Tables"]["video_concepts"]["Row"]["video_type"];
+          platform: "tiktok" | "instagram" | "youtube";
+          hook: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_concepts"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_scripts: {
+        Row: {
+          id: string;
+          concept_id: string;
+          project_id: string;
+          hook_line: string;
+          body_lines: Json;
+          cta_line: string | null;
+          voiceover_full: string | null;
+          on_screen_text: Json;
+          total_words: number;
+          estimated_duration_seconds: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_scripts"]["Row"]> & {
+          concept_id: string; project_id: string; hook_line: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_scripts"]["Row"]>;
+        Relationships: [];
+      };
+
+      storyboards: {
+        Row: {
+          id: string;
+          concept_id: string;
+          project_id: string;
+          aspect_ratio: string;
+          total_duration_seconds: number;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["storyboards"]["Row"]> & {
+          concept_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["storyboards"]["Row"]>;
+        Relationships: [];
+      };
+
+      storyboard_scenes: {
+        Row: {
+          id: string;
+          storyboard_id: string;
+          scene_index: number;
+          role: "hook" | "context" | "demo" | "proof" | "cta" | "outro" | "transition";
+          duration_seconds: number;
+          visual_intent: string;
+          on_screen_text: string | null;
+          voiceover_line: string | null;
+          asset_method: "slide" | "fal_clip" | "screen_demo" | "stock" | "image" | "user_upload";
+          asset_prompt: string | null;
+          metadata: Json;
+        };
+        Insert: Partial<Database["public"]["Tables"]["storyboard_scenes"]["Row"]> & {
+          storyboard_id: string;
+          scene_index: number;
+          role: Database["public"]["Tables"]["storyboard_scenes"]["Row"]["role"];
+          visual_intent: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["storyboard_scenes"]["Row"]>;
+        Relationships: [];
+      };
+
+      generated_assets: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string | null;
+          concept_id: string | null;
+          scene_id: string | null;
+          kind:
+            | "slide_image" | "fal_clip" | "voiceover" | "subtitle"
+            | "music" | "final_mp4" | "thumbnail";
+          provider: string | null;
+          provider_request_id: string | null;
+          storage_path: string | null;
+          public_url: string | null;
+          duration_seconds: number | null;
+          status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+          error: string | null;
+          cost_cents: number | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["generated_assets"]["Row"]> & {
+          project_id: string;
+          kind: Database["public"]["Tables"]["generated_assets"]["Row"]["kind"];
+        };
+        Update: Partial<Database["public"]["Tables"]["generated_assets"]["Row"]>;
+        Relationships: [];
+      };
+
+      videos: {
+        Row: {
+          id: string;
+          concept_id: string;
+          growth_run_id: string;
+          project_id: string;
+          final_asset_id: string | null;
+          thumbnail_asset_id: string | null;
+          duration_seconds: number | null;
+          aspect_ratio: string;
+          status:
+            | "pending" | "rendering" | "ready" | "approved"
+            | "rejected" | "killed" | "posted" | "failed";
+          approval_status: "pending_review" | "approved" | "rejected" | "auto_approved";
+          approved_by: string | null;
+          approved_at: string | null;
+          hash_signature: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["videos"]["Row"]> & {
+          concept_id: string; growth_run_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["videos"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_captions: {
+        Row: {
+          id: string;
+          video_id: string;
+          project_id: string;
+          connected_account_id: string | null;
+          platform: "tiktok" | "instagram" | "youtube";
+          caption: string;
+          hashtags: Json;
+          cta: string | null;
+          variation_seed: string | null;
+          variation_score: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_captions"]["Row"]> & {
+          video_id: string;
+          project_id: string;
+          platform: "tiktok" | "instagram" | "youtube";
+          caption: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_captions"]["Row"]>;
+        Relationships: [];
+      };
+
+      schedule_items: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          video_id: string;
+          caption_id: string | null;
+          connected_account_id: string;
+          platform: "tiktok" | "instagram" | "youtube";
+          scheduled_for: string;
+          status:
+            | "queued" | "approved" | "sending" | "scheduled"
+            | "posted" | "failed" | "cancelled" | "retrying";
+          postiz_post_id: string | null;
+          postiz_payload: Json;
+          postiz_response: Json;
+          posted_url: string | null;
+          posted_at: string | null;
+          failure_reason: string | null;
+          retry_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["schedule_items"]["Row"]> & {
+          project_id: string;
+          growth_run_id: string;
+          video_id: string;
+          connected_account_id: string;
+          platform: "tiktok" | "instagram" | "youtube";
+          scheduled_for: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["schedule_items"]["Row"]>;
+        Relationships: [];
+      };
+
+      tracked_links: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string | null;
+          video_id: string | null;
+          schedule_item_id: string | null;
+          connected_account_id: string | null;
+          short_code: string;
+          destination_url: string;
+          utm_source: string | null;
+          utm_medium: string | null;
+          utm_campaign: string | null;
+          utm_content: string | null;
+          utm_term: string | null;
+          click_count: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["tracked_links"]["Row"]> & {
+          project_id: string; short_code: string; destination_url: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tracked_links"]["Row"]>;
+        Relationships: [];
+      };
+
+      link_click_events: {
+        Row: {
+          id: string;
+          tracked_link_id: string;
+          project_id: string;
+          user_agent: string | null;
+          referrer: string | null;
+          ip_hash: string | null;
+          country: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["link_click_events"]["Row"]> & {
+          tracked_link_id: string; project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["link_click_events"]["Row"]>;
+        Relationships: [];
+      };
+
+      pixel_events: {
+        Row: {
+          id: string;
+          project_id: string;
+          tracked_link_id: string | null;
+          video_id: string | null;
+          event_name: string;
+          session_id: string | null;
+          visitor_hash: string | null;
+          url: string | null;
+          referrer: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["pixel_events"]["Row"]> & {
+          project_id: string; event_name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["pixel_events"]["Row"]>;
+        Relationships: [];
+      };
+
+      signup_events: {
+        Row: {
+          id: string;
+          project_id: string;
+          tracked_link_id: string | null;
+          video_id: string | null;
+          external_user_id: string | null;
+          email_hash: string | null;
+          source: "webhook" | "pixel" | "manual" | "api";
+          activated: boolean;
+          activated_at: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["signup_events"]["Row"]> & { project_id: string };
+        Update: Partial<Database["public"]["Tables"]["signup_events"]["Row"]>;
+        Relationships: [];
+      };
+
+      payment_events: {
+        Row: {
+          id: string;
+          project_id: string;
+          tracked_link_id: string | null;
+          video_id: string | null;
+          signup_event_id: string | null;
+          amount_cents: number;
+          currency: string;
+          external_payment_id: string | null;
+          source: "webhook" | "manual" | "api";
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["payment_events"]["Row"]> & { project_id: string };
+        Update: Partial<Database["public"]["Tables"]["payment_events"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_run_metrics: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          schedule_item_id: string;
+          video_id: string;
+          source: "manual" | "platform_api" | "derived";
+          views: number | null;
+          watch_time_seconds: number | null;
+          completion_rate: number | null;
+          three_sec_hold_rate: number | null;
+          likes: number | null;
+          comments: number | null;
+          shares: number | null;
+          saves: number | null;
+          profile_visits: number | null;
+          link_clicks: number | null;
+          signups: number | null;
+          activated_users: number | null;
+          paid_users: number | null;
+          revenue_cents: number | null;
+          captured_at: string;
+          notes: string | null;
+          metadata: Json;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_run_metrics"]["Row"]> & {
+          project_id: string; growth_run_id: string; schedule_item_id: string; video_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_run_metrics"]["Row"]>;
+        Relationships: [];
+      };
+
+      growth_experiment_results: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          video_id: string;
+          classification:
+            | "winner" | "weak_hook" | "weak_cta" | "wrong_audience"
+            | "message_mismatch" | "loser" | "inconclusive";
+          diagnosis: string | null;
+          metric_summary: Json;
+          next_action:
+            | "variant" | "rewrite_hook" | "rewrite_cta" | "retarget"
+            | "kill" | "increase_volume" | "review";
+          confidence: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["growth_experiment_results"]["Row"]> & {
+          project_id: string; growth_run_id: string; video_id: string;
+          classification: Database["public"]["Tables"]["growth_experiment_results"]["Row"]["classification"];
+        };
+        Update: Partial<Database["public"]["Tables"]["growth_experiment_results"]["Row"]>;
+        Relationships: [];
+      };
+
+      winner_variants: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          source_video_id: string;
+          experiment_result_id: string | null;
+          variant_type:
+            | "hook_swap" | "cta_swap" | "length_swap"
+            | "format_swap" | "angle_swap" | "platform_repurpose";
+          variant_brief: Json;
+          spawned_concept_id: string | null;
+          status: "queued" | "generated" | "approved" | "live" | "killed";
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["winner_variants"]["Row"]> & {
+          project_id: string; growth_run_id: string; source_video_id: string;
+          variant_type: Database["public"]["Tables"]["winner_variants"]["Row"]["variant_type"];
+        };
+        Update: Partial<Database["public"]["Tables"]["winner_variants"]["Row"]>;
+        Relationships: [];
+      };
+
+      kill_decisions: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string | null;
+          video_id: string | null;
+          scope: "video" | "format" | "hook" | "platform" | "account";
+          scope_value: string | null;
+          reason: string;
+          metric_evidence: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["kill_decisions"]["Row"]> & {
+          project_id: string;
+          scope: Database["public"]["Tables"]["kill_decisions"]["Row"]["scope"];
+          reason: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["kill_decisions"]["Row"]>;
+        Relationships: [];
+      };
+
+      autopilot_rules: {
+        Row: {
+          id: string;
+          project_id: string;
+          name: string;
+          enabled: boolean;
+          rule_type:
+            | "generation_volume" | "posting_cadence" | "approval"
+            | "variant_spawn" | "kill" | "volume_adjust" | "account_health";
+          trigger: Json;
+          action: Json;
+          priority: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["autopilot_rules"]["Row"]> & {
+          project_id: string; name: string;
+          rule_type: Database["public"]["Tables"]["autopilot_rules"]["Row"]["rule_type"];
+        };
+        Update: Partial<Database["public"]["Tables"]["autopilot_rules"]["Row"]>;
+        Relationships: [];
+      };
+
+      learning_memory: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string | null;
+          kind:
+            | "format_performance" | "hook_performance" | "cta_performance"
+            | "platform_performance" | "audience_signal" | "account_signal"
+            | "timing_signal" | "generic";
+          key: string;
+          value: Json;
+          weight: number;
+          evidence_count: number;
+          last_seen_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["learning_memory"]["Row"]> & {
+          project_id: string;
+          kind: Database["public"]["Tables"]["learning_memory"]["Row"]["kind"];
+          key: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["learning_memory"]["Row"]>;
+        Relationships: [];
+      };
+
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
