@@ -10,6 +10,8 @@ import {
 } from "./assets";
 import { generateCaptionsForVideo } from "./captions";
 import { loadConnectedAccounts } from "@/services/growth-run/repository";
+import { renderConceptVideo } from "./render-concept";
+import { isFfmpegAvailable } from "./ffmpeg";
 
 /**
  * Video Factory orchestrator.
@@ -84,13 +86,31 @@ export async function buildVideosForRun(opts: {
         scriptText: script.voiceover_full,
       });
 
-      const { videoId } = await queueFinalAssembly({
+      const { videoId, assetId: finalAssetId } = await queueFinalAssembly({
         projectId: opts.projectId,
         growthRunId: opts.growthRunId,
         conceptId,
         aspectRatio: storyboard.aspect_ratio,
         durationSeconds: Math.round(storyboard.total_duration_seconds),
       });
+
+      if (isFfmpegAvailable()) {
+        try {
+          await renderConceptVideo({
+            projectId: opts.projectId,
+            growthRunId: opts.growthRunId,
+            conceptId,
+            videoId,
+            finalAssetId,
+          });
+        } catch (renderErr) {
+          failures.push({
+            conceptId,
+            error: renderErr instanceof Error ? renderErr.message : String(renderErr),
+          });
+          continue;
+        }
+      }
 
       // Per-account captions: only spin up captions for accounts on this
       // concept's platform.

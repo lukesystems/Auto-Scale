@@ -29,6 +29,8 @@ export interface MultiAccountScheduleInput {
   baseAppUrl: string;
   destinationUrl: string;
   startAt?: Date;
+  /** Use service-role client (cron/autopilot — no user session). */
+  trustedServiceRole?: boolean;
 }
 
 export interface MultiAccountScheduleResult {
@@ -41,7 +43,9 @@ export interface MultiAccountScheduleResult {
 export async function scheduleApprovedVideos(
   input: MultiAccountScheduleInput
 ): Promise<MultiAccountScheduleResult> {
-  const supabase = createSupabaseServerClient();
+  const supabase = input.trustedServiceRole
+    ? createSupabaseAdminClient()
+    : createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
 
   // Approved videos in this run. A video is only schedulable when it has a
@@ -259,7 +263,7 @@ export async function scheduleApprovedVideos(
         channel: account.postiz_account_id,
         scheduledFor: scheduledFor.toISOString(),
         caption: captionWithLink,
-        imageUrls: [mediaUrl],
+        mediaUrls: [mediaUrl],
         cta: caption.cta ?? undefined,
         externalRef: `gr_${input.growthRunId.slice(0, 8)}/v_${video.id.slice(0, 8)}`,
         platform: account.platform,

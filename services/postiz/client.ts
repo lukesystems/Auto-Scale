@@ -12,13 +12,24 @@ export interface PostizCredentials {
   apiKey?: string | null;
 }
 
+export interface PostizMediaAttachment {
+  id: string;
+  path: string;
+  mimeType?: string;
+}
+
 export interface PostizSchedulePayload {
   /** Postiz integration ID (UI calls this "channel") */
   channel: string;
   scheduledFor: string;
   caption: string;
   slides?: Array<{ headline: string; body: string }>;
+  /** Legacy: external URLs — uploaded to Postiz before posting when possible */
   imageUrls?: string[];
+  /** Preferred: MP4/image URLs — uploaded to Postiz before posting */
+  mediaUrls?: string[];
+  /** Pre-uploaded Postiz media (id + path from /upload or /upload-from-url) */
+  media?: PostizMediaAttachment[];
   cta?: string;
   externalRef?: string;
   /** Platform hint for settings.__type mapping */
@@ -101,7 +112,10 @@ export function mapPlatformToPostizType(platform?: string | null): string {
   return PLATFORM_TYPE_MAP[key] ?? "threads";
 }
 
-export function buildPostizPayload(payload: PostizSchedulePayload): PostizCreatePostBody {
+export function buildPostizPayload(
+  payload: PostizSchedulePayload,
+  media?: PostizMediaAttachment[]
+): PostizCreatePostBody {
   let content = payload.caption.trim();
   if (payload.cta?.trim()) {
     content = `${content}\n\n${payload.cta.trim()}`;
@@ -116,6 +130,10 @@ export function buildPostizPayload(payload: PostizSchedulePayload): PostizCreate
     content = `${content}\n\n[ref:${payload.externalRef}]`;
   }
 
+  const attachments = media ?? payload.media ?? [];
+  // Postiz uses the `image` array for both images and videos (id + path required).
+  const imageField = attachments.map((m) => ({ id: m.id, path: m.path }));
+
   return {
     type: "schedule",
     date: payload.scheduledFor,
@@ -124,11 +142,53 @@ export function buildPostizPayload(payload: PostizSchedulePayload): PostizCreate
     posts: [
       {
         integration: { id: payload.channel },
-        value: [{ content, image: payload.imageUrls?.map((url) => ({ path: url })) ?? [] }],
+        value: [{ content, image: imageField }],
         settings: { __type: mapPlatformToPostizType(payload.platform) },
       },
     ],
   };
+}
+
+/** Collect unique media URLs from a schedule payload. */
+export function collectPostizMediaUrls(payload: PostizSchedulePayload): string[] {
+  const urls = [...(payload.mediaUrls ?? []), ...(payload.imageUrls ?? [])];
+  return [...new Set(urls.filter(Boolean))];
+}
+
+export async function uploadMediaFromUrl(
+  creds: PostizCredentials,
+  url: string
+): Promise<PostizMediaAttachment> {
+  const validated = validatePostizConfig(creds);
+  if (!validated.ok) throw new Error(validated.error);
+
+  const response = await postizRequest(creds, "/upload-from-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) {
+    throw new Error(normalizePostizError(response.status, response.data));
+  }
+  const data = response.data as { id?: string; path?: string };
+  if (!data?.id || !data?.path) {
+    throw new Error("Postiz upload-from-url returned no id/path");
+  }
+  return { id: String(data.id), path: String(data.path) };
+}
+
+export async function resolvePostizMedia(
+  creds: PostizCredentials,
+  payload: PostizSchedulePayload
+): Promise<PostizMediaAttachment[]> {
+  if (payload.media?.length) return payload.media;
+  const urls = collectPostizMediaUrls(payload);
+  const uploaded: PostizMediaAttachment[] = [];
+  for (const url of urls) {
+    uploaded.push(await uploadMediaFromUrl(creds, url));
+  }
+  return uploaded;
 }
 
 async function postizRequest(
@@ -220,7 +280,18 @@ export async function sendToPostiz(
   }
 
   const requestUrl = `${validated.apiBase}/posts`;
-  const body = buildPostizPayload(payload);
+  let body: PostizCreatePostBody;
+  try {
+    const media = await resolvePostizMedia(creds, payload);
+    body = buildPostizPayload(payload, media);
+  } catch (e) {
+    return {
+      ok: false,
+      status: "failed",
+      error: e instanceof Error ? e.message : "Postiz media upload failed",
+      requestUrl,
+    };
+  }
 
   try {
     const response = await fetch(requestUrl, {

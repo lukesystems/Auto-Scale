@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateObject } from "@/services/ai/runtime";
 import {
   ExperimentClassificationSchema,
@@ -25,6 +25,7 @@ export interface RunCompoundOpts {
   growthRunId: string;
   projectId: string;
   ownerId: string;
+  trustedServiceRole?: boolean;
   /** Videos with watch_time below this completion rate count as weak watch */
   weakCompletionThreshold?: number;
   /** Click-through rate below this counts as weak CTA */
@@ -42,7 +43,9 @@ export interface CompoundResultSummary {
 }
 
 export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResultSummary> {
-  const supabase = createSupabaseServerClient();
+  const supabase = opts.trustedServiceRole
+    ? createSupabaseAdminClient()
+    : createSupabaseServerClient();
 
   const { data: videos } = await supabase
     .from("videos")
@@ -61,7 +64,7 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
   let classified = 0;
 
   for (const video of videos) {
-    const summary = await aggregateMetrics(video.id, opts.projectId);
+    const summary = await aggregateMetrics(supabase, video.id, opts.projectId);
     if (!summary.hasSignal) continue;
 
     const classification = await classifyOne({
@@ -93,7 +96,7 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
 
     if (classification.classification === "winner") {
       winners++;
-      await spawnWinnerVariants({
+      await spawnWinnerVariants(supabase, {
         projectId: opts.projectId,
         growthRunId: opts.growthRunId,
         sourceVideoId: video.id,
@@ -118,7 +121,7 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
       killDecisions++;
     }
 
-    await updateLearningMemory({
+    await updateLearningMemory(supabase, {
       projectId: opts.projectId,
       growthRunId: opts.growthRunId,
       videoId: video.id,
@@ -149,8 +152,11 @@ interface MetricSummary {
   signup_rate: number | null;
 }
 
-async function aggregateMetrics(videoId: string, projectId: string): Promise<MetricSummary> {
-  const supabase = createSupabaseServerClient();
+async function aggregateMetrics(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  videoId: string,
+  projectId: string
+): Promise<MetricSummary> {
   const { data: metricRows } = await supabase
     .from("video_run_metrics")
     .select("*")
@@ -274,13 +280,14 @@ async function classifyOne(input: {
   return res.object;
 }
 
-async function spawnWinnerVariants(opts: {
+async function spawnWinnerVariants(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  opts: {
   projectId: string;
   growthRunId: string;
   sourceVideoId: string;
   experimentResultId: string;
 }) {
-  const supabase = createSupabaseServerClient();
   const variantTypes = ["hook_swap", "cta_swap", "length_swap", "angle_swap"] as const;
   await supabase.from("winner_variants").insert(
     variantTypes.map((t) => ({
@@ -297,14 +304,15 @@ async function spawnWinnerVariants(opts: {
   );
 }
 
-async function updateLearningMemory(opts: {
+async function updateLearningMemory(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  opts: {
   projectId: string;
   growthRunId: string;
   videoId: string;
   classification: ExperimentClassification;
   summary: MetricSummary;
 }) {
-  const supabase = createSupabaseServerClient();
   const { data: video } = await supabase
     .from("videos")
     .select("concept_id")

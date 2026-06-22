@@ -135,6 +135,20 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         </form>
       ) : null}
 
+      {videosWithConcept.length > 0 ? (
+        <section className="rounded-lg border bg-card p-4 text-sm">
+          <p className="mb-3 text-muted-foreground">
+            Postiz unavailable or you prefer manual posting? Download schedule CSV, captions, and media URLs.
+          </p>
+          <a
+            href={`/api/projects/${projectId}/growth/${runId}/export`}
+            className="inline-flex rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Download export pack (ZIP)
+          </a>
+        </section>
+      ) : null}
+
       <SchedulePanel
         projectId={projectId}
         runId={runId}
