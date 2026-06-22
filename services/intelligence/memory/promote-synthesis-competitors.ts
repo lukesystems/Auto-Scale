@@ -5,6 +5,11 @@ import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { detectPlatform } from "@/services/trendwatch/ingestion";
 import { extractAccountHandle } from "../discovery/dedupe-candidates";
+import { primaryEntityKey } from "../entity-resolution/entity-key";
+import {
+  findMatchingCompetitor,
+  type CompetitorIdentity,
+} from "../entity-resolution/match-competitor";
 import type { CompetitorStrategyProfile, MarketSynthesis } from "../deep-discovery/schema";
 
 export interface PromoteSynthesisCompetitorsInput {
@@ -31,6 +36,24 @@ export async function promoteSynthesisCompetitors(
   const competitorIds: string[] = [];
   let accountsUpserted = 0;
 
+  // Load all existing competitors once so entity-key matching is O(1) per
+  // profile and so we don't re-query on every iteration.
+  const { data: existingRaw } = await supabase
+    .from("competitors")
+    .select("id, name, entity_key, evidence_urls, notes, source")
+    .eq("project_id", input.projectId);
+
+  const existing: Array<CompetitorIdentity & { notes: string | null; source: string }> = (
+    existingRaw ?? []
+  ).map((row) => ({
+    id: row.id,
+    name: row.name,
+    entityKey: row.entity_key ?? null,
+    evidenceUrls: parseEvidenceUrls(row.evidence_urls),
+    notes: row.notes,
+    source: row.source ?? "manual",
+  }));
+
   for (const profile of profiles) {
     const name = profile.name.trim();
     if (!name) continue;
@@ -40,6 +63,7 @@ export async function promoteSynthesisCompetitors(
       projectId: input.projectId,
       discoveryRunId: input.discoveryRunId,
       profile,
+      existing,
     });
     if (!competitorId) continue;
 
@@ -65,24 +89,30 @@ interface UpsertCompetitorInput {
   projectId: string;
   discoveryRunId: string;
   profile: CompetitorStrategyProfile;
+  existing: Array<CompetitorIdentity & { notes: string | null; source: string }>;
 }
 
 async function upsertCompetitor(input: UpsertCompetitorInput): Promise<string | null> {
-  const { supabase, projectId, discoveryRunId, profile } = input;
+  const { supabase, projectId, discoveryRunId, profile, existing } = input;
   const normalizedName = profile.name.trim().toLowerCase();
+  const entityKey = primaryEntityKey({
+    urls: [pickCompetitorUrl(profile), ...profile.evidence_urls],
+    name: profile.name,
+  });
 
-  const { data: existing } = await supabase
-    .from("competitors")
-    .select("id, notes, url, source")
-    .eq("project_id", projectId)
-    .ilike("name", profile.name.trim())
-    .maybeSingle();
+  const match = findMatchingCompetitor(
+    { name: profile.name, urls: [pickCompetitorUrl(profile), ...profile.evidence_urls] },
+    existing
+  );
+  const matchedExisting = match
+    ? existing.find((row) => row.id === match.id) ?? null
+    : null;
 
   const payload = {
     project_id: projectId,
     name: profile.name.trim(),
     url: pickCompetitorUrl(profile),
-    notes: buildCompetitorNotes(profile, existing?.notes),
+    notes: buildCompetitorNotes(profile, matchedExisting?.notes),
     discovery_run_id: discoveryRunId,
     kind: profile.kind,
     confidence: profile.confidence,
@@ -95,10 +125,11 @@ async function upsertCompetitor(input: UpsertCompetitorInput): Promise<string | 
     } as Json,
     evidence_urls: profile.evidence_urls as Json,
     discovered_at: new Date().toISOString(),
-    source: (existing?.source === "manual" ? "manual" : "deep_discovery") as "manual" | "deep_discovery",
+    entity_key: entityKey,
+    source: (matchedExisting?.source === "manual" ? "manual" : "deep_discovery") as "manual" | "deep_discovery",
   };
 
-  if (existing?.id) {
+  if (matchedExisting?.id) {
     const { error } = await supabase
       .from("competitors")
       .update({
@@ -110,20 +141,21 @@ async function upsertCompetitor(input: UpsertCompetitorInput): Promise<string | 
         strategy_profile: payload.strategy_profile,
         evidence_urls: payload.evidence_urls,
         discovered_at: payload.discovered_at,
+        entity_key: entityKey ?? matchedExisting.entityKey ?? undefined,
       })
-      .eq("id", existing.id);
+      .eq("id", matchedExisting.id);
 
     if (error) {
       console.warn("[competitors] update failed", normalizedName, error.message);
       return null;
     }
-    return existing.id;
+    return matchedExisting.id;
   }
 
   const { data, error } = await supabase
     .from("competitors")
     .insert(payload)
-    .select("id")
+    .select("id, name, entity_key, evidence_urls")
     .single();
 
   if (error || !data) {
@@ -131,7 +163,23 @@ async function upsertCompetitor(input: UpsertCompetitorInput): Promise<string | 
     return null;
   }
 
+  // Keep the in-memory list in sync so subsequent profiles in the same run
+  // can match against this freshly-inserted competitor.
+  existing.push({
+    id: data.id,
+    name: data.name,
+    entityKey: data.entity_key ?? null,
+    evidenceUrls: parseEvidenceUrls(data.evidence_urls),
+    notes: payload.notes,
+    source: payload.source,
+  });
+
   return data.id;
+}
+
+function parseEvidenceUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 interface UpsertAccountsInput {

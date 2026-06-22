@@ -1,5 +1,6 @@
 import type { Json } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { primaryEntityKey } from "../entity-resolution/entity-key";
 
 export interface SourceCandidateInput {
   discoveryRunId: string;
@@ -45,6 +46,10 @@ export async function saveSourceCandidates(candidates: SourceCandidateInput[]): 
     relevance_score: candidate.relevanceScore ?? 0,
     enrich_status: normalizeEnrichStatus(candidate.enrichStatus),
     metadata: (candidate.metadata ?? {}) as Json,
+    entity_key: primaryEntityKey({
+      urls: [candidate.canonicalUrl ?? candidate.url, candidate.url],
+      name: candidate.title ?? null,
+    }),
   }));
 
   const { data, error } = await supabase.from("source_candidates").insert(rows).select("id");

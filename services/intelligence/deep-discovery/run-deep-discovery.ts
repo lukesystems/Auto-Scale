@@ -18,6 +18,7 @@ import type { DiscoveryQuery } from "../discovery/schema";
 import { reasonNextStep } from "./reason-next-step";
 import { synthesizeFindings } from "./synthesize-findings";
 import { promoteSynthesisCompetitors } from "../memory/promote-synthesis-competitors";
+import { linkCandidatesToCompetitors } from "../memory/link-candidates-to-competitors";
 import { refreshBriefCompetitorsFromSynthesis } from "../memory/refresh-brief-competitors";
 import type { MarketSynthesis } from "./schema";
 
@@ -57,6 +58,7 @@ export interface RunDeepDiscoveryResult {
   usedFallbackSynthesis: boolean;
   competitorsPromoted: number;
   competitorAccountsPromoted: number;
+  candidatesLinked: number;
   error: string | null;
 }
 
@@ -75,6 +77,7 @@ export async function runDeepDiscovery(
     usedFallbackSynthesis: false,
     competitorsPromoted: 0,
     competitorAccountsPromoted: 0,
+    candidatesLinked: 0,
   };
 
   const context = await loadDiscoveryContext(input.projectId);
@@ -244,6 +247,7 @@ export async function runDeepDiscovery(
         usedFallbackSynthesis: false,
         competitorsPromoted: 0,
         competitorAccountsPromoted: 0,
+        candidatesLinked: 0,
         error: error instanceof Error ? error.message : "Failed to save candidates.",
       };
     }
@@ -257,6 +261,7 @@ export async function runDeepDiscovery(
 
   let competitorsPromoted = 0;
   let competitorAccountsPromoted = 0;
+  let candidatesLinked = 0;
 
   if (runId && synthesisResult.synthesis.competitors.length > 0) {
     try {
@@ -270,6 +275,18 @@ export async function runDeepDiscovery(
     } catch (error) {
       console.warn(
         "[deep-discovery] competitor promotion failed",
+        error instanceof Error ? error.message : error
+      );
+    }
+
+    // Phase 5C: link source_candidates to the competitors they describe so the
+    // evidence graph is queryable, not just embedded in synthesis URLs.
+    try {
+      const linked = await linkCandidatesToCompetitors({ projectId: input.projectId });
+      candidatesLinked = linked.candidatesLinked;
+    } catch (error) {
+      console.warn(
+        "[deep-discovery] candidate linking failed",
         error instanceof Error ? error.message : error
       );
     }
@@ -309,6 +326,7 @@ export async function runDeepDiscovery(
       synthesisProvider: synthesisResult.provider,
       competitors_promoted: competitorsPromoted,
       competitor_accounts_promoted: competitorAccountsPromoted,
+      candidates_linked: candidatesLinked,
       error,
     });
   }
@@ -326,6 +344,7 @@ export async function runDeepDiscovery(
     usedFallbackSynthesis: synthesisResult.usedFallback,
     competitorsPromoted,
     competitorAccountsPromoted,
+    candidatesLinked,
     error: candidatesSaved > 0 ? null : error,
   };
 }
@@ -423,6 +442,7 @@ interface FinishRunMeta {
   synthesisProvider?: string;
   competitors_promoted?: number;
   competitor_accounts_promoted?: number;
+  candidates_linked?: number;
   error: string | null;
 }
 
@@ -453,6 +473,7 @@ async function finishRun(
       synthesis_provider: meta.synthesisProvider ?? null,
       competitors_promoted: meta.competitors_promoted ?? 0,
       competitor_accounts_promoted: meta.competitor_accounts_promoted ?? 0,
+      candidates_linked: meta.candidates_linked ?? 0,
     } as unknown as Json,
   });
 }

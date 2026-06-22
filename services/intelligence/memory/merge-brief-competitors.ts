@@ -59,15 +59,24 @@ export function parseExistingGuesses(value: unknown): { name: string; url: strin
   return out;
 }
 
-function profileToEntry(profile: CompetitorStrategyProfile): BriefCompetitorEntry {
+function profileToEntry(
+  profile: CompetitorStrategyProfile,
+  linkedCandidates = 0
+): BriefCompetitorEntry {
   const evidence = uniqueUrls(profile.evidence_urls ?? []);
-  const evidenceCount = evidence.length;
+  // Linked source candidates are independent corroborating evidence — a
+  // competitor with only one synthesis URL but five linked candidates should
+  // be treated as well-evidenced.
+  const evidenceCount = Math.max(evidence.length, linkedCandidates);
   const verified = evidenceCount >= 1;
   // Truth-first: never let a competitor read higher than "low" without evidence,
-  // and cap at "medium" unless there are multiple corroborating sources.
+  // cap at "medium" unless there are multiple corroborating sources, and
+  // bump "low" to "medium" once at least 2 independent sources back the entry
+  // (a competitor with 4 linked candidates is more than a single guess).
   let confidence: BriefConfidenceLevel = profile.confidence ?? "low";
   if (!verified) confidence = "low";
   else if (evidenceCount < 2 && confidence === "high") confidence = "medium";
+  else if (evidenceCount >= 2 && confidence === "low") confidence = "medium";
 
   return {
     name: profile.name.trim(),
@@ -89,14 +98,16 @@ function profileToEntry(profile: CompetitorStrategyProfile): BriefCompetitorEntr
  */
 export function mergeBriefCompetitors(
   existing: unknown,
-  synthesisCompetitors: CompetitorStrategyProfile[]
+  synthesisCompetitors: CompetitorStrategyProfile[],
+  linkedCandidateCounts: Map<string, number> = new Map()
 ): BriefCompetitorEntry[] {
   const byName = new Map<string, BriefCompetitorEntry>();
 
   for (const profile of synthesisCompetitors) {
     const name = profile.name?.trim();
     if (!name) continue;
-    const entry = profileToEntry(profile);
+    const linkedCount = linkedCandidateCounts.get(normalizeName(name)) ?? 0;
+    const entry = profileToEntry(profile, linkedCount);
     const key = normalizeName(name);
     const prior = byName.get(key);
     // Keep the richer (more evidence) profile if the same competitor appears twice.

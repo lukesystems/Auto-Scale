@@ -77,6 +77,20 @@ describe("mergeBriefCompetitors", () => {
     expect(merged.map((m) => m.name)).toEqual(["TwoSource", "OneSource", "GuessCo"]);
   });
 
+  it("uses linked candidate count as evidence when it exceeds synthesis URLs", () => {
+    const linked = new Map<string, number>([["roui", 4]]);
+    const merged = mergeBriefCompetitors(
+      [],
+      [profile({ name: "RoUI", evidence_urls: ["https://roui.dev"], confidence: "low" })],
+      linked
+    );
+    // synthesis returned only 1 URL, but 4 source_candidates link to this
+    // competitor — the brief should reflect the richer evidence count and
+    // promote confidence from "low" to "medium".
+    expect(merged[0].evidence_count).toBe(4);
+    expect(merged[0].confidence).toBe("medium");
+  });
+
   it("dedupes evidence urls when counting", () => {
     const merged = mergeBriefCompetitors(
       [],

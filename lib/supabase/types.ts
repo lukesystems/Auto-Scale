@@ -174,6 +174,7 @@ export interface Database {
           evidence_urls: Json;
           discovered_at: string | null;
           source: "manual" | "deep_discovery";
+          entity_key: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["competitors"]["Row"]> & {
@@ -779,6 +780,8 @@ export interface Database {
           enrich_status: "pending" | "enriched" | "failed" | "skipped";
           review_status: "pending" | "accepted" | "rejected";
           metadata: Json;
+          competitor_id: string | null;
+          entity_key: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["source_candidates"]["Row"]> & {
