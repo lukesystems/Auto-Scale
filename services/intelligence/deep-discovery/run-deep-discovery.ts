@@ -347,18 +347,62 @@ function buildEvidenceDigest(candidates: NormalizedCandidate[]): string {
     .join("\n");
 }
 
-function buildEnrichedDigest(candidates: EnrichedCandidate[]): string {
+export function buildEnrichedDigest(candidates: EnrichedCandidate[]): string {
   if (!candidates.length) return "";
-  return candidates
-    .slice(0, MAX_DIGEST_LINES)
-    .map((c) => {
-      const handle = c.accountHandle ? ` @${c.accountHandle}` : "";
-      const status = c.enrichStatus === "enriched" ? "fetched" : `${c.enrichStatus}`;
-      const title = c.enrichedTitle ?? c.title ?? c.url;
-      const snippet = c.enrichedSnippet ? ` — ${c.enrichedSnippet.slice(0, 200)}` : "";
-      return `- [${c.platform}/${c.sourceType}] (${status})${handle} ${title} (${c.url})${snippet}`;
-    })
-    .join("\n");
+
+  const lines: string[] = [];
+
+  for (const c of candidates.slice(0, MAX_DIGEST_LINES)) {
+    const handle = c.accountHandle ? ` @${c.accountHandle}` : "";
+    const status = c.enrichStatus === "enriched" || c.enrichStatus === "deep_enriched" ? "fetched" : `${c.enrichStatus}`;
+    const title = c.enrichedTitle ?? c.title ?? c.url;
+    const snippet = c.enrichedSnippet ? ` — ${c.enrichedSnippet.slice(0, 200)}` : "";
+    lines.push(`- [${c.platform}/${c.sourceType}] (${status})${handle} ${title} (${c.url})${snippet}`);
+
+    // Include deep enrichment intelligence if available
+    const deep = c.deepEnrichment?.consolidated;
+    if (deep && c.enrichStatus === "deep_enriched") {
+      const deepLines: string[] = [];
+
+      if (deep.positioning) {
+        deepLines.push(`  positioning: ${deep.positioning.slice(0, 120)}`);
+      }
+      if (deep.pricingSignal) {
+        deepLines.push(`  pricing: ${deep.pricingSignal}`);
+      }
+      if (deep.ctaPattern) {
+        deepLines.push(`  cta: ${deep.ctaPattern}`);
+      }
+      if (deep.keyFeatures?.length) {
+        deepLines.push(`  features: ${deep.keyFeatures.slice(0, 3).join("; ")}`);
+      }
+      if (deep.keyBenefits?.length) {
+        deepLines.push(`  benefits: ${deep.keyBenefits.slice(0, 3).join("; ")}`);
+      }
+      if (deep.contentThemes?.length) {
+        deepLines.push(`  themes: ${deep.contentThemes.join(", ")}`);
+      }
+      if (deep.repeatedTerms?.length) {
+        deepLines.push(`  terms: ${deep.repeatedTerms.slice(0, 5).join(", ")}`);
+      }
+      if (deep.socialLinks?.length) {
+        deepLines.push(`  social: ${deep.socialLinks.slice(0, 3).join(", ")}`);
+      }
+
+      // Include successful crawled page URLs as evidence
+      const successfulPages = c.deepEnrichment?.pages?.filter((p) => p.status === "success");
+      if (successfulPages?.length) {
+        const pageUrls = successfulPages.map((p) => `(${p.pageType})${p.url}`).slice(0, 4);
+        deepLines.push(`  pages: ${pageUrls.join(", ")}`);
+      }
+
+      if (deepLines.length) {
+        lines.push(...deepLines.map((l) => `${l}`));
+      }
+    }
+  }
+
+  return lines.join("\n");
 }
 
 interface FinishRunMeta {

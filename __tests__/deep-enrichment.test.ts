@@ -34,22 +34,29 @@ describe("deep-enrichment.shouldDeepEnrich", () => {
 });
 
 describe("deep-enrichment.discoverCompetitorPages", () => {
-  it("discovers high-value paths from a base URL", () => {
+  it("discovers high-value paths from a base URL including homepage", () => {
     const pages = discoverCompetitorPages("https://roui.dev");
 
     const urls = pages.map((p) => p.url);
-    // First 4 high-value paths are: pricing, plans, features, product
+    // First page is always homepage
+    expect(urls[0]).toBe("https://roui.dev");
+    // Then high-value paths: pricing, plans, features, product (up to 4 total)
     expect(urls).toContain("https://roui.dev/pricing");
     expect(urls).toContain("https://roui.dev/features");
     expect(urls.length).toBeLessThanOrEqual(4);
   });
 
-  it("dedupes the base URL from discovered paths", () => {
+  it("includes homepage first and dedupes base URL from subpaths", () => {
     const pages = discoverCompetitorPages("https://example.com/");
 
     const urls = pages.map((p) => p.url);
-    expect(urls).not.toContain("https://example.com/");
-    expect(urls).not.toContain("https://example.com");
+    // Homepage is always included first
+    expect(urls[0]).toBe("https://example.com/");
+    // Subpaths that equal base URL are deduped
+    const baseCanonicalCount = urls.filter(
+      (u) => u === "https://example.com/" || u === "https://example.com"
+    ).length;
+    expect(baseCanonicalCount).toBe(1);
   });
 
   it("returns empty array for invalid URLs", () => {

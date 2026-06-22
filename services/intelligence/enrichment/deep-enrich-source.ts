@@ -87,14 +87,20 @@ export function discoverCompetitorPages(baseUrl: string): Array<{ url: string; t
     const base = new URL(baseUrl);
     const basePath = base.pathname.replace(/\/+$/, "");
 
+    // Include homepage as first page (highest priority)
+    const baseCanonical = canonicalizeUrl(baseUrl);
+    discovered.push({ url: baseUrl, type: "homepage" });
+
     for (const { path, type } of HIGH_VALUE_PATHS) {
       const candidate = new URL(path, base).toString();
       const canonical = canonicalizeUrl(candidate);
-      const baseCanonical = canonicalizeUrl(baseUrl);
 
-      if (canonical !== baseCanonical && !discovered.some((d) => canonicalizeUrl(d.url) === canonical)) {
-        discovered.push({ url: candidate, type });
-      }
+      // Skip if same as base URL
+      if (canonical === baseCanonical) continue;
+      // Skip if already in list
+      if (discovered.some((d) => canonicalizeUrl(d.url) === canonical)) continue;
+
+      discovered.push({ url: candidate, type });
     }
   } catch {
     return [];
