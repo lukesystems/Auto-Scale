@@ -793,6 +793,87 @@ export interface Database {
         Relationships: [];
       };
 
+      video_evidence: {
+        Row: {
+          id: string;
+          project_id: string;
+          competitor_id: string | null;
+          source_candidate_id: string | null;
+          platform: "tiktok" | "instagram" | "youtube" | "other";
+          video_url: string;
+          canonical_url: string;
+          account_handle: string | null;
+          account_url: string | null;
+          caption: string | null;
+          title: string | null;
+          hashtags: Json;
+          sound: string | null;
+          duration_seconds: number | null;
+          view_count: number | null;
+          like_count: number | null;
+          comment_count: number | null;
+          share_count: number | null;
+          posted_at: string | null;
+          linked_urls: Json;
+          detected_hook: string | null;
+          detected_cta: string | null;
+          format_guess: string;
+          topic_guess: string | null;
+          source_confidence: number;
+          fetch_status: "pending" | "success" | "failed" | "skipped";
+          fetch_method: string;
+          raw_source_type: "video" | "profile" | "unknown";
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_evidence"]["Row"]> & {
+          project_id: string;
+          video_url: string;
+          canonical_url: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_evidence"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_metrics_snapshots: {
+        Row: {
+          id: string;
+          video_evidence_id: string;
+          view_count: number | null;
+          like_count: number | null;
+          comment_count: number | null;
+          share_count: number | null;
+          captured_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_metrics_snapshots"]["Row"]> & {
+          video_evidence_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_metrics_snapshots"]["Row"]>;
+        Relationships: [];
+      };
+
+      video_patterns: {
+        Row: {
+          id: string;
+          project_id: string;
+          pattern_type: "hook" | "format" | "cta" | "topic" | "cadence" | "link";
+          label: string;
+          description: string | null;
+          evidence_count: number;
+          confidence: number;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["video_patterns"]["Row"]> & {
+          project_id: string;
+          pattern_type: Database["public"]["Tables"]["video_patterns"]["Row"]["pattern_type"];
+          label: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["video_patterns"]["Row"]>;
+        Relationships: [];
+      };
+
       market_pattern_runs: {
         Row: {
           id: string;
