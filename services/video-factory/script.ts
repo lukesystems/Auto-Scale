@@ -13,12 +13,25 @@ export async function generateScriptForConcept(opts: {
   projectId: string;
 }): Promise<{ script: VideoScript; scriptId: string }> {
   const supabase = createSupabaseServerClient();
-  const { data: concept, error: cErr } = await supabase
-    .from("video_concepts")
-    .select("*")
-    .eq("id", opts.conceptId)
-    .single();
+  const [conceptResult, receiptResult, cellResult] = await Promise.all([
+    supabase.from("video_concepts").select("*").eq("id", opts.conceptId).single(),
+    supabase.from("trend_receipts").select("*").eq("concept_id", opts.conceptId).maybeSingle(),
+    supabase
+      .from("experiment_cells")
+      .select("experiment_id, variant_label, variable_value")
+      .eq("concept_id", opts.conceptId)
+      .maybeSingle(),
+  ]);
+  const { data: concept, error: cErr } = conceptResult;
   if (cErr || !concept) throw new Error(`concept load failed: ${cErr?.message}`);
+
+  const { data: experiment } = cellResult.data?.experiment_id
+    ? await supabase
+        .from("controlled_experiments")
+        .select("tested_variable, fixed_body, fixed_cta, fixed_audience, audience_pain")
+        .eq("id", cellResult.data.experiment_id)
+        .maybeSingle()
+    : { data: null };
 
   const prompt = [
     "You are AutoScale's Script Agent.",
@@ -35,6 +48,21 @@ export async function generateScriptForConcept(opts: {
       cta: concept.cta,
       hypothesis: concept.hypothesis,
     }),
+    "",
+    "Controlled experiment contract:",
+    JSON.stringify({
+      tested_variable: experiment?.tested_variable ?? null,
+      variant_label: cellResult.data?.variant_label ?? null,
+      variable_value: cellResult.data?.variable_value ?? null,
+      audience_pain: experiment?.audience_pain ?? null,
+      fixed_body: experiment?.fixed_body ?? null,
+      fixed_cta: experiment?.fixed_cta ?? null,
+      fixed_audience: experiment?.fixed_audience ?? null,
+    }),
+    "Trend Receipt:",
+    JSON.stringify(receiptResult.data ?? { confidence: 0, missing_evidence: ["No Trend Receipt stored."] }),
+    "If a controlled experiment exists, preserve every fixed field exactly and change only the tested variable.",
+    "Do not turn strategic inference into an observed fact.",
     "",
     "Return JSON matching VideoScript:",
     "- hook_line: spoken in first 2 seconds, mirrors the concept hook",

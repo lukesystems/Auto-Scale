@@ -25,7 +25,7 @@ const StartRunSchema = z.object({
     .enum(["conservative", "balanced", "aggressive"])
     .default("balanced"),
   durationDays: z.coerce.number().int().min(1).max(60).default(7),
-  conceptTargetCount: z.coerce.number().int().min(3).max(30).default(12),
+  formatHypothesisCount: z.coerce.number().int().min(1).max(2).default(2),
 });
 
 export async function startGrowthRunAction(formData: FormData) {
@@ -36,7 +36,7 @@ export async function startGrowthRunAction(formData: FormData) {
     approvalMode: formData.get("approvalMode") ?? undefined,
     postingAggressiveness: formData.get("postingAggressiveness") ?? undefined,
     durationDays: formData.get("durationDays") ?? undefined,
-    conceptTargetCount: formData.get("conceptTargetCount") ?? undefined,
+    formatHypothesisCount: formData.get("formatHypothesisCount") ?? undefined,
   });
   if (!parsed.success) {
     throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
@@ -50,7 +50,7 @@ export async function startGrowthRunAction(formData: FormData) {
       approval_mode: parsed.data.approvalMode,
       posting_aggressiveness: parsed.data.postingAggressiveness,
       duration_days: parsed.data.durationDays,
-      concept_target_count: parsed.data.conceptTargetCount,
+      concept_target_count: parsed.data.formatHypothesisCount * 3,
       connected_account_ids: [],
       brand_constraints: {},
     },

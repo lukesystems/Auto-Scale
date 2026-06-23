@@ -6,6 +6,7 @@ import {
   ExperimentClassificationSchema,
   type ExperimentClassification,
 } from "@/services/growth-run/schema";
+import { materializeWinnerVariants } from "@/services/compound/materialize-winner";
 
 /**
  * Compound v2.
@@ -64,8 +65,42 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
   let classified = 0;
 
   for (const video of videos) {
+    const { data: existingResult } = await supabase
+      .from("growth_experiment_results")
+      .select("id, classification")
+      .eq("video_id", video.id)
+      .maybeSingle();
+    if (existingResult) {
+      if (existingResult.classification === "winner") {
+        const materialized = await materializeWinnerVariants({
+          client: supabase,
+          projectId: opts.projectId,
+          ownerId: opts.ownerId,
+          sourceGrowthRunId: opts.growthRunId,
+          sourceVideoId: video.id,
+          experimentResultId: existingResult.id,
+          trustedServiceRole: opts.trustedServiceRole,
+        });
+        if (!materialized.reusedExisting) {
+          variantsQueued += materialized.conceptIds.length;
+        }
+      }
+      continue;
+    }
+
     const summary = await aggregateMetrics(supabase, video.id, opts.projectId);
     if (!summary.hasSignal) continue;
+
+    const { data: receipt } = await supabase
+      .from("trend_receipts")
+      .select("format_fingerprint_id")
+      .eq("concept_id", video.concept_id)
+      .maybeSingle();
+    const { data: experimentCell } = await supabase
+      .from("experiment_cells")
+      .select("experiment_id")
+      .eq("concept_id", video.concept_id)
+      .maybeSingle();
 
     const classification = await classifyOne({
       video,
@@ -88,6 +123,8 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
         next_action: classification.next_action,
         confidence: classification.confidence,
         metric_summary: summary as never,
+        controlled_experiment_id: experimentCell?.experiment_id ?? null,
+        format_fingerprint_id: receipt?.format_fingerprint_id ?? null,
       })
       .select("id")
       .single();
@@ -96,13 +133,18 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
 
     if (classification.classification === "winner") {
       winners++;
-      await spawnWinnerVariants(supabase, {
+      const materialized = await materializeWinnerVariants({
+        client: supabase,
         projectId: opts.projectId,
-        growthRunId: opts.growthRunId,
+        ownerId: opts.ownerId,
+        sourceGrowthRunId: opts.growthRunId,
         sourceVideoId: video.id,
         experimentResultId: resultRow!.id,
+        trustedServiceRole: opts.trustedServiceRole,
       });
-      variantsQueued += 4;
+      if (!materialized.reusedExisting) {
+        variantsQueued += materialized.conceptIds.length;
+      }
     }
     if (
       classification.classification === "loser" ||
@@ -127,6 +169,11 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
       videoId: video.id,
       classification,
       summary,
+    });
+    await updateFormatDecision(supabase, {
+      formatFingerprintId: receipt?.format_fingerprint_id ?? null,
+      controlledExperimentId: experimentCell?.experiment_id ?? null,
+      classification,
     });
   }
 
@@ -280,30 +327,6 @@ async function classifyOne(input: {
   return res.object;
 }
 
-async function spawnWinnerVariants(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
-  opts: {
-  projectId: string;
-  growthRunId: string;
-  sourceVideoId: string;
-  experimentResultId: string;
-}) {
-  const variantTypes = ["hook_swap", "cta_swap", "length_swap", "angle_swap"] as const;
-  await supabase.from("winner_variants").insert(
-    variantTypes.map((t) => ({
-      project_id: opts.projectId,
-      growth_run_id: opts.growthRunId,
-      source_video_id: opts.sourceVideoId,
-      experiment_result_id: opts.experimentResultId,
-      variant_type: t,
-      variant_brief: {
-        instruction: `Generate a ${t.replace("_", " ")} variant for the source video.`,
-      } as never,
-      status: "queued" as const,
-    }))
-  );
-}
-
 async function updateLearningMemory(
   supabase: ReturnType<typeof createSupabaseServerClient>,
   opts: {
@@ -366,5 +389,44 @@ async function updateLearningMemory(
       evidence_count: 1,
       value: { last_summary: opts.summary } as never,
     });
+  }
+}
+
+async function updateFormatDecision(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  opts: {
+    formatFingerprintId: string | null;
+    controlledExperimentId: string | null;
+    classification: ExperimentClassification;
+  }
+) {
+  const fingerprintStatus =
+    opts.classification.classification === "winner"
+      ? "winner"
+      : opts.classification.classification === "loser" || opts.classification.next_action === "kill"
+        ? "killed"
+        : ["weak_hook", "weak_cta", "message_mismatch"].includes(opts.classification.classification)
+          ? "iterate"
+          : null;
+  const experimentStatus =
+    fingerprintStatus === "winner"
+      ? "scale"
+      : fingerprintStatus === "killed"
+        ? "kill"
+        : fingerprintStatus === "iterate"
+          ? "iterate"
+          : null;
+
+  if (opts.formatFingerprintId && fingerprintStatus) {
+    await supabase
+      .from("format_fingerprints")
+      .update({ status: fingerprintStatus })
+      .eq("id", opts.formatFingerprintId);
+  }
+  if (opts.controlledExperimentId && experimentStatus) {
+    await supabase
+      .from("controlled_experiments")
+      .update({ status: experimentStatus })
+      .eq("id", opts.controlledExperimentId);
   }
 }

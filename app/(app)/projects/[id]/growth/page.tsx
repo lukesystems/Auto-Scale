@@ -180,16 +180,19 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
 
           <label className="space-y-1">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Concept count
+              Format hypotheses
             </span>
             <input
               type="number"
-              name="conceptTargetCount"
-              min={3}
-              max={30}
-              defaultValue={12}
+              name="formatHypothesisCount"
+              min={1}
+              max={2}
+              defaultValue={2}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
+            <span className="block text-[11px] text-muted-foreground">
+              Each format gets exactly three controlled hook variants.
+            </span>
           </label>
 
             </div>

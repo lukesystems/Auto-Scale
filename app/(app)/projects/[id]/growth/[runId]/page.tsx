@@ -45,7 +45,18 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     .maybeSingle();
   if (!run) notFound();
 
-  const [trendReport, strategy, loadout, conceptsRes, videosRes, scheduleRes, resultsRes] =
+  const [
+    trendReport,
+    strategy,
+    loadout,
+    conceptsRes,
+    videosRes,
+    scheduleRes,
+    resultsRes,
+    fingerprintsRes,
+    experimentsRes,
+    receiptsRes,
+  ] =
     await Promise.all([
       supabase.from("video_trend_reports").select("*").eq("growth_run_id", runId).maybeSingle(),
       supabase.from("video_strategies").select("*").eq("growth_run_id", runId).maybeSingle(),
@@ -72,6 +83,19 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         .select("id, video_id, classification, diagnosis, next_action, confidence, created_at")
         .eq("growth_run_id", runId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("format_fingerprints")
+        .select("id, name, video_type, platform, hook_mechanism, visual_grammar, script_structure, cta_pattern, business_hypothesis, transferability_score, distortion_risk, confidence, missing_evidence, evidence_video_ids, source_pattern_ids, status")
+        .eq("growth_run_id", runId)
+        .order("confidence", { ascending: false }),
+      supabase
+        .from("controlled_experiments")
+        .select("id, format_fingerprint_id, tested_variable, audience_pain, fixed_body, fixed_cta, fixed_audience, evaluation_window_days, status, starts_at, ends_at")
+        .eq("growth_run_id", runId),
+      supabase
+        .from("trend_receipts")
+        .select("id, concept_id, format_fingerprint_id, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, expected_signal, reasoning, confidence, missing_evidence")
+        .eq("growth_run_id", runId),
     ]);
 
   const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
@@ -112,6 +136,12 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
 
       {trendReport.data ? <TrendReportPanel report={trendReport.data} /> : null}
       {strategy.data ? <StrategyPanel strategy={strategy.data} loadout={loadout.data} /> : null}
+
+      <WinningFormatLabPanel
+        fingerprints={fingerprintsRes.data ?? []}
+        experiments={experimentsRes.data ?? []}
+        receipts={receiptsRes.data ?? []}
+      />
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
@@ -325,6 +355,153 @@ function ConceptsPanel({ concepts }: { concepts: Array<{ id: string; video_type:
       </div>
     </section>
   );
+}
+
+function WinningFormatLabPanel({
+  fingerprints,
+  experiments,
+  receipts,
+}: {
+  fingerprints: Array<{
+    id: string;
+    name: string;
+    video_type: string;
+    platform: string;
+    hook_mechanism: string;
+    visual_grammar: string;
+    script_structure: unknown;
+    cta_pattern: string;
+    business_hypothesis: string;
+    transferability_score: number;
+    distortion_risk: string;
+    confidence: number;
+    missing_evidence: unknown;
+    evidence_video_ids: unknown;
+    source_pattern_ids: unknown;
+    status: string;
+  }>;
+  experiments: Array<{
+    id: string;
+    format_fingerprint_id: string;
+    tested_variable: string;
+    audience_pain: string;
+    fixed_body: string;
+    fixed_cta: string;
+    fixed_audience: string;
+    evaluation_window_days: number;
+    status: string;
+    starts_at: string | null;
+    ends_at: string | null;
+  }>;
+  receipts: Array<{
+    id: string;
+    concept_id: string;
+    format_fingerprint_id: string;
+    evidence_video_ids: unknown;
+    source_pattern_ids: unknown;
+    observed_evidence: unknown;
+    strategic_inference: unknown;
+    expected_signal: string;
+    reasoning: string;
+    confidence: number;
+    missing_evidence: unknown;
+  }>;
+}) {
+  if (!fingerprints.length) return null;
+  const experimentByFormat = new Map(experiments.map((experiment) => [experiment.format_fingerprint_id, experiment]));
+
+  return (
+    <section className="rounded-lg border border-primary/30 bg-primary/[0.03] p-4 space-y-4">
+      <header className="space-y-1">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Winning Format Lab</div>
+        <h2 className="text-base font-semibold">Controlled format experiments</h2>
+        <p className="max-w-3xl text-xs text-muted-foreground">
+          Each format holds the audience, body, CTA, platform, and production grammar constant. Only the named variable changes.
+        </p>
+      </header>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {fingerprints.map((fingerprint) => {
+          const experiment = experimentByFormat.get(fingerprint.id);
+          const formatReceipts = receipts.filter((receipt) => receipt.format_fingerprint_id === fingerprint.id);
+          const representativeReceipt = formatReceipts[0];
+          const missing = asTextArray(fingerprint.missing_evidence);
+          return (
+            <article key={fingerprint.id} className="rounded-lg border bg-card p-4 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">{fingerprint.name}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {fingerprint.platform} · {fingerprint.video_type} · testing {experiment?.tested_variable ?? "unknown"}
+                  </p>
+                </div>
+                <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
+                  {fingerprint.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <LabMetric label="Confidence" value={`${Math.round(fingerprint.confidence * 100)}%`} />
+                <LabMetric label="Transferable" value={`${Math.round(fingerprint.transferability_score * 100)}%`} />
+                <LabMetric label="Evidence" value={String(countItems(fingerprint.evidence_video_ids) + countItems(fingerprint.source_pattern_ids))} />
+              </div>
+
+              <dl className="space-y-2 text-xs">
+                <LabRow label="Hook mechanism" value={fingerprint.hook_mechanism} />
+                <LabRow label="Visual grammar" value={fingerprint.visual_grammar} />
+                <LabRow label="Script" value={asTextArray(fingerprint.script_structure).join(" → ") || "Not enough evidence"} />
+                <LabRow label="CTA pattern" value={fingerprint.cta_pattern} />
+                <LabRow label="Business hypothesis" value={fingerprint.business_hypothesis} />
+                <LabRow label="Distortion risk" value={fingerprint.distortion_risk} />
+                {experiment ? <LabRow label="Evaluation window" value={`${experiment.evaluation_window_days} days · ${experiment.status}`} /> : null}
+              </dl>
+
+              {representativeReceipt ? (
+                <div className="rounded-md border bg-background p-3 text-xs space-y-2">
+                  <div className="font-semibold">Trend Receipt · {formatReceipts.length} controlled variants</div>
+                  <div><span className="text-muted-foreground">Observed:</span> {asTextArray(representativeReceipt.observed_evidence).join("; ")}</div>
+                  <div><span className="text-muted-foreground">Inference:</span> {asTextArray(representativeReceipt.strategic_inference).join("; ")}</div>
+                  <div><span className="text-muted-foreground">Expected signal:</span> {representativeReceipt.expected_signal}</div>
+                </div>
+              ) : null}
+
+              {missing.length ? (
+                <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">
+                  Missing evidence: {missing.join("; ")}
+                </p>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function LabMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background p-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function LabRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[7rem_1fr] gap-2">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function asTextArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function countItems(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function VideosPanel({

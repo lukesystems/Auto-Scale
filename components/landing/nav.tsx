@@ -56,7 +56,7 @@ export function LandingNav() {
             <Link href="/auth/sign-in">Sign in</Link>
           </Button>
           <Button asChild size="sm">
-            <Link href="/auth/sign-up">Start a Growth Run</Link>
+            <Link href="/auth/sign-up">Find My Winning Format</Link>
           </Button>
         </div>
 
@@ -88,7 +88,7 @@ export function LandingNav() {
                 <Link href="/auth/sign-in">Sign in</Link>
               </Button>
               <Button asChild size="sm" className="flex-1">
-                <Link href="/auth/sign-up">Start a Growth Run</Link>
+                <Link href="/auth/sign-up">Find My Winning Format</Link>
               </Button>
             </div>
           </div>

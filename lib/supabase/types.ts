@@ -1115,6 +1115,132 @@ export interface Database {
         Relationships: [];
       };
 
+      format_fingerprints: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          name: string;
+          fingerprint_key: string;
+          video_type:
+            | "slide" | "demo" | "founder_pov" | "pain_led"
+            | "trend_remix" | "ai_broll" | "objection" | "comparison";
+          platform: "tiktok" | "instagram" | "youtube";
+          hook_mechanism: string;
+          visual_grammar: string;
+          script_structure: Json;
+          cta_pattern: string;
+          business_hypothesis: string;
+          transferability_score: number;
+          distortion_risk: "low" | "medium" | "high" | "unknown";
+          confidence: number;
+          missing_evidence: Json;
+          evidence_video_ids: Json;
+          source_pattern_ids: Json;
+          status: "candidate" | "testing" | "winner" | "iterate" | "killed";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["format_fingerprints"]["Row"]> & {
+          project_id: string;
+          growth_run_id: string;
+          name: string;
+          fingerprint_key: string;
+          video_type: Database["public"]["Tables"]["format_fingerprints"]["Row"]["video_type"];
+          platform: Database["public"]["Tables"]["format_fingerprints"]["Row"]["platform"];
+          hook_mechanism: string;
+          visual_grammar: string;
+          cta_pattern: string;
+          business_hypothesis: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["format_fingerprints"]["Row"]>;
+        Relationships: [];
+      };
+
+      controlled_experiments: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          format_fingerprint_id: string;
+          tested_variable: "hook" | "format";
+          audience_pain: string;
+          fixed_body: string;
+          fixed_cta: string;
+          fixed_audience: string;
+          evaluation_window_days: number;
+          status: "planned" | "running" | "evaluating" | "scale" | "iterate" | "kill" | "complete";
+          starts_at: string | null;
+          ends_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["controlled_experiments"]["Row"]> & {
+          project_id: string;
+          growth_run_id: string;
+          format_fingerprint_id: string;
+          tested_variable: "hook" | "format";
+          audience_pain: string;
+          fixed_body: string;
+          fixed_cta: string;
+          fixed_audience: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["controlled_experiments"]["Row"]>;
+        Relationships: [];
+      };
+
+      experiment_cells: {
+        Row: {
+          id: string;
+          project_id: string;
+          experiment_id: string;
+          concept_id: string;
+          variant_label: string;
+          variable_value: string;
+          hypothesis: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["experiment_cells"]["Row"]> & {
+          project_id: string;
+          experiment_id: string;
+          concept_id: string;
+          variant_label: string;
+          variable_value: string;
+          hypothesis: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["experiment_cells"]["Row"]>;
+        Relationships: [];
+      };
+
+      trend_receipts: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          concept_id: string;
+          format_fingerprint_id: string;
+          evidence_video_ids: Json;
+          source_pattern_ids: Json;
+          observed_evidence: Json;
+          strategic_inference: Json;
+          expected_signal: string;
+          reasoning: string;
+          confidence: number;
+          missing_evidence: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["trend_receipts"]["Row"]> & {
+          project_id: string;
+          growth_run_id: string;
+          concept_id: string;
+          format_fingerprint_id: string;
+          expected_signal: string;
+          reasoning: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trend_receipts"]["Row"]>;
+        Relationships: [];
+      };
+
       video_concepts: {
         Row: {
           id: string;
@@ -1477,6 +1603,8 @@ export interface Database {
             | "variant" | "rewrite_hook" | "rewrite_cta" | "retarget"
             | "kill" | "increase_volume" | "review";
           confidence: number;
+          controlled_experiment_id: string | null;
+          format_fingerprint_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["growth_experiment_results"]["Row"]> & {
@@ -1494,6 +1622,7 @@ export interface Database {
           growth_run_id: string;
           source_video_id: string;
           experiment_result_id: string | null;
+          child_growth_run_id: string | null;
           variant_type:
             | "hook_swap" | "cta_swap" | "length_swap"
             | "format_swap" | "angle_swap" | "platform_repurpose";

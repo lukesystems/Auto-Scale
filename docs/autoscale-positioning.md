@@ -12,17 +12,17 @@ AutoScale is not a generic AI video generator or a generic content calendar.
 
 **Badge:** AI short-form growth agent for SaaS founders
 
-**Headline:** Crack distribution with videos that compound.
+**Headline:** Find the video format that brings users. Then automate the winner.
 
-**Subheadline:** AutoScale finds proven short-form video patterns in your niche, turns them into TikToks, Reels, and Shorts for your product, tracks what brings users, and compounds the winners.
+**Subheadline:** AutoScale studies your product and niche, turns proven patterns into controlled short-form video tests, publishes through your accounts, tracks clicks, signups, and revenue, then scales the formats that work.
 
-**Primary CTA:** Start Your First Growth Run
+**Primary CTA:** Find My Winning Format
 
 **Secondary CTA:** See how it works
 
-**Support line:** Find what works → Ship videos → Track users → Compound winners
+**Support line:** Evidence → Controlled tests → Business signals → Winner variants
 
-**Positioning line:** Built for SaaS founders who need distribution, not another content calendar.
+**Positioning line:** Built for founders who need to crack distribution—not automate more guessing.
 
 ## Product loop
 

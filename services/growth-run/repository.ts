@@ -149,3 +149,27 @@ export async function loadConnectedAccounts(projectId: string, ids?: string[]) {
   if (error) throw new Error(`connected_accounts read failed: ${error.message}`);
   return data ?? [];
 }
+
+export async function loadLearningMemory(projectId: string, limit = 30) {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("learning_memory")
+    .select("kind, key, value, weight, evidence_count, last_seen_at")
+    .eq("project_id", projectId)
+    .order("weight", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`learning_memory read failed: ${error.message}`);
+  return data ?? [];
+}
+
+export async function loadKillDecisions(projectId: string, limit = 20) {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("kill_decisions")
+    .select("scope, scope_value, reason, metric_evidence, created_at")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`kill_decisions read failed: ${error.message}`);
+  return data ?? [];
+}

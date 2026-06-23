@@ -19,7 +19,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: {
-    default: "AutoScale — Crack distribution with videos that compound",
+    default: "AutoScale — Find the video format that brings users",
     template: "%s · AutoScale",
   },
   description:
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "AutoScale" }],
   openGraph: {
-    title: "AutoScale — Crack distribution with videos that compound",
+    title: "AutoScale — Find the video format that brings users",
     description:
       "Find proven short-form video patterns, turn them into videos for your product, track what brings users, and compound the winners.",
     type: "website",
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "AutoScale — Videos that compound",
     description:
-      "Crack distribution with videos that compound.",
+      "Find the video format that brings users. Then automate the winner.",
   },
 };
 

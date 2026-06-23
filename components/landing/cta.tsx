@@ -23,7 +23,7 @@ export function FinalCTA() {
           <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
             <Button asChild size="xl" variant="glow">
               <Link href="/auth/sign-up">
-                Start Your First Growth Run
+                Find My Winning Format
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>

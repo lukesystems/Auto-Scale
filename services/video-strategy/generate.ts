@@ -5,6 +5,8 @@ import { logAIRun } from "@/services/ai/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   loadConnectedAccounts,
+  loadKillDecisions,
+  loadLearningMemory,
   loadProductBrief,
 } from "@/services/growth-run/repository";
 import {
@@ -49,11 +51,15 @@ export async function generateVideoStrategy(opts: {
   strategyId: string;
   loadoutId: string;
 }> {
-  const brief = await loadProductBrief(opts.projectId);
-  const accounts = await loadConnectedAccounts(
-    opts.projectId,
-    opts.options.connected_account_ids.length ? opts.options.connected_account_ids : undefined
-  );
+  const [brief, accounts, learningMemory, killDecisions] = await Promise.all([
+    loadProductBrief(opts.projectId),
+    loadConnectedAccounts(
+      opts.projectId,
+      opts.options.connected_account_ids.length ? opts.options.connected_account_ids : undefined
+    ),
+    loadLearningMemory(opts.projectId),
+    loadKillDecisions(opts.projectId),
+  ]);
 
   const briefPacket = brief
     ? {
@@ -91,6 +97,21 @@ export async function generateVideoStrategy(opts: {
       competitor_gaps: opts.trendReport.competitor_gaps,
     }),
     "",
+    "Prior project learning (must influence this run):",
+    JSON.stringify({
+      weighted_memory: learningMemory.map((memory) => ({
+        kind: memory.kind,
+        key: memory.key,
+        weight: memory.weight,
+        evidence_count: memory.evidence_count,
+        value: memory.value,
+      })),
+      recent_kill_decisions: killDecisions,
+    }),
+    "Use positive, repeated learning to increase a format's share.",
+    "Suppress killed or negative-weight formats unless new evidence explicitly justifies a retest.",
+    "Do not treat a single weak signal as proof.",
+    "",
     "User options:",
     JSON.stringify({
       target_platforms: opts.options.target_platforms,
@@ -127,7 +148,11 @@ export async function generateVideoStrategy(opts: {
     status: "success",
     latencyMs: strategyRes.latencyMs,
     retryCount: strategyRes.retries,
-    input: { aggressiveness: opts.options.posting_aggressiveness },
+    input: {
+      aggressiveness: opts.options.posting_aggressiveness,
+      learningRows: learningMemory.length,
+      killDecisions: killDecisions.length,
+    },
     parsedOutput: strategyRes.object,
   });
 

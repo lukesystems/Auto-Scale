@@ -22,36 +22,33 @@ export function Hero() {
           </div>
 
           <h1 className="mt-6 font-display text-5xl md:text-7xl lg:text-[5.25rem] font-semibold tracking-tight text-balance leading-[0.95]">
-            Crack distribution with videos{" "}
+            Find the video format that brings users.{" "}
             <span className="text-gradient bg-[length:200%_auto] animate-gradient-shift">
-              that compound.
+              Then automate the winner.
             </span>
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            AutoScale finds proven short-form video patterns in your niche, turns them into TikToks, Reels, and Shorts
-            for your product, tracks what brings users, and compounds the winners.
+            AutoScale studies your product and niche, turns proven patterns into controlled short-form video tests,
+            publishes through your accounts, tracks clicks, signups, and revenue, then scales the formats that work.
           </p>
 
-          <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
+          <div className="mt-10 flex items-center justify-center">
             <Button asChild size="xl" variant="glow" className="w-full sm:w-auto">
               <Link href="/auth/sign-up">
-                Start Your First Growth Run
+                Find My Winning Format
                 <ArrowRight className="h-4 w-4" />
               </Link>
-            </Button>
-            <Button asChild size="xl" variant="outline" className="w-full sm:w-auto">
-              <Link href="#how">See how it works</Link>
             </Button>
           </div>
 
           <p className="mt-6 text-sm font-medium text-foreground/75">
-            Find what works <span className="mx-1.5 text-primary">→</span> Ship videos{" "}
-            <span className="mx-1.5 text-primary">→</span> Track users{" "}
-            <span className="mx-1.5 text-primary">→</span> Compound winners
+            Evidence <span className="mx-1.5 text-primary">→</span> Controlled tests{" "}
+            <span className="mx-1.5 text-primary">→</span> Business signals{" "}
+            <span className="mx-1.5 text-primary">→</span> Winner variants
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            Built for SaaS founders who need distribution, not another content calendar.
+            Built for founders who need to crack distribution—not automate more guessing.
           </p>
         </div>
 
