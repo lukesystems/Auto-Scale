@@ -4,6 +4,7 @@ import { Pain } from "@/components/landing/pain";
 import { Loop } from "@/components/landing/loop";
 import { How } from "@/components/landing/how";
 import { Modules } from "@/components/landing/modules";
+import { Differentiation } from "@/components/landing/differentiation";
 import { Pricing } from "@/components/landing/pricing";
 import { FAQ } from "@/components/landing/faq";
 import { FinalCTA } from "@/components/landing/cta";
@@ -19,6 +20,7 @@ export default function LandingPage() {
         <Loop />
         <How />
         <Modules />
+        <Differentiation />
         <Pricing />
         <FAQ />
         <FinalCTA />

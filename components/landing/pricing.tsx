@@ -10,8 +10,8 @@ const PLANS = [
     features: [
       "1 project",
       "1 TrendWatch run / month",
-      "30 content ideas / month",
-      "10 generated posts / month",
+      "30 trend-backed hooks / month",
+      "10 short-form videos / month",
       "Basic Postiz scheduling",
       "Manual metrics tracker",
       "ZIP / CSV / JSON export",
@@ -26,8 +26,8 @@ const PLANS = [
     features: [
       "3 projects",
       "4 TrendWatch runs / month",
-      "120 content ideas / month",
-      "40 generated posts / month",
+      "120 trend-backed hooks / month",
+      "40 short-form videos / month",
       "Full Postiz scheduling",
       "Winner-to-variants engine",
       "Competitor tracking",
@@ -43,7 +43,7 @@ const PLANS = [
     features: [
       "10 projects",
       "Weekly TrendWatch",
-      "300 generated posts / month",
+      "300 short-form videos / month",
       "Multi-channel workflow",
       "Advanced variant engine",
       "Learning memory",

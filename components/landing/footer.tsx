@@ -9,7 +9,7 @@ export function Footer() {
           <div className="space-y-3">
             <Logo />
             <p className="text-sm text-muted-foreground max-w-xs">
-              Growth infrastructure for technical founders. Scale distribution, not servers.
+              A repeatable short-form video distribution loop for SaaS founders.
             </p>
           </div>
 
@@ -45,7 +45,7 @@ export function Footer() {
         <div className="mt-12 pt-6 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
           <div>© {new Date().getFullYear()} AutoScale. Built for builders who ship.</div>
           <div className="font-mono">
-            TrendWatch → Generate → Distribute → Measure → Compound
+            Find what works → Ship videos → Track users → Compound winners
           </div>
         </div>
       </div>

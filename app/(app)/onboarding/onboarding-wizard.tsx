@@ -31,8 +31,8 @@ const GENERATION_STEPS = [
     detail: "Identifying alternatives, category context, and positioning gaps.",
   },
   {
-    label: "Thinking through video & content strategies",
-    detail: "Exploring hooks, angles, platforms, and distribution opportunities.",
+    label: "Planning your first video experiments",
+    detail: "Exploring proven hooks, formats, platforms, and distribution opportunities.",
   },
   {
     label: "Building your growth brief",
@@ -154,7 +154,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
     return (
       <div className="space-y-5">
         <div className="space-y-1.5">
-          <Label htmlFor="product_url">Product URL</Label>
+          <Label htmlFor="product_url">Paste your product URL</Label>
           <Input
             id="product_url"
             value={productUrl}
@@ -165,14 +165,14 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
             }}
           />
           <p className="text-xs text-muted-foreground">
-            AutoScale reads your website, researches your market, and drafts product understanding plus distribution context.
+            AutoScale will study your product, find the video formats worth scaling in your niche, and create your first short-form video Growth Run.
           </p>
         </div>
 
         <div className="flex justify-end pt-2">
           <Button type="button" disabled={pending} onClick={onGenerate}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate Brief
+            Start Growth Run
           </Button>
         </div>
       </div>
@@ -188,7 +188,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
           </div>
           <p className="font-medium text-lg">Analyzing your product...</p>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            AutoScale is reading your site, researching competitors, and thinking through content strategies in real time.
+            AutoScale is reading your site, mapping your niche, and planning trend-backed video experiments in real time.
           </p>
         </div>
 

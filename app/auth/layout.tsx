@@ -16,19 +16,19 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-primary">AutoScale</p>
             <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight leading-tight">
-              Scale distribution,
+              Crack distribution
               <br />
-              not servers.
+              with videos that compound.
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              The AI growth operating system for technical founders who can build products but struggle with distribution.
+              Find the formats that bring users, ship the variants, and compound the winners.
             </p>
           </div>
 
           <ul className="space-y-4">
             <Feature icon={<TrendingUp className="h-4 w-4" />} title="TrendWatch" desc="Reverse-engineer what already works in your niche" />
-            <Feature icon={<Zap className="h-4 w-4" />} title="Content experiments" desc="Turn proven formats into testable post drafts" />
-            <Feature icon={<Sparkles className="h-4 w-4" />} title="Compound winners" desc="Generate variants from posts that convert" />
+            <Feature icon={<Zap className="h-4 w-4" />} title="Trend-backed videos" desc="Turn proven formats into short-form video experiments" />
+            <Feature icon={<Sparkles className="h-4 w-4" />} title="Compound winners" desc="Generate variants from videos that bring users" />
           </ul>
         </div>
 

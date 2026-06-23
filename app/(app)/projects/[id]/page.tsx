@@ -54,8 +54,8 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
             <StatCard label="Sources analyzed" value={stats.sourceCount} icon={<Network className="h-4 w-4" />} />
             <StatCard label="Insights" value={stats.insightCount} icon={<Brain className="h-4 w-4" />} />
             <StatCard label="Hooks" value={stats.hookCount} icon={<Lightbulb className="h-4 w-4" />} />
-            <StatCard label="Content ideas" value={stats.ideaCount} icon={<Lightbulb className="h-4 w-4" />} />
-            <StatCard label="Posts" value={stats.postCount} icon={<Layers className="h-4 w-4" />} />
+            <StatCard label="Legacy ideas" value={stats.ideaCount} icon={<Lightbulb className="h-4 w-4" />} />
+            <StatCard label="Legacy posts" value={stats.postCount} icon={<Layers className="h-4 w-4" />} />
             <StatCard label="Approved" value={stats.approvedCount} icon={<Shield className="h-4 w-4" />} />
             <StatCard label="Scheduled" value={stats.scheduledCount} icon={<Send className="h-4 w-4" />} />
             <StatCard label="Experiments" value={stats.experimentCount} icon={<FlaskConical className="h-4 w-4" />} />
@@ -87,8 +87,8 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
               <PipelineRow done={Boolean(brief?.product_summary && brief?.target_customer)} label="Product Brief complete" href={`/projects/${params.id}/brief`} />
               <PipelineRow done={stats.sourceCount > 0} label="Sources gathered" href={`/projects/${params.id}/sources`} />
               <PipelineRow done={stats.insightCount > 0} label="TrendWatch run" href={`/projects/${params.id}/trendwatch`} />
-              <PipelineRow done={stats.ideaCount > 0} label="Ideas generated" href={`/projects/${params.id}/ideas`} />
-              <PipelineRow done={stats.postCount > 0} label="Posts drafted" href={`/projects/${params.id}/content`} />
+              <PipelineRow done={stats.ideaCount > 0} label="Legacy ideas generated" href={`/projects/${params.id}/ideas`} />
+              <PipelineRow done={stats.postCount > 0} label="Legacy posts drafted" href={`/projects/${params.id}/content`} />
               <PipelineRow done={stats.approvedCount > 0} label="Approved" href={`/projects/${params.id}/approval`} />
               <PipelineRow done={stats.scheduledCount > 0} label="Scheduled" href={`/projects/${params.id}/schedule`} />
               <PipelineRow done={stats.experimentCount > 0} label="Measured" href={`/projects/${params.id}/experiments`} />
@@ -151,12 +151,12 @@ function computeNextAction({
       href: "brief",
     };
   }
-  if (stats.insightCount === 0) return { label: "Generate TrendWatch Report", description: "Loop 1 is complete. Start Loop 2 by turning this product brief into a TrendWatch report.", href: "trendwatch" };
-  if (stats.ideaCount === 0) return { label: "Generate content ideas", description: "Turn TrendWatch insights into hooks and structured content ideas.", href: "ideas" };
-  if (stats.postCount === 0) return { label: "Draft posts from ideas", description: "Convert ideas into structured post drafts ready for the Quality Gate.", href: "content" };
-  if (stats.approvedCount === 0) return { label: "Approve through Quality Gate", description: "Review and approve drafts. Reject the weak ones. Ship the rest.", href: "approval" };
-  if (stats.scheduledCount === 0) return { label: "Schedule approved posts", description: "Push them to Postiz or export a manual ZIP pack.", href: "schedule" };
-  if (stats.experimentCount === 0) return { label: "Track experiments", description: "Enter metrics. Mark winners. Build memory.", href: "experiments" };
-  if (stats.winnerCount === 0) return { label: "Mark your first winner", description: "Find the post with the strongest save rate or signups and mark it.", href: "experiments" };
-  return { label: "Compound winners", description: "Generate 10 variants per winner and build next week's plan.", href: "winners" };
+  if (stats.winnerCount > 0) {
+    return { label: "Compound your winners", description: "Turn what brought users into stronger video variants.", href: "winners" };
+  }
+  return {
+    label: "Start a Growth Run",
+    description: "Find the formats worth scaling, ship video experiments, and begin tracking what brings users.",
+    href: "growth",
+  };
 }

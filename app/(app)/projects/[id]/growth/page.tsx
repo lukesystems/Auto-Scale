@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { startGrowthRunAction, syncPostizAccountsAction } from "./actions";
+import { GrowthLoop } from "@/components/growth-loop";
 
 interface GrowthIndexProps {
   params: { id: string };
@@ -47,10 +48,8 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Growth Runs</h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          A Growth Run is one full closed loop for {project.data?.name ?? "this project"}:
-          product brief → video trend report → strategy → loadout → video concepts →
-          scripts → storyboards → assets → approval → multi-account scheduling → tracking →
-          compound. Click Run AutoScale, then approve the videos.
+          Find the formats worth scaling for {project.data?.name ?? "this project"}, turn them into short-form video
+          experiments, track what brings users, and compound the winners.
         </p>
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
           <span className="font-medium text-muted-foreground">Product URL:</span>
@@ -74,6 +73,8 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           )}
         </div>
       </header>
+
+      <GrowthLoop className="rounded-xl border bg-card/60 p-4" compact />
 
       <section className="rounded-lg border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -100,10 +101,25 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       </section>
 
       <section className="rounded-lg border bg-card p-4 space-y-4">
-        <h2 className="text-sm font-semibold">Run AutoScale</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Start a Growth Run</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            AutoScale uses your saved product URL to find the formats worth testing and build a production plan.
+          </p>
+        </div>
         <form action={startGrowthRunAction} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="projectId" value={projectId} />
 
+          <div className="sm:col-span-2 rounded-lg border border-primary/25 bg-primary/[0.04] p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-primary">Product URL</p>
+            <p className="mt-1 break-all font-mono text-sm">
+              {project.data?.product_url ?? "Add a product URL in the Brief first"}
+            </p>
+          </div>
+
+          <details className="sm:col-span-2 rounded-lg border bg-background/60 p-4">
+            <summary className="cursor-pointer text-sm font-medium">Advanced Growth Run settings</summary>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <fieldset className="space-y-2 sm:col-span-2">
             <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Target platforms
@@ -129,7 +145,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             >
               <option value="manual">Manual (review each video)</option>
               <option value="per_format">Per-format (auto-approve slide / founder / pain)</option>
-              <option value="autopilot">Full autopilot</option>
+              <option value="autopilot">Full autopilot (explicit opt-in)</option>
             </select>
           </label>
 
@@ -176,17 +192,19 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             />
           </label>
 
+            </div>
+          </details>
+
           <div className="sm:col-span-2">
             <button
               type="submit"
               className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
             >
-              Run AutoScale
+              Start Growth Run
             </button>
             <p className="mt-2 text-xs text-muted-foreground">
-              This generates the trend report, strategy, concepts, scripts, storyboards, asset queue,
-              and per-account captions in one pass. Video pixel rendering + posting happen after
-              approval.
+              First runs stay in manual approval. AutoScale generates the trend report, strategy, concepts, scripts,
+              storyboards, video assets, and captions before anything is scheduled.
             </p>
           </div>
         </form>

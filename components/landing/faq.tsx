@@ -6,16 +6,16 @@ import { cn } from "@/lib/utils";
 
 const FAQS = [
   {
-    q: "Is this just another AI content generator?",
-    a: "No. AI content generators give you disconnected text. AutoScale protects a chain: product context → market evidence → insight → hook → experiment → metric → learning → variant. The point is not more content. The point is better tests.",
+    q: "Is this just another AI video generator?",
+    a: "No. Generic generators start with a prompt and stop at an output. AutoScale starts with your product URL, studies proven video patterns, creates trend-backed experiments, tracks what brings users, and compounds the winners.",
   },
   {
     q: "What happens after I paste my startup URL?",
-    a: "AutoBrief reads your product page, creates a structured product brief, and saves it as project memory. From there, the Competitor Intelligence Engine uses that context to map relevant market patterns before content is generated.",
+    a: "AutoBrief reads your product page, creates a structured product brief, and saves it as project memory. VideoTrend then uses that context to map relevant hooks, formats, audience language, and gaps before videos are generated.",
   },
   {
-    q: "Why competitor intelligence instead of a normal content calendar?",
-    a: "Calendars create activity. Intelligence creates leverage. AutoScale studies public patterns around your niche, then turns the useful ones into experiments with hypotheses and metrics.",
+    q: "Why trend intelligence instead of a normal content calendar?",
+    a: "Calendars organize activity. AutoScale studies public video patterns around your niche, turns the useful ones into experiments, and learns which videos bring users.",
   },
   {
     q: "Does AutoScale automatically pull from every social platform?",
@@ -23,19 +23,19 @@ const FAQS = [
   },
   {
     q: "Does AutoScale post for me automatically?",
-    a: "Not blindly. V1 supports approved-content scheduling through Postiz and manual exports. Full autonomy comes later, after enough project data proves the loop. Autonomy is earned by evidence.",
+    a: "Not blindly. Approved videos can be scheduled through Postiz or exported for manual posting. Autopilot remains an explicit opt-in and should only act inside the founder's approval, cadence, quality, and account-safety rules.",
   },
   {
     q: "What about my existing tools?",
-    a: "AutoScale is the intelligence layer above your scheduler. It decides what to test, why, and what to learn. Postiz handles publishing. You can also export ZIP packs for manual posting anywhere.",
+    a: "AutoScale is the strategy and learning layer above your scheduler. It decides which video experiments to test and what to compound. Postiz handles publishing, with ZIP export as the fallback.",
   },
   {
     q: "Can I use my own AI provider?",
     a: "Yes. AutoScale uses a model abstraction layer across supported providers and OpenRouter-style routing. Configure once in settings. You should not be locked to one model.",
   },
   {
-    q: "What does the current V1 include?",
-    a: "Real Supabase auth + RLS, projects, AutoBrief, product brief memory, competitor/source input, TrendWatch with signal scoring, hook + idea + post generation, Quality Gate, approval queue, ZIP exports, basic Postiz scheduling, manual experiment tracker, and winner-to-variants.",
+    q: "What does the current product include?",
+    a: "The current spine covers Product Brief, video evidence and pattern mining, VideoTrend strategy, scripts and storyboards, video assembly, approval, Postiz scheduling, tracked events, manual metrics, and winner classification. Provider quality and live account configuration still determine what can run end to end.",
   },
 ];
 

@@ -2,7 +2,7 @@
   "name": "autoscale",
   "version": "0.1.0",
   "private": true,
-  "description": "AI growth operating system for technical founders. Scale distribution, not servers.",
+  "description": "Crack distribution with short-form videos that compound.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

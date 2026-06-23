@@ -19,34 +19,34 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: {
-    default: "AutoScale — Growth infrastructure for technical founders",
+    default: "AutoScale — Crack distribution with videos that compound",
     template: "%s · AutoScale",
   },
   description:
-    "AutoScale is the AI growth operating system for technical founders. Reverse-engineer your niche, generate content experiments, schedule distribution, measure results, and compound winners.",
+    "AutoScale finds proven short-form video patterns, turns them into videos for your product, tracks what brings users, and compounds the winners.",
   keywords: [
     "startup distribution",
-    "content marketing",
-    "trendwatch",
-    "growth engine",
+    "short-form video growth",
+    "video trend research",
+    "growth runs",
     "indie hacker",
     "saas marketing",
-    "viral content",
+    "trend-backed videos",
     "founder growth",
     "ai marketing",
   ],
   authors: [{ name: "AutoScale" }],
   openGraph: {
-    title: "AutoScale — Scale distribution, not servers",
+    title: "AutoScale — Crack distribution with videos that compound",
     description:
-      "The AI growth operating system for technical founders. Find what already works, generate content experiments, schedule, measure, and compound winners.",
+      "Find proven short-form video patterns, turn them into videos for your product, track what brings users, and compound the winners.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AutoScale — Scale distribution, not servers",
+    title: "AutoScale — Videos that compound",
     description:
-      "The AI growth operating system for technical founders.",
+      "Crack distribution with videos that compound.",
   },
 };
 

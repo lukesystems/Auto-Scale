@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { GrowthLoop } from "@/components/growth-loop";
 
 export function Hero() {
   return (
@@ -16,39 +17,41 @@ export function Hero() {
           <div className="inline-flex">
             <Badge variant="outline" className="px-3 py-1.5 text-xs font-medium border-primary/30 bg-primary/5 text-primary">
               <Sparkles className="h-3 w-3" />
-              Competitor intelligence for founders who ship
+              AI short-form growth agent for SaaS founders
             </Badge>
           </div>
 
-          <h1 className="mt-6 font-display text-5xl md:text-7xl lg:text-8xl font-semibold tracking-tight text-balance leading-[0.95]">
-            Paste your startup URL.
-            <br />
+          <h1 className="mt-6 font-display text-5xl md:text-7xl lg:text-[5.25rem] font-semibold tracking-tight text-balance leading-[0.95]">
+            Crack distribution with videos{" "}
             <span className="text-gradient bg-[length:200%_auto] animate-gradient-shift">
-              See what to test next.
+              that compound.
             </span>
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            AutoScale reads your product, builds a source-backed market map, studies competitor patterns, and turns the
-            strongest signals into growth experiments you can ship and measure.
+            AutoScale finds proven short-form video patterns in your niche, turns them into TikToks, Reels, and Shorts
+            for your product, tracks what brings users, and compounds the winners.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
             <Button asChild size="xl" variant="glow" className="w-full sm:w-auto">
               <Link href="/auth/sign-up">
-                Analyze my product
+                Start Your First Growth Run
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button asChild size="xl" variant="outline" className="w-full sm:w-auto">
-              <Link href="#loop">See the intelligence loop</Link>
+              <Link href="#how">See how it works</Link>
             </Button>
           </div>
 
-          <p className="mt-6 text-xs text-muted-foreground">
-            For technical founders who can build but can&apos;t consistently get attention.
-            <span className="mx-2 text-border">•</span>
-            No marketing degree required.
+          <p className="mt-6 text-sm font-medium text-foreground/75">
+            Find what works <span className="mx-1.5 text-primary">→</span> Ship videos{" "}
+            <span className="mx-1.5 text-primary">→</span> Track users{" "}
+            <span className="mx-1.5 text-primary">→</span> Compound winners
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Built for SaaS founders who need distribution, not another content calendar.
           </p>
         </div>
 
@@ -63,11 +66,11 @@ export function Hero() {
 
 function HeroLoopVisual() {
   const steps = [
-    { label: "Product Intel", desc: "Understand the URL", color: "from-blue-500/20 to-blue-500/5" },
-    { label: "Competitors", desc: "Map public signals", color: "from-purple-500/20 to-purple-500/5" },
-    { label: "Patterns", desc: "Find hooks and formats", color: "from-pink-500/20 to-pink-500/5" },
-    { label: "Experiments", desc: "Generate tests", color: "from-amber-500/20 to-amber-500/5" },
-    { label: "Compound", desc: "Repeat winners", color: "from-primary/20 to-primary/5" },
+    { label: "Trend Research", desc: "Study your niche", color: "from-blue-500/20 to-blue-500/5" },
+    { label: "Video Creation", desc: "TikToks, Reels, Shorts", color: "from-purple-500/20 to-purple-500/5" },
+    { label: "Posting", desc: "Through your accounts", color: "from-pink-500/20 to-pink-500/5" },
+    { label: "Tracking", desc: "Measure what lands", color: "from-amber-500/20 to-amber-500/5" },
+    { label: "Winners", desc: "Compound variants", color: "from-primary/20 to-primary/5" },
   ];
 
   return (
@@ -81,7 +84,7 @@ function HeroLoopVisual() {
             <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
           </div>
-          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscale.app / intelligence / acme-saas</div>
+          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscale.app / growth-run / acme-saas</div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 pt-6">
@@ -104,23 +107,7 @@ function HeroLoopVisual() {
           ))}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-border/60 grid grid-cols-3 gap-4">
-          <Metric label="Sources mapped" value="247" trend="18 new signals" />
-          <Metric label="Patterns found" value="38" trend="12 high-fit" />
-          <Metric label="Tests ready" value="30" trend="source-backed" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value, trend }: { label: string; value: string; trend: string }) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight">{value}</span>
-        <span className="text-xs text-primary">{trend}</span>
+        <GrowthLoop className="mt-6 border-t border-border/60 pt-6" compact />
       </div>
     </div>
   );
