@@ -33,6 +33,7 @@ create table if not exists public.format_fingerprints (
 );
 create index if not exists idx_format_fingerprints_project_status
   on public.format_fingerprints(project_id, status);
+drop trigger if exists trg_format_fingerprints_updated_at on public.format_fingerprints;
 create trigger trg_format_fingerprints_updated_at
   before update on public.format_fingerprints
   for each row execute function autoscale_set_updated_at();
@@ -59,6 +60,7 @@ create table if not exists public.controlled_experiments (
 );
 create index if not exists idx_controlled_experiments_run
   on public.controlled_experiments(growth_run_id);
+drop trigger if exists trg_controlled_experiments_updated_at on public.controlled_experiments;
 create trigger trg_controlled_experiments_updated_at
   before update on public.controlled_experiments
   for each row execute function autoscale_set_updated_at();
@@ -115,8 +117,12 @@ declare
   ];
 begin
   foreach t in array tables loop
+    execute format(
+      'drop policy if exists %I on public.%I',
+      t || ' project owner all',
+      t
+    );
     execute format($f$
-      drop policy if exists "%1$s project owner all" on public.%1$I;
       create policy "%1$s project owner all" on public.%1$I
         for all using (
           exists (select 1 from public.projects p

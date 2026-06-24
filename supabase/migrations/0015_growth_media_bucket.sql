@@ -9,7 +9,11 @@ values (
   104857600,
   array['image/png', 'image/jpeg', 'video/mp4', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'text/plain', 'application/x-subrip']
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  name = excluded.name,
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- Service-role uploads bypass RLS. Authenticated owners may read via public URLs.
 drop policy if exists "growth media public read" on storage.objects;

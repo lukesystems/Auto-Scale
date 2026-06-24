@@ -46,6 +46,7 @@ create table if not exists public.growth_runs (
 );
 create index if not exists idx_growth_runs_project on public.growth_runs(project_id);
 create index if not exists idx_growth_runs_status on public.growth_runs(status);
+drop trigger if exists trg_growth_runs_updated_at on public.growth_runs;
 create trigger trg_growth_runs_updated_at
   before update on public.growth_runs
   for each row execute function autoscale_set_updated_at();
@@ -118,6 +119,7 @@ create table if not exists public.connected_accounts (
   unique (project_id, platform, handle)
 );
 create index if not exists idx_connected_accounts_project on public.connected_accounts(project_id);
+drop trigger if exists trg_connected_accounts_updated_at on public.connected_accounts;
 create trigger trg_connected_accounts_updated_at
   before update on public.connected_accounts
   for each row execute function autoscale_set_updated_at();
@@ -157,6 +159,7 @@ create table if not exists public.video_concepts (
 );
 create index if not exists idx_video_concepts_run on public.video_concepts(growth_run_id);
 create index if not exists idx_video_concepts_project on public.video_concepts(project_id);
+drop trigger if exists trg_video_concepts_updated_at on public.video_concepts;
 create trigger trg_video_concepts_updated_at
   before update on public.video_concepts
   for each row execute function autoscale_set_updated_at();
@@ -175,6 +178,7 @@ create table if not exists public.video_scripts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+drop trigger if exists trg_video_scripts_updated_at on public.video_scripts;
 create trigger trg_video_scripts_updated_at
   before update on public.video_scripts
   for each row execute function autoscale_set_updated_at();
@@ -189,6 +193,7 @@ create table if not exists public.storyboards (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+drop trigger if exists trg_storyboards_updated_at on public.storyboards;
 create trigger trg_storyboards_updated_at
   before update on public.storyboards
   for each row execute function autoscale_set_updated_at();
@@ -235,6 +240,7 @@ create table if not exists public.generated_assets (
 );
 create index if not exists idx_generated_assets_concept on public.generated_assets(concept_id);
 create index if not exists idx_generated_assets_run on public.generated_assets(growth_run_id);
+drop trigger if exists trg_generated_assets_updated_at on public.generated_assets;
 create trigger trg_generated_assets_updated_at
   before update on public.generated_assets
   for each row execute function autoscale_set_updated_at();
@@ -262,6 +268,7 @@ create table if not exists public.videos (
 );
 create index if not exists idx_videos_run on public.videos(growth_run_id);
 create index if not exists idx_videos_status on public.videos(status);
+drop trigger if exists trg_videos_updated_at on public.videos;
 create trigger trg_videos_updated_at
   before update on public.videos
   for each row execute function autoscale_set_updated_at();
@@ -308,6 +315,7 @@ create table if not exists public.schedule_items (
 create index if not exists idx_schedule_items_run on public.schedule_items(growth_run_id);
 create index if not exists idx_schedule_items_account_time on public.schedule_items(connected_account_id, scheduled_for);
 create index if not exists idx_schedule_items_status on public.schedule_items(status);
+drop trigger if exists trg_schedule_items_updated_at on public.schedule_items;
 create trigger trg_schedule_items_updated_at
   before update on public.schedule_items
   for each row execute function autoscale_set_updated_at();
@@ -482,6 +490,7 @@ create table if not exists public.autopilot_rules (
   updated_at timestamptz not null default now()
 );
 create index if not exists idx_autopilot_rules_project on public.autopilot_rules(project_id);
+drop trigger if exists trg_autopilot_rules_updated_at on public.autopilot_rules;
 create trigger trg_autopilot_rules_updated_at
   before update on public.autopilot_rules
   for each row execute function autoscale_set_updated_at();
@@ -548,8 +557,12 @@ declare
   ];
 begin
   foreach t in array tables loop
+    execute format(
+      'drop policy if exists %I on public.%I',
+      t || ' project owner all',
+      t
+    );
     execute format($f$
-      drop policy if exists "%1$s project owner all" on public.%1$I;
       create policy "%1$s project owner all" on public.%1$I
         for all using (
           exists (select 1 from public.projects p
@@ -563,6 +576,7 @@ begin
 end $$;
 
 -- storyboard_scenes has no project_id column; scope via parent storyboard.
+drop policy if exists "storyboard_scenes via storyboard" on public.storyboard_scenes;
 create policy "storyboard_scenes via storyboard" on public.storyboard_scenes
   for all using (
     exists (
