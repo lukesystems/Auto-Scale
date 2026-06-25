@@ -400,27 +400,49 @@ async function updateFormatDecision(
     classification: ExperimentClassification;
   }
 ) {
-  const fingerprintStatus =
+  const compoundAction =
     opts.classification.classification === "winner"
-      ? "winner"
+      ? "scale"
       : opts.classification.classification === "loser" || opts.classification.next_action === "kill"
-        ? "killed"
+        ? "kill"
         : ["weak_hook", "weak_cta", "message_mismatch"].includes(opts.classification.classification)
+          ? "iterate"
+          : opts.classification.classification === "inconclusive"
+            ? "inconclusive"
+            : null;
+
+  const fingerprintStatus =
+    compoundAction === "scale"
+      ? "winner"
+      : compoundAction === "kill"
+        ? "killed"
+        : compoundAction === "iterate"
           ? "iterate"
           : null;
   const experimentStatus =
-    fingerprintStatus === "winner"
+    compoundAction === "scale"
       ? "scale"
-      : fingerprintStatus === "killed"
+      : compoundAction === "kill"
         ? "kill"
-        : fingerprintStatus === "iterate"
+        : compoundAction === "iterate"
           ? "iterate"
-          : null;
+          : compoundAction === "inconclusive"
+            ? "evaluating"
+            : null;
 
-  if (opts.formatFingerprintId && fingerprintStatus) {
+  const pausedUntil =
+    compoundAction === "kill"
+      ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+  if (opts.formatFingerprintId && (fingerprintStatus || compoundAction)) {
     await supabase
       .from("format_fingerprints")
-      .update({ status: fingerprintStatus })
+      .update({
+        status: fingerprintStatus ?? undefined,
+        compound_action: compoundAction,
+        paused_until: pausedUntil,
+      } as never)
       .eq("id", opts.formatFingerprintId);
   }
   if (opts.controlledExperimentId && experimentStatus) {

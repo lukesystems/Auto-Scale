@@ -81,6 +81,7 @@ describe("V1.1 model router", () => {
 
   it("detects unstable structured JSON models", () => {
     expect(isUnstableStructuredJsonModel("nex-agi/nex-r2-pro:free")).toBe(true);
+    expect(isUnstableStructuredJsonModel("deepseek/deepseek-v4-pro")).toBe(true);
     expect(isUnstableStructuredJsonModel("openai/gpt-4o-mini")).toBe(false);
   });
 
@@ -95,7 +96,7 @@ describe("V1.1 model router", () => {
     ).toBe("gpt-4o-mini");
     expect(
       resolveSafeStructuredModel("nex-agi/nex-r2-pro:free", "openrouter", "content")
-    ).toBe("nex-agi/nex-r2-pro:free");
+    ).toBe("openai/gpt-4o-mini");
 
     warnSpy.mockRestore();
   });
@@ -133,28 +134,22 @@ describe("V1.1 AutoBrief schema", () => {
 
 describe("V1.1 website fetch fallback", () => {
   it("marks fetch failure for manual fallback flow", async () => {
-    vi.mock("@/services/trendwatch/ingestion", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("@/services/trendwatch/ingestion")>();
-      return {
-        ...actual,
-        safeFetchHtml: vi.fn(async () => ({
-          ok: false,
-          url: "https://blocked.test",
-          finalUrl: "https://blocked.test",
-          html: null,
-          contentType: null,
-          error: "SSRF Prevention",
-        })),
-        safeFetchUrl: vi.fn(async () => ({
-          url: "https://blocked.test",
-          title: null,
-          description: null,
-          textSnippet: null,
-          platform: "other",
-          status: "failed",
-          error: "SSRF Prevention",
-        })),
-      };
+    const crawl = await import("@/services/intelligence/product-crawl/run-crawl");
+    vi.spyOn(crawl, "runProductSiteCrawl").mockResolvedValue({
+      ok: false,
+      url: "https://blocked.test",
+      finalUrl: "https://blocked.test",
+      title: null,
+      description: null,
+      textSnippet: null,
+      pages: [],
+      pagesDiscovered: 0,
+      pagesCrawled: 0,
+      pagesFailed: 0,
+      adaptersUsed: [],
+      crawlId: null,
+      facts: [],
+      error: "SSRF Prevention",
     });
 
     const { fetchSiteForAutoBrief } = await import("@/services/autobrief/fetch-site");

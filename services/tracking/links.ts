@@ -15,6 +15,7 @@ export async function mintTrackedLink(opts: {
   scheduleItemId?: string | null;
   connectedAccountId?: string | null;
   destinationUrl: string;
+  intentType?: "product" | "demo_intent" | "lead_intent";
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -48,6 +49,7 @@ export async function mintTrackedLink(opts: {
       utm_campaign: opts.utmCampaign ?? `growthrun_${opts.growthRunId.slice(0, 8)}`,
       utm_content: opts.utmContent ?? `video_${opts.videoId.slice(0, 8)}`,
       utm_term: opts.utmTerm ?? null,
+      intent_type: opts.intentType ?? "product",
     })
     .select("id, short_code")
     .single();

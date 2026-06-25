@@ -3,11 +3,17 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import {
-  decideVideoAction,
   recordMetricsAction,
   runCompoundAction,
   scheduleRunAction,
 } from "../actions";
+import { ProductionWorkspace, type ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
+import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
+import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
+import { requireUser } from "@/lib/supabase/server";
+import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
+import { resolveProjectCta } from "@/services/project-growth-settings/schema";
+import { getManagedProviderConfig } from "@/services/providers/config";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -63,13 +69,13 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       supabase.from("posting_loadouts").select("*").eq("growth_run_id", runId).maybeSingle(),
       supabase
         .from("video_concepts")
-        .select("id, video_type, platform, target_length_seconds, hook, angle, status")
+        .select("id, video_type, production_mode, platform, target_length_seconds, hook, angle, status")
         .eq("growth_run_id", runId)
         .order("video_type"),
       supabase
         .from("videos")
         .select(
-          "id, concept_id, status, approval_status, duration_seconds, aspect_ratio, created_at"
+          "id, concept_id, status, approval_status, duration_seconds, aspect_ratio, final_asset_id, created_at"
         )
         .eq("growth_run_id", runId)
         .order("created_at", { ascending: false }),
@@ -98,7 +104,183 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         .eq("growth_run_id", runId),
     ]);
 
+  const conceptIds = (conceptsRes.data ?? []).map((c) => c.id);
+  const { data: storyboards } = conceptIds.length
+    ? await supabase.from("storyboards").select("id, concept_id, total_duration_seconds").in("concept_id", conceptIds)
+    : { data: [] as Array<{ id: string; concept_id: string; total_duration_seconds: number }> };
+  const storyboardIds = (storyboards ?? []).map((s) => s.id);
+  const videoIds = (videosRes.data ?? []).map((v) => v.id);
+
+  const [sceneRes, jobsRes, assetsRes, qualityRes, captionsRes, accountsRes] = await Promise.all([
+    storyboardIds.length
+      ? supabase
+          .from("storyboard_scenes")
+          .select("id, storyboard_id, scene_index, purpose, role, visual_method, overlay_text, voiceover_line, duration_seconds, status, error")
+          .in("storyboard_id", storyboardIds)
+          .order("scene_index")
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    videoIds.length
+      ? supabase
+          .from("video_production_jobs")
+          .select("id, video_id, concept_id, status, current_stage, error, platform_profile, production_mode")
+          .in("video_id", videoIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    supabase
+      .from("generated_assets")
+      .select("id, concept_id, scene_id, kind, status, public_url, error")
+      .eq("growth_run_id", runId),
+    videoIds.length
+      ? supabase
+          .from("video_quality_scores")
+          .select("video_id, overall_score, block_reason, hook_strength, cta_strength, duplicate_risk, claim_risk, pass_reasons")
+          .in("video_id", videoIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    videoIds.length
+      ? supabase
+          .from("video_captions")
+          .select("id, video_id, platform, caption, connected_account_id")
+          .in("video_id", videoIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    supabase
+      .from("connected_accounts")
+      .select("id, handle")
+      .eq("project_id", projectId),
+  ]);
+
+  const sceneRows = sceneRes.data ?? [];
+
   const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
+  const boardByConcept = new Map((storyboards ?? []).map((b) => [b.concept_id, b]));
+  const jobByVideo = new Map((jobsRes.data ?? []).map((j) => [j.video_id as string, j]));
+  const qualityByVideo = new Map((qualityRes.data ?? []).map((q) => [q.video_id as string, q]));
+  const assetsByConcept = new Map<string, typeof assetsRes.data>();
+  for (const a of assetsRes.data ?? []) {
+    const cid = a.concept_id as string;
+    if (!cid) continue;
+    const list = assetsByConcept.get(cid) ?? [];
+    list.push(a);
+    assetsByConcept.set(cid, list);
+  }
+  const captionsByVideo = new Map<string, Array<{ id: string; platform: string; caption: string; handle: string | null }>>();
+  const accountById = new Map((accountsRes.data ?? []).map((a) => [a.id, a.handle]));
+  for (const c of captionsRes.data ?? []) {
+    const vid = c.video_id as string;
+    const list = captionsByVideo.get(vid) ?? [];
+    list.push({
+      id: c.id as string,
+      platform: c.platform as string,
+      caption: c.caption as string,
+      handle: c.connected_account_id ? (accountById.get(c.connected_account_id as string) ?? null) : null,
+    });
+    captionsByVideo.set(vid, list);
+  }
+  const receiptByConcept = new Map((receiptsRes.data ?? []).map((r) => [r.concept_id, r]));
+  const expByFingerprint = new Map(
+    (experimentsRes.data ?? []).map((e) => [e.format_fingerprint_id, e])
+  );
+  const fpById = new Map((fingerprintsRes.data ?? []).map((f) => [f.id, f]));
+
+  const workspaceVideos: ProductionWorkspaceVideo[] = (videosRes.data ?? []).map((v) => {
+    const concept = v.concept_id ? conceptsById.get(v.concept_id) : null;
+    const board = v.concept_id ? boardByConcept.get(v.concept_id) : undefined;
+    const scenes = board
+      ? sceneRows
+          .filter((s) => s.storyboard_id === board.id)
+          .map((s) => ({
+            id: s.id as string,
+            sceneIndex: s.scene_index as number,
+            purpose: (s.purpose as string | null) ?? null,
+            role: s.role as string,
+            visualMethod: (s.visual_method as string | null) ?? null,
+            overlayText: (s.overlay_text as string | null) ?? null,
+            voiceoverLine: (s.voiceover_line as string | null) ?? null,
+            durationSeconds: s.duration_seconds as number,
+            status: s.status as string,
+            error: (s.error as string | null) ?? null,
+          }))
+      : [];
+    const jobRow = jobByVideo.get(v.id);
+    const receipt = v.concept_id ? receiptByConcept.get(v.concept_id) : undefined;
+    const fp = receipt?.format_fingerprint_id ? fpById.get(receipt.format_fingerprint_id) : undefined;
+    const exp = receipt?.format_fingerprint_id ? expByFingerprint.get(receipt.format_fingerprint_id) : undefined;
+    const quality = qualityByVideo.get(v.id);
+    const finalAsset = (assetsRes.data ?? []).find((a) => a.id === v.final_asset_id);
+    const observed = Array.isArray(receipt?.observed_evidence) ? (receipt!.observed_evidence as string[]) : [];
+    const inference = Array.isArray(receipt?.strategic_inference) ? (receipt!.strategic_inference as string[]) : [];
+    const missing = Array.isArray(receipt?.missing_evidence) ? (receipt!.missing_evidence as string[]) : [];
+    const hasEvidence =
+      observed.length > 0 ||
+      (Array.isArray(receipt?.evidence_video_ids) && (receipt!.evidence_video_ids as string[]).length > 0);
+
+    return {
+      id: v.id,
+      conceptId: v.concept_id ?? "",
+      status: v.status,
+      approvalStatus: v.approval_status,
+      durationSeconds: v.duration_seconds,
+      finalAssetUrl: (finalAsset?.public_url as string | null) ?? null,
+      hook: concept?.hook ?? "",
+      platform: concept?.platform ?? "tiktok",
+      videoType: concept?.video_type ?? "slide",
+      productionMode: concept?.production_mode ?? null,
+      job: jobRow
+        ? {
+            id: jobRow.id as string,
+            status: jobRow.status as string,
+            currentStage: (jobRow.current_stage as string | null) ?? null,
+            error: (jobRow.error as string | null) ?? null,
+            platformProfile: jobRow.platform_profile as string,
+          }
+        : null,
+      experiment: exp
+        ? {
+            testedVariable: exp.tested_variable,
+            audiencePain: exp.audience_pain,
+            fixedBody: exp.fixed_body,
+            fixedCta: exp.fixed_cta,
+            fixedAudience: exp.fixed_audience,
+            status: exp.status,
+          }
+        : null,
+      fingerprint: fp ? { name: fp.name, status: fp.status } : null,
+      receipt: receipt
+        ? {
+            observedEvidence: observed,
+            strategicInference: inference,
+            expectedSignal: receipt.expected_signal ?? "",
+            confidence: receipt.confidence ?? 0,
+            missingEvidence: missing,
+            hasEvidence,
+            reasoning: receipt.reasoning ?? "",
+          }
+        : null,
+      quality: quality
+        ? {
+            overallScore: quality.overall_score as number,
+            blockReason: (quality.block_reason as string | null) ?? null,
+            hookStrength: quality.hook_strength as number,
+            ctaStrength: quality.cta_strength as number,
+            duplicateRisk: quality.duplicate_risk as number,
+            claimRisk: quality.claim_risk as number,
+            passReasons: Array.isArray(quality.pass_reasons) ? (quality.pass_reasons as string[]) : [],
+            passed:
+              (quality.overall_score as number) >= 0.55 &&
+              !(quality.block_reason as string | null),
+          }
+        : null,
+      scenes,
+      assets: (v.concept_id ? assetsByConcept.get(v.concept_id) ?? [] : []).map((a) => ({
+        id: a.id as string,
+        kind: a.kind as string,
+        status: a.status as string,
+        publicUrl: (a.public_url as string | null) ?? null,
+        sceneId: (a.scene_id as string | null) ?? null,
+        error: (a.error as string | null) ?? null,
+      })),
+      captions: captionsByVideo.get(v.id) ?? [],
+    };
+  });
+
   const videosWithConcept = (videosRes.data ?? []).map((v) => ({
     ...v,
     concept: v.concept_id ? conceptsById.get(v.concept_id) ?? null : null,
@@ -108,6 +290,32 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     videosWithConcept.every(
       (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
     );
+
+  let schedulePreview = null;
+  if (allApproved && run.status === "awaiting_approval") {
+    const user = await requireUser();
+    const settings = await loadProjectGrowthSettings(projectId);
+    const { data: projectRow } = await supabase
+      .from("projects")
+      .select("product_url")
+      .eq("id", projectId)
+      .single();
+    const cta = resolveProjectCta(settings, projectRow?.product_url ?? null);
+    const baseAppUrl =
+      process.env.AUTOSCALE_APP_URL ??
+      process.env.NEXT_PUBLIC_APP_URL ??
+      getManagedProviderConfig().appUrl ??
+      "http://localhost:3000";
+    schedulePreview = await scheduleApprovedVideos({
+      growthRunId: runId,
+      projectId,
+      ownerId: user.id,
+      baseAppUrl,
+      destinationUrl: cta.url ?? projectRow?.product_url ?? baseAppUrl,
+      intentType: cta.intentType,
+      previewOnly: true,
+    });
+  }
 
   return (
     <div className="space-y-8 p-6">
@@ -124,6 +332,16 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         <p className="text-sm text-muted-foreground">
           status: <strong>{run.status}</strong> · phase: <strong>{run.phase}</strong> · trigger:{" "}
           {run.trigger}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <a
+            href={`/api/dev/verify-growth-run?project_id=${projectId}&growth_run_id=${runId}`}
+            className="underline hover:text-foreground"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Run engine verification
+          </a>
         </p>
         {run.error ? (
           <pre className="rounded border bg-destructive/10 p-2 text-xs text-destructive whitespace-pre-wrap">
@@ -145,13 +363,16 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
-      <VideosPanel
-        projectId={projectId}
-        runId={runId}
-        videos={videosWithConcept}
-      />
+      <ProductionWorkspace projectId={projectId} runId={runId} videos={workspaceVideos} />
 
-      {allApproved && run.status === "awaiting_approval" ? (
+      {schedulePreview ? (
+        <SchedulePreviewPanel
+          preview={schedulePreview}
+          projectId={projectId}
+          growthRunId={runId}
+          scheduleAction={scheduleRunAction}
+        />
+      ) : allApproved && run.status === "awaiting_approval" ? (
         <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="growthRunId" value={runId} />
@@ -502,68 +723,6 @@ function asTextArray(value: unknown): string[] {
 
 function countItems(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
-}
-
-function VideosPanel({
-  projectId,
-  runId,
-  videos,
-}: {
-  projectId: string;
-  runId: string;
-  videos: Array<{ id: string; status: string; approval_status: string; duration_seconds: number | null; aspect_ratio: string; concept: { hook: string; platform: string; video_type: string } | null }>;
-}) {
-  if (!videos.length) {
-    return (
-      <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        Videos will appear here once the factory has rendered them.
-      </section>
-    );
-  }
-
-  return (
-    <section className="rounded-lg border bg-card p-4 space-y-3">
-      <h2 className="text-sm font-semibold">Videos ({videos.length})</h2>
-      <ul className="divide-y">
-        {videos.map((v) => (
-          <li key={v.id} className="py-3 flex items-start justify-between gap-4 text-xs">
-            <div className="space-y-1">
-              <div className="font-medium">
-                {v.concept?.platform ?? "?"} / {v.concept?.video_type ?? "?"} —{" "}
-                {v.duration_seconds ?? "?"}s {v.aspect_ratio}
-              </div>
-              <div className="text-muted-foreground">{v.concept?.hook ?? "(no hook)"}</div>
-              <div className="text-muted-foreground">
-                status: {v.status} · approval: {v.approval_status}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {(["approve", "reject", "kill"] as const).map((d) => (
-                <form action={decideVideoAction} key={d}>
-                  <input type="hidden" name="projectId" value={projectId} />
-                  <input type="hidden" name="growthRunId" value={runId} />
-                  <input type="hidden" name="videoId" value={v.id} />
-                  <input type="hidden" name="decision" value={d} />
-                  <button
-                    type="submit"
-                    className={`rounded border px-2 py-1 text-xs ${
-                      d === "approve"
-                        ? "border-green-600/30 text-green-700 dark:text-green-300"
-                        : d === "reject"
-                          ? "border-yellow-600/30 text-yellow-700 dark:text-yellow-300"
-                          : "border-red-600/30 text-red-700 dark:text-red-300"
-                    } hover:bg-muted`}
-                  >
-                    {d}
-                  </button>
-                </form>
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 function SchedulePanel({

@@ -15,6 +15,7 @@ describe("AI runtime responseMode", () => {
     process.env.OPENAI_API_KEY = "sk-test-key";
     process.env.AUTOSCALE_AI_PROVIDER = "openai";
     process.env.AI_REQUEST_TIMEOUT_MS = "45000";
+    process.env.AI_RETRY_BASE_DELAY_MS = "0";
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -74,6 +75,20 @@ describe("AI runtime responseMode", () => {
 
     const body = JSON.parse(mockFetch.mock.calls[0]![1]!.body as string);
     expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("retries transient provider fetch failures", async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "recovered" } }] }),
+      });
+
+    const result = await generateText({ prompt: "Recover", provider: "openai" });
+
+    expect(result.text).toBe("recovered");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("generateObject throws on empty response text", async () => {
@@ -188,6 +203,33 @@ describe("AI runtime responseMode", () => {
 
     warnSpy.mockRestore();
   });
+
+  it("includes validation errors in the structured-output repair retry", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '{"name":123}' } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '{"name":"repaired"}' } }] }),
+      });
+
+    const result = await generateObject({
+      prompt: "Return a name",
+      schema: z.object({ name: z.string() }),
+      provider: "openai",
+    });
+
+    expect(result.object.name).toBe("repaired");
+    const retryBody = JSON.parse(mockFetch.mock.calls[1]![1]!.body as string);
+    expect(retryBody.messages[retryBody.messages.length - 1].content).toContain(
+      "Your previous JSON did not match the contract"
+    );
+    expect(retryBody.messages[retryBody.messages.length - 1].content).toContain(
+      "Expected string"
+    );
+  });
 });
 
 describe("AI request timeout", () => {
@@ -195,6 +237,7 @@ describe("AI request timeout", () => {
 
   beforeEach(() => {
     process.env.AI_REQUEST_TIMEOUT_MS = "50";
+    process.env.AI_RETRY_BASE_DELAY_MS = "0";
   });
 
   afterEach(() => {
@@ -219,7 +262,7 @@ describe("AI request timeout", () => {
       openaiAdapter.generateText({ prompt: "slow" }, { apiKey: "sk-test", providerLabel: "openrouter" })
     ).rejects.toMatchObject({
       name: "AIError",
-      message: "AI request timed out after 50ms. Try a faster model or check provider status.",
+      message: "AI request timed out after 3 attempts of 50ms. Try a faster model or check provider status.",
     });
   });
 });

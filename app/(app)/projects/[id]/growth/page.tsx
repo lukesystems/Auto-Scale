@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { startGrowthRunAction, syncPostizAccountsAction } from "./actions";
+import { startGrowthRunAction, syncPostizAccountsAction, importReferenceVideoAction } from "./actions";
 import { GrowthLoop } from "@/components/growth-loop";
+import { StartRunSubmit } from "./start-run-submit";
 
 interface GrowthIndexProps {
   params: { id: string };
@@ -46,7 +47,15 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   return (
     <div className="space-y-8 p-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Growth Runs</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Growth Runs</h1>
+          <Link
+            href={`/projects/${projectId}/growth/settings`}
+            className="text-xs rounded-md border px-3 py-1.5 hover:bg-muted"
+          >
+            Growth settings
+          </Link>
+        </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Find the formats worth scaling for {project.data?.name ?? "this project"}, turn them into short-form video
           experiments, track what brings users, and compound the winners.
@@ -98,6 +107,31 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="rounded-lg border bg-card p-4 space-y-3">
+        <h2 className="text-sm font-semibold">Reference video URLs</h2>
+        <p className="text-xs text-muted-foreground">
+          Paste competitor or example short-form URLs as trend evidence for Winning Format Lab.
+        </p>
+        <form action={importReferenceVideoAction} className="flex flex-wrap gap-2 items-end">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input
+            name="url"
+            type="url"
+            required
+            placeholder="https://www.tiktok.com/@..."
+            className="flex-1 min-w-[200px] rounded-md border bg-background px-3 py-2 text-sm"
+          />
+          <select name="platform" className="rounded-md border bg-background px-2 py-2 text-sm">
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+            <option value="youtube">YouTube</option>
+          </select>
+          <button type="submit" className="rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted">
+            Add reference
+          </button>
+        </form>
       </section>
 
       <section className="rounded-lg border bg-card p-4 space-y-4">
@@ -199,12 +233,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           </details>
 
           <div className="sm:col-span-2">
-            <button
-              type="submit"
-              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
-            >
-              Start Growth Run
-            </button>
+            <StartRunSubmit />
             <p className="mt-2 text-xs text-muted-foreground">
               First runs stay in manual approval. AutoScale generates the trend report, strategy, concepts, scripts,
               storyboards, video assets, and captions before anything is scheduled.

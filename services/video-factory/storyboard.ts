@@ -7,6 +7,9 @@ import {
   type Storyboard,
   type VideoScript,
 } from "@/services/growth-run/schema";
+import { resolveProductionMode, type ProductionMode } from "./production-modes";
+import { buildScenePlan, scenePlanToStoryboardRows } from "./scene-plan";
+import { roleToPurpose, assetMethodToVisualMethod } from "./scene-contract";
 
 /**
  * Build a storyboard from a script. Storyboard is mandatory before video
@@ -19,12 +22,26 @@ export async function generateStoryboardForConcept(opts: {
   projectId: string;
   script: VideoScript;
   videoType: string;
+  productionMode?: ProductionMode | null;
+  hook?: string;
+  cta?: string;
   platform: "tiktok" | "instagram" | "youtube";
   targetLengthSeconds: number;
   preferFalForBroll: boolean; // when concept is ai_broll or trend_remix, allow fal_clip
-}): Promise<{ storyboard: Storyboard; storyboardId: string }> {
+}): Promise<{ storyboard: Storyboard; storyboardId: string; scenePlanJson: unknown }> {
   const supabase = createSupabaseServerClient();
   const aspect = "9:16";
+  const productionMode =
+    opts.productionMode ?? resolveProductionMode(opts.videoType as never);
+
+  const deterministicPlan = buildScenePlan({
+    productionMode,
+    script: opts.script,
+    hook: opts.hook ?? opts.script.hook_line,
+    cta: opts.cta ?? opts.script.cta_line,
+    targetLengthSeconds: opts.targetLengthSeconds,
+    preferAiBroll: opts.preferFalForBroll,
+  });
 
   const prompt = [
     "You are AutoScale's Storyboard Agent.",
@@ -74,19 +91,42 @@ export async function generateStoryboardForConcept(opts: {
     .single();
   if (sbErr) throw new Error(`storyboards insert: ${sbErr.message}`);
 
-  const sceneRows = board.scenes.map((s, idx) => ({
-    storyboard_id: sbRow!.id,
-    scene_index: idx,
-    role: s.role,
-    duration_seconds: s.duration_seconds,
-    visual_intent: s.visual_intent,
-    on_screen_text: s.on_screen_text || null,
-    voiceover_line: s.voiceover_line || null,
-    asset_method: s.asset_method,
-    asset_prompt: s.asset_prompt || null,
-  }));
-  const { error: scErr } = await supabase.from("storyboard_scenes").insert(sceneRows);
+  // Merge AI storyboard with deterministic scene plan — plan wins on structure.
+  const planRows = scenePlanToStoryboardRows(deterministicPlan, sbRow!.id);
+  const aiByIndex = new Map(board.scenes.map((s) => [s.scene_index, s]));
+  const sceneRows = planRows.map((row, idx) => {
+    const ai = aiByIndex.get(idx);
+    const role = row.role ?? ai?.role ?? "hook";
+    return {
+      ...row,
+      role,
+      purpose: row.purpose ?? roleToPurpose(role),
+      visual_method:
+        row.visual_method ?? assetMethodToVisualMethod(String(row.asset_method ?? "slide")),
+      duration_seconds: row.duration_seconds ?? ai?.duration_seconds ?? 2,
+      visual_intent: ai?.visual_intent ?? row.visual_intent,
+      on_screen_text: row.on_screen_text || ai?.on_screen_text || null,
+      voiceover_line: row.voiceover_line || ai?.voiceover_line || null,
+      asset_method: row.asset_method ?? ai?.asset_method ?? "slide",
+      asset_prompt: row.asset_prompt || ai?.asset_prompt || null,
+      metadata: { scene_plan_order: idx, production_mode: productionMode } as never,
+    };
+  });
+  const { error: scErr } = await supabase.from("storyboard_scenes").insert(sceneRows as never);
   if (scErr) throw new Error(`storyboard_scenes insert: ${scErr.message}`);
 
-  return { storyboard: board, storyboardId: sbRow!.id };
+  await supabase
+    .from("storyboards")
+    .update({
+      notes: [board.notes, `production_mode=${productionMode}`, `scene_plan_scenes=${sceneRows.length}`]
+        .filter(Boolean)
+        .join(" | "),
+    })
+    .eq("id", sbRow!.id);
+
+  return {
+    storyboard: board,
+    storyboardId: sbRow!.id,
+    scenePlanJson: deterministicPlan,
+  };
 }

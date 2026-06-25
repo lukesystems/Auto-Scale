@@ -5,13 +5,23 @@ export const STRUCTURED_JSON_TASK_TYPES: readonly AITaskType[] = [
   "autobrief",
   "trendwatch",
   "discovery_reasoning",
+  "content",
   "quality_gate",
+  "compound",
+  "default",
 ];
 
 export const STRUCTURED_JSON_EMPTY_HINT =
   "This model may not support JSON mode or may have hit max_tokens. Use a stable JSON-capable model for structured tasks.";
 
-const UNSTABLE_STRUCTURED_JSON_MODEL_MARKERS = [":free", "nex-agi/nex-r2-pro"] as const;
+const UNSTABLE_STRUCTURED_JSON_MODEL_MARKERS = [
+  ":free",
+  "nex-agi/nex-r2-pro",
+  // Produces valid JSON, but repeatedly ignores nested contracts and enum
+  // casing on the Growth Run schemas. Keep it for prose; route structured
+  // calls through the stable JSON model instead.
+  "deepseek/deepseek-v4-pro",
+] as const;
 
 export function isStructuredJsonTask(taskType: AITaskType): boolean {
   return STRUCTURED_JSON_TASK_TYPES.includes(taskType);

@@ -3,15 +3,15 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { runCompound } from "@/services/compound/classify";
 import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
+import { syncPostizScheduleStatus } from "@/services/postiz/sync-status";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
+import { maybeAutoStartGrowthRun, logAutopilotDecision } from "./start-run";
+import { loadVideoQualityScore } from "@/services/video-quality/persist";
+import { isSchedulable } from "@/services/video-quality/score";
 
 /**
- * Autopilot tick for one project.
- *
- * Rules-driven (not blind AI):
- * - enabled autopilot_rules are evaluated in priority order
- * - generation_volume / posting_cadence rules trigger actions
- * - respects approval_mode on the growth run
+ * Autopilot tick for one project — managed mode auto-start, auto-approve, auto-schedule.
  */
 export async function runAutopilotTick(opts: {
   projectId: string;
@@ -19,6 +19,70 @@ export async function runAutopilotTick(opts: {
 }): Promise<{ actions: string[] }> {
   const supabase = createSupabaseAdminClient();
   const actions: string[] = [];
+  const settings = await loadProjectGrowthSettings(opts.projectId, { useServiceRole: true });
+
+  // Managed mode: auto-start Growth Runs when eligible.
+  if (settings.operation_mode === "managed" && settings.autopilot_enabled) {
+    const start = await maybeAutoStartGrowthRun({
+      projectId: opts.projectId,
+      ownerId: opts.ownerId,
+    });
+    if (start.started) {
+      actions.push(`auto-started growth run ${start.growthRunId?.slice(0, 8)}`);
+    } else if (start.reason !== "active run already exists" && start.reason !== "managed mode not enabled") {
+      actions.push(`auto-start skipped: ${start.reason}`);
+    }
+  }
+
+  const { data: latestRun } = await supabase
+    .from("growth_runs")
+    .select("id, status, approval_mode, distribution_mode")
+    .eq("project_id", opts.projectId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latestRun?.id) return { actions };
+
+  const canAutoApprove =
+    settings.operation_mode === "managed" ||
+    settings.operation_mode === "assisted" ||
+    latestRun.approval_mode === "autopilot" ||
+    latestRun.approval_mode === "per_format";
+
+  if (latestRun.status === "awaiting_approval" && canAutoApprove) {
+    const { data: readyVideos } = await supabase
+      .from("videos")
+      .select("id")
+      .eq("growth_run_id", latestRun.id)
+      .eq("status", "ready");
+
+    let approved = 0;
+    for (const v of readyVideos ?? []) {
+      const quality = await loadVideoQualityScore(supabase, v.id);
+      if (quality && isSchedulable(quality)) {
+        await supabase
+          .from("videos")
+          .update({
+            status: "approved",
+            approval_status: "auto_approved",
+            approved_at: new Date().toISOString(),
+          })
+          .eq("id", v.id);
+        approved++;
+      }
+    }
+    if (approved > 0) {
+      actions.push(`auto-approved ${approved} safe video(s)`);
+      await logAutopilotDecision({
+        projectId: opts.projectId,
+        growthRunId: latestRun.id,
+        decisionType: "auto_approve",
+        outcome: "approved",
+        metadata: { count: approved },
+      });
+    }
+  }
 
   const { data: rules } = await supabase
     .from("autopilot_rules")
@@ -27,39 +91,8 @@ export async function runAutopilotTick(opts: {
     .eq("enabled", true)
     .order("priority", { ascending: true });
 
-  const { data: latestRun } = await supabase
-    .from("growth_runs")
-    .select("id, status, approval_mode")
-    .eq("project_id", opts.projectId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
   for (const rule of rules ?? []) {
-    const action = rule.action as Record<string, unknown>;
-    const trigger = rule.trigger as Record<string, unknown>;
-
-    if (rule.rule_type === "generation_volume" && trigger.on === "schedule") {
-      // Growth run generation requires a user session (orchestrator uses RLS client).
-      // Cron autopilot logs intent; founders start runs from the UI or a future admin worker.
-      actions.push("generation_volume rule noted (start run from UI)");
-    }
-
-    if (
-      rule.rule_type === "posting_cadence" &&
-      latestRun &&
-      latestRun.status === "awaiting_approval" &&
-      action.auto_approve === true
-    ) {
-      await supabase
-        .from("videos")
-        .update({ status: "approved", approval_status: "auto_approved", approved_at: new Date().toISOString() })
-        .eq("growth_run_id", latestRun.id)
-        .eq("status", "ready");
-      actions.push("auto-approved ready videos");
-    }
-
-    if (rule.rule_type === "variant_spawn" && latestRun?.id) {
+    if (rule.rule_type === "variant_spawn" && latestRun.id) {
       await runCompound({
         projectId: opts.projectId,
         growthRunId: latestRun.id,
@@ -70,7 +103,16 @@ export async function runAutopilotTick(opts: {
     }
   }
 
-  if (latestRun?.id && latestRun.status === "awaiting_approval") {
+  const shouldAutoSchedule =
+    settings.operation_mode === "managed" &&
+    settings.autopilot_enabled &&
+    latestRun.distribution_mode !== "export_only";
+
+  if (
+    latestRun.id &&
+    (latestRun.status === "awaiting_approval" || latestRun.status === "scheduled") &&
+    shouldAutoSchedule
+  ) {
     const { data: project } = await supabase
       .from("projects")
       .select("product_url")
@@ -81,17 +123,45 @@ export async function runAutopilotTick(opts: {
       process.env.NEXT_PUBLIC_APP_URL ??
       getManagedProviderConfig().appUrl ??
       "http://localhost:3000";
+
+    const { resolveProjectCta } = await import("@/services/project-growth-settings/schema");
+    const cta = resolveProjectCta(settings, project?.product_url ?? null);
+    const destinationUrl = cta.url ?? project?.product_url ?? baseAppUrl;
+
     const schedule = await scheduleApprovedVideos({
       growthRunId: latestRun.id,
       projectId: opts.projectId,
       ownerId: opts.ownerId,
       baseAppUrl,
-      destinationUrl: project?.product_url ?? baseAppUrl,
+      destinationUrl,
+      intentType: cta.intentType,
       trustedServiceRole: true,
     });
     if (schedule.scheduledCount > 0) {
+      await supabase
+        .from("growth_runs")
+        .update({ status: "live", phase: "live" })
+        .eq("id", latestRun.id);
       actions.push(`scheduled ${schedule.scheduledCount} posts via Postiz`);
+      await logAutopilotDecision({
+        projectId: opts.projectId,
+        growthRunId: latestRun.id,
+        decisionType: "auto_schedule",
+        outcome: "scheduled",
+        metadata: { count: schedule.scheduledCount, skipped: schedule.skippedCount },
+      });
+    } else if (schedule.skippedCount > 0) {
+      actions.push(`schedule skipped ${schedule.skippedCount} (see autopilot_skip_log)`);
     }
+  }
+
+  const sync = await syncPostizScheduleStatus({
+    projectId: opts.projectId,
+    ownerId: opts.ownerId,
+    growthRunId: latestRun.id,
+  });
+  if (sync.updated > 0) {
+    actions.push(`synced ${sync.updated} Postiz post status(es)`);
   }
 
   return { actions };

@@ -231,6 +231,7 @@ export const GrowthRunOptionsSchema = z.object({
   duration_days: z.number().int().min(1).max(60).default(7),
   brand_constraints: z.record(z.unknown()).default({}),
   connected_account_ids: z.array(z.string().uuid()).default([]),
+  distribution_mode: z.enum(["postiz", "export_only"]).default("postiz"),
   concept_target_count: z.number().int().min(1).max(40).default(12),
 });
 

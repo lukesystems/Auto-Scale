@@ -100,12 +100,25 @@ export async function generateVideoTrendReport(opts: {
     const res = await generateObject({
       schema: VideoTrendReportSchema,
       schemaDescription:
-        "VideoTrendReport per AutoScale spec: winning_structures, hook_patterns, opening_frames, cta_patterns, audience_language, platform_patterns, recommended_experiments, competitor_gaps, repurposable_formats, confidence.",
+        `VideoTrendReport with this exact shape and lowercase enum values:
+{
+  "winning_structures": [{"name":"string","beats":["beat 1","beat 2"],"ideal_length_seconds":22,"why_it_works":"string"}],
+  "hook_patterns": [{"label":"string","pattern":"string","example":"string","when_to_use":"string"}],
+  "opening_frames": ["string"],
+  "cta_patterns": [{"label":"string","pattern":"string","best_for":["string"]}],
+  "audience_language": ["string"],
+  "platform_patterns": [{"platform":"tiktok|instagram|youtube","preferred_length_seconds":[15,30],"preferred_aspect_ratio":"9:16","notes":"string"}],
+  "recommended_experiments": [{"hypothesis":"string","video_type":"slide|demo|founder_pov|pain_led|trend_remix|ai_broll|objection|comparison","platform":"tiktok|instagram|youtube","ideal_length_seconds":22,"estimated_variants":3,"rationale":"string"}],
+  "competitor_gaps": ["string"],
+  "repurposable_formats": ["string"],
+  "confidence": 0.5
+}`,
       taskType: "trendwatch",
       system:
         "You convert real video evidence into reusable short-form video patterns. Never invent. Cite via the recommended_experiments rationale field.",
       prompt,
       temperature: 0.4,
+      maxTokens: 5000,
     });
     result = res.object;
     raw = res.raw;

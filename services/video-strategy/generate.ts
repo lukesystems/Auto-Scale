@@ -125,18 +125,34 @@ export async function generateVideoStrategy(opts: {
     "- platform_mix: weights summing to 1.0 across the target platforms only.",
     "- video_type_mix: weights summing to 1.0 across video types (slide / demo / founder_pov / pain_led / trend_remix / ai_broll / objection / comparison). Prefer slide + demo for SaaS unless evidence says otherwise.",
     "- campaign_hypotheses: 3-6 testable hypotheses tied to the trend evidence.",
+    "  Every hypothesis object MUST include hypothesis and metric_to_watch strings.",
     "- rationale: 3-5 sentences explaining the mix.",
+    "Use this exact shape (replace the example values, never omit keys):",
+    JSON.stringify({
+      platform_mix: { tiktok: 0.4, instagram: 0.3, youtube: 0.3 },
+      video_type_mix: { slide: 0.5, demo: 0.5 },
+      campaign_hypotheses: [
+        {
+          hypothesis: "A pain-led demo will drive qualified product clicks.",
+          metric_to_watch: "product_link_clicks",
+          success_threshold: "At least 3 qualified clicks in the evaluation window.",
+          kill_threshold: "No clicks after the evaluation window.",
+        },
+      ],
+      rationale: "The mix prioritizes formats supported by the available evidence.",
+    }),
   ].join("\n");
 
   const strategyRes = await generateObject({
     schema: VideoStrategySchema,
     schemaDescription:
-      "VideoStrategy: platform_mix (weights 0..1 by platform), video_type_mix (weights 0..1 by video_type), campaign_hypotheses[], rationale.",
+      "VideoStrategy JSON with platform_mix and video_type_mix numeric records; campaign_hypotheses is an array of objects where every object contains hypothesis:string and metric_to_watch:string, plus optional success_threshold:string and kill_threshold:string; rationale:string.",
     taskType: "content",
     system:
       "You are a growth strategist for SaaS short-form video. You output deterministic, founder-actionable mixes. Never recommend more volume than the connected accounts can support.",
     prompt,
     temperature: 0.3,
+    maxTokens: 3000,
   });
 
   await logAIRun({
@@ -201,7 +217,9 @@ export async function generateVideoStrategy(opts: {
       per_account_plan: loadout.per_account_plan as never,
       total_videos_planned: loadout.total_videos_planned,
       duration_days: loadout.duration_days,
-    })
+      connected_account_ids: (opts.options.connected_account_ids ?? []) as never,
+      distribution_mode: opts.options.distribution_mode ?? "postiz",
+    } as never)
     .select("id")
     .single();
   if (loadoutError) throw new Error(`posting_loadouts insert: ${loadoutError.message}`);

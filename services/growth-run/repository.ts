@@ -2,8 +2,9 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-type SupabaseClient = ReturnType<typeof createSupabaseServerClient>;
+type SupabaseClientType = SupabaseClient<Database>;
 type Phase = Database["public"]["Tables"]["growth_runs"]["Row"]["phase"];
 type Status = Database["public"]["Tables"]["growth_runs"]["Row"]["status"];
 
@@ -16,10 +17,12 @@ export interface CreateGrowthRunInput {
   targetPlatforms?: Array<"tiktok" | "instagram" | "youtube">;
   brandConstraints?: Record<string, unknown>;
   parentRunId?: string | null;
+  distributionMode?: "postiz" | "export_only";
+  client?: SupabaseClientType;
 }
 
 export async function createGrowthRun(input: CreateGrowthRunInput) {
-  const supabase = createSupabaseServerClient();
+  const supabase = input.client ?? createSupabaseServerClient();
   const { data, error } = await supabase
     .from("growth_runs")
     .insert({
@@ -30,6 +33,7 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
       posting_aggressiveness: input.postingAggressiveness ?? "balanced",
       target_platforms: (input.targetPlatforms ?? ["tiktok", "instagram", "youtube"]) as never,
       brand_constraints: (input.brandConstraints ?? {}) as never,
+      distribution_mode: input.distributionMode ?? "postiz",
       parent_run_id: input.parentRunId ?? null,
       status: "pending",
       phase: "brief",
@@ -42,7 +46,7 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
 }
 
 export async function setPhase(
-  client: SupabaseClient,
+  client: SupabaseClientType,
   runId: string,
   phase: Phase,
   patch?: { status?: Status; error?: string | null; phase_status?: Record<string, unknown> }
@@ -58,7 +62,7 @@ export async function setPhase(
 }
 
 export async function markPhaseStatus(
-  client: SupabaseClient,
+  client: SupabaseClientType,
   runId: string,
   phase: Phase,
   status: "pending" | "running" | "succeeded" | "failed" | "skipped",

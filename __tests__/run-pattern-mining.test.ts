@@ -1,4 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { runPatternMining } from "@/services/intelligence/patterns/run-pattern-mining";
+import { loadPatternMiningContext } from "@/services/intelligence/patterns/load-pattern-context";
 
 vi.mock("@/services/intelligence/patterns/save-pattern-run", () => ({
   savePatternRun: vi.fn(async (input: { runId?: string }) => input.runId ?? "run-1"),
@@ -62,7 +64,6 @@ describe("run-pattern-mining", () => {
   });
 
   it("mines deterministic patterns when AI consolidation fails", async () => {
-    const { runPatternMining } = await import("@/services/intelligence/patterns/run-pattern-mining");
     const result = await runPatternMining({ projectId: "project-1" });
 
     expect(result.ok).toBe(true);
@@ -72,7 +73,6 @@ describe("run-pattern-mining", () => {
   });
 
   it("fails cleanly when no sources exist", async () => {
-    const { loadPatternMiningContext } = await import("@/services/intelligence/patterns/load-pattern-context");
     vi.mocked(loadPatternMiningContext).mockResolvedValueOnce({
       projectId: "project-1",
       brief: null,
@@ -80,7 +80,6 @@ describe("run-pattern-mining", () => {
       sources: [],
     });
 
-    const { runPatternMining } = await import("@/services/intelligence/patterns/run-pattern-mining");
     const result = await runPatternMining({ projectId: "project-1" });
 
     expect(result.ok).toBe(false);

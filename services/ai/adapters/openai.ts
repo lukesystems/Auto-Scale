@@ -2,12 +2,23 @@ import { AIError, type AIAdapter, type AdapterContext, type GenerateTextParams, 
 import { STRUCTURED_JSON_EMPTY_HINT } from "../model-router";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
+const MAX_REQUEST_ATTEMPTS = 3;
 
 function getRequestTimeoutMs(): number {
   const raw = process.env.AI_REQUEST_TIMEOUT_MS?.trim();
   if (!raw) return DEFAULT_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+}
+
+function getRetryDelayMs(attempt: number): number {
+  const configured = Number.parseInt(process.env.AI_RETRY_BASE_DELAY_MS ?? "750", 10);
+  const base = Number.isFinite(configured) && configured >= 0 ? configured : 750;
+  return base * 2 ** attempt;
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
 export const openaiAdapter: AIAdapter = {
@@ -44,27 +55,56 @@ export const openaiAdapter: AIAdapter = {
     }
 
     const timeoutMs = getRequestTimeoutMs();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response | null = null;
+    let lastError: unknown = null;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new AIError(
-          `AI request timed out after ${timeoutMs}ms. Try a faster model or check provider status.`,
+    for (let attempt = 0; attempt < MAX_REQUEST_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const candidate = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        if (candidate.ok || !isRetryableStatus(candidate.status)) {
+          response = candidate;
+          break;
+        }
+        lastError = new AIError(
+          `${provider} request returned retryable status ${candidate.status}`,
           provider
         );
+      } catch (err) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw new AIError(`${provider} request failed: ${err instanceof Error ? err.message : "unknown error"}`, provider, err);
-    } finally {
-      clearTimeout(timeoutId);
+
+      if (attempt < MAX_REQUEST_ATTEMPTS - 1) {
+        console.warn("[ai_adapter] retrying provider request", {
+          provider,
+          model: body.model,
+          attempt: attempt + 1,
+        });
+        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt)));
+      }
+    }
+
+    if (!response) {
+      if (lastError instanceof Error && lastError.name === "AbortError") {
+        throw new AIError(
+          `AI request timed out after ${MAX_REQUEST_ATTEMPTS} attempts of ${timeoutMs}ms. Try a faster model or check provider status.`,
+          provider,
+          lastError
+        );
+      }
+      throw new AIError(
+        `${provider} request failed after ${MAX_REQUEST_ATTEMPTS} attempts: ${lastError instanceof Error ? lastError.message : "unknown error"}`,
+        provider,
+        lastError
+      );
     }
 
     if (!response.ok) {

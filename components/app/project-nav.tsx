@@ -30,6 +30,8 @@ interface ProjectNavProps {
 const NAV_ITEMS = [
   { key: "overview", href: "", label: "Overview", icon: LayoutDashboard, step: 0 },
   { key: "growth", href: "/growth", label: "Growth Run", icon: Rocket, step: 0 },
+  { key: "daily-growth", href: "/growth/daily", label: "Daily Pack", icon: Package, step: 0 },
+  { key: "growth-results", href: "/growth/results", label: "Growth Graph", icon: TrendingUp, step: 0 },
   { key: "brief", href: "/brief", label: "Brief", icon: FileText, step: 1 },
   { key: "sources", href: "/sources", label: "Sources", icon: Network, step: 2 },
   { key: "video-intelligence", href: "/video-intelligence", label: "Video", icon: Video, step: 3 },

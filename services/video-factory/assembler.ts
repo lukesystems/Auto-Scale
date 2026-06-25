@@ -16,6 +16,8 @@ export interface AssembleVideoInput {
   scenes: SceneClipInput[];
   voiceoverPath?: string;
   subtitlesPath?: string;
+  backgroundMusicPath?: string;
+  backgroundMusicVolume?: number;
   outputPath: string;
   width?: number;
   height?: number;
@@ -83,6 +85,11 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
     await runFfmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatOut]);
 
     const args: string[] = ["-i", concatOut];
+    let audioInputIndex = 1;
+    if (input.backgroundMusicPath) {
+      args.push("-i", input.backgroundMusicPath);
+      audioInputIndex = 2;
+    }
     if (input.voiceoverPath) {
       args.push("-i", input.voiceoverPath);
     }
@@ -95,14 +102,34 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
       videoOut = "[vout]";
     }
 
-    if (filters.length) {
-      args.push("-filter_complex", filters.join(";"), "-map", videoOut);
-    } else {
-      args.push("-map", "0:v");
+    if (input.backgroundMusicPath && input.voiceoverPath) {
+      const musicVol = input.backgroundMusicVolume ?? 0.12;
+      filters.push(
+        `[1:a]volume=${musicVol}[bg];[2:a][bg]amix=inputs=2:duration=shortest:dropout_transition=2[aout]`
+      );
+    } else if (input.backgroundMusicPath) {
+      const musicVol = input.backgroundMusicVolume ?? 0.2;
+      filters.push(`[1:a]volume=${musicVol}[aout]`);
     }
 
-    if (input.voiceoverPath) {
-      args.push("-map", "1:a");
+    if (filters.length) {
+      args.push("-filter_complex", filters.join(";"));
+      args.push("-map", videoOut);
+      if (input.backgroundMusicPath && input.voiceoverPath) {
+        args.push("-map", "[aout]");
+      } else if (input.backgroundMusicPath) {
+        args.push("-map", "[aout]");
+      } else if (input.voiceoverPath) {
+        args.push("-map", "1:a");
+      }
+    } else {
+      args.push("-map", "0:v");
+      if (input.voiceoverPath) {
+        args.push("-map", "1:a");
+      }
+    }
+
+    if (input.voiceoverPath || input.backgroundMusicPath) {
       args.push("-c:a", "aac", "-b:a", "128k", "-shortest");
     }
 

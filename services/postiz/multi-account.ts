@@ -7,6 +7,11 @@ import { getProviderModeForUser } from "@/lib/provider-mode";
 import { sendToPostiz, type PostizCredentials } from "./client";
 import { mintTrackedLink, buildTrackedUrl } from "@/services/tracking/links";
 import type { Database } from "@/lib/supabase/types";
+import { loadVideoQualityScore } from "@/services/video-quality/persist";
+import { isSchedulable, MIN_SCHEDULE_QUALITY_SCORE } from "@/services/video-quality/score";
+import { logAutopilotSkip } from "./skip-log";
+import { getPlatformVariantUrl } from "@/services/video-factory/platform-variants";
+import { nativeSoundNote } from "@/services/audio/library";
 
 /**
  * Multi-account scheduler.
@@ -31,6 +36,13 @@ export interface MultiAccountScheduleInput {
   startAt?: Date;
   /** Use service-role client (cron/autopilot — no user session). */
   trustedServiceRole?: boolean;
+  /** Configurable duplicate-hook window in days (default 7). */
+  duplicateHookWindowDays?: number;
+  /** Configurable duplicate-format window in days (default 3). */
+  duplicateFormatWindowDays?: number;
+  /** Build preview only — no inserts or Postiz calls. */
+  previewOnly?: boolean;
+  intentType?: "product" | "demo_intent" | "lead_intent";
 }
 
 export interface MultiAccountScheduleResult {
@@ -38,6 +50,23 @@ export interface MultiAccountScheduleResult {
   skippedCount: number;
   failureCount: number;
   diagnostics: Array<{ videoId: string; accountId: string; outcome: string; reason?: string }>;
+  preview: Array<{
+    videoId: string;
+    accountId: string;
+    platform: string;
+    scheduledFor: string;
+    hook: string;
+    mediaUrl: string;
+    qualityScore: number | null;
+    caption?: string;
+    ctaLabel?: string;
+    trackedUrl?: string;
+    duplicateWarning?: string | null;
+    formatWarning?: string | null;
+    audioNote?: string;
+    qualityBlocked?: boolean;
+    blockReason?: string | null;
+  }>;
 }
 
 export async function scheduleApprovedVideos(
@@ -60,10 +89,11 @@ export async function scheduleApprovedVideos(
     .eq("status", "ready");
   if (vErr) throw new Error(`videos load: ${vErr.message}`);
   if (!candidateVideos?.length) {
-    return { scheduledCount: 0, skippedCount: 0, failureCount: 0, diagnostics: [] };
+    return { scheduledCount: 0, skippedCount: 0, failureCount: 0, diagnostics: [], preview: [] };
   }
 
   const diagnostics: MultiAccountScheduleResult["diagnostics"] = [];
+  const preview: MultiAccountScheduleResult["preview"] = [];
   let scheduledCount = 0;
   let skippedCount = 0;
   let failureCount = 0;
@@ -73,9 +103,26 @@ export async function scheduleApprovedVideos(
   const videoMedia = new Map<string, string>();
   const videos: typeof candidateVideos = [];
   for (const v of candidateVideos) {
+    if (v.status === "failed") {
+      skippedCount++;
+      diagnostics.push({ videoId: v.id, accountId: "n/a", outcome: "skipped", reason: "render failed" });
+      await logAutopilotSkip(admin, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: v.id,
+        reason: "render_failed",
+      });
+      continue;
+    }
     if (!v.final_asset_id) {
       skippedCount++;
       diagnostics.push({ videoId: v.id, accountId: "n/a", outcome: "skipped", reason: "no final asset" });
+      await logAutopilotSkip(admin, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: v.id,
+        reason: "no_final_mp4",
+      });
       continue;
     }
     const { data: asset } = await supabase
@@ -91,6 +138,32 @@ export async function scheduleApprovedVideos(
         outcome: "skipped",
         reason: "final asset not rendered (status/public_url missing)",
       });
+      await logAutopilotSkip(admin, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: v.id,
+        reason: "video_not_ready",
+        details: { asset_status: asset?.status ?? null },
+      });
+      continue;
+    }
+
+    const quality = await loadVideoQualityScore(supabase, v.id);
+    if (quality && !isSchedulable(quality)) {
+      skippedCount++;
+      diagnostics.push({
+        videoId: v.id,
+        accountId: "n/a",
+        outcome: "skipped",
+        reason: quality.block_reason ?? `quality score ${quality.overall_score} below ${MIN_SCHEDULE_QUALITY_SCORE}`,
+      });
+      await logAutopilotSkip(admin, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: v.id,
+        reason: "quality_score_too_low",
+        details: { overall_score: quality.overall_score, block_reason: quality.block_reason },
+      });
       continue;
     }
     videoMedia.set(v.id, asset.public_url);
@@ -98,8 +171,10 @@ export async function scheduleApprovedVideos(
   }
 
   if (!videos.length) {
-    return { scheduledCount: 0, skippedCount, failureCount: 0, diagnostics };
+    return { scheduledCount: 0, skippedCount, failureCount: 0, diagnostics, preview };
   }
+
+  const previewOnly = input.previewOnly === true;
 
   const { data: loadout, error: lErr } = await supabase
     .from("posting_loadouts")
@@ -118,9 +193,18 @@ export async function scheduleApprovedVideos(
   const credentials = await resolvePostizCredentials(input.ownerId, providerMode);
   const postizEnabled = !!credentials?.apiKey && !!credentials?.apiUrl;
 
-  const startAt = input.startAt ?? new Date();
+  if (!postizEnabled) {
+    await logAutopilotSkip(admin, {
+      projectId: input.projectId,
+      growthRunId: input.growthRunId,
+      reason: "postiz_missing",
+      details: { note: "Videos queued for export pack fallback" },
+    });
+  }
 
-  // Per-account counters within this scheduling pass.
+  const hookWindowDays = input.duplicateHookWindowDays ?? 7;
+  const formatWindowDays = input.duplicateFormatWindowDays ?? 3;
+  const startAt = input.startAt ?? new Date();
   const cursorByAccount = new Map<string, Date>();
 
   for (const video of videos) {
@@ -132,8 +216,22 @@ export async function scheduleApprovedVideos(
     if (!captions?.length) {
       diagnostics.push({ videoId: video.id, accountId: "n/a", outcome: "skipped", reason: "no captions" });
       skippedCount++;
+      await logAutopilotSkip(admin, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: video.id,
+        reason: "no_connected_account",
+        details: { note: "No captions — connect accounts for this platform" },
+      });
       continue;
     }
+
+    const { data: conceptRow } = await supabase
+      .from("video_concepts")
+      .select("hook, video_type, production_mode")
+      .eq("id", video.concept_id)
+      .maybeSingle();
+    const videoQuality = await loadVideoQualityScore(supabase, video.id);
 
     for (const caption of captions) {
       const accountId = caption.connected_account_id;
@@ -154,6 +252,13 @@ export async function scheduleApprovedVideos(
           reason: "account inactive",
         });
         skippedCount++;
+        await logAutopilotSkip(admin, {
+          projectId: input.projectId,
+          growthRunId: input.growthRunId,
+          videoId: video.id,
+          connectedAccountId: accountId,
+          reason: account?.status === "paused" ? "account_health_paused" : "no_connected_account",
+        });
         continue;
       }
       if (!account.postiz_account_id) {
@@ -167,7 +272,15 @@ export async function scheduleApprovedVideos(
         continue;
       }
 
-      const healthOk = await checkAccountHealth(admin, accountId, input.projectId, video.id);
+      const healthOk = await checkAccountHealth(admin, {
+        accountId,
+        projectId: input.projectId,
+        videoId: video.id,
+        hookWindowDays,
+        formatWindowDays,
+        videoType: conceptRow?.video_type ?? null,
+        productionMode: conceptRow?.production_mode ?? null,
+      });
       if (!healthOk.ok) {
         diagnostics.push({
           videoId: video.id,
@@ -176,6 +289,16 @@ export async function scheduleApprovedVideos(
           reason: healthOk.reason,
         });
         skippedCount++;
+        await logAutopilotSkip(admin, {
+          projectId: input.projectId,
+          growthRunId: input.growthRunId,
+          videoId: video.id,
+          connectedAccountId: accountId,
+          reason: healthOk.reason.includes("format")
+            ? "duplicate_format_risk"
+            : "duplicate_hook_risk",
+          details: { reason: healthOk.reason },
+        });
         continue;
       }
 
@@ -190,19 +313,69 @@ export async function scheduleApprovedVideos(
       const scheduledFor = new Date(Math.max(last.getTime(), startAt.getTime()) + intervalMinutes * 60_000);
       cursorByAccount.set(accountId, scheduledFor);
 
+      const variantUrl =
+        (await getPlatformVariantUrl(supabase, video.id, caption.platform)) ??
+        videoMedia.get(video.id)!;
+      const mediaUrl = variantUrl;
+
+      const duplicateWarning = null;
+      const formatWarning = null;
+
+      const trackedUrl = previewOnly
+        ? `${input.baseAppUrl.replace(/\/$/, "")}/r/preview`
+        : buildTrackedUrl({
+            baseUrl: input.baseAppUrl,
+            shortCode: (
+              await mintTrackedLink({
+                projectId: input.projectId,
+                growthRunId: input.growthRunId,
+                videoId: video.id,
+                connectedAccountId: accountId,
+                destinationUrl: input.destinationUrl,
+                intentType: input.intentType ?? "product",
+                utmSource: account.platform,
+                utmContent: `acct_${account.handle}_v_${video.id.slice(0, 8)}`,
+              })
+            ).shortCode,
+          });
+
+      const captionWithLink = `${caption.caption}\n\n${trackedUrl}`;
+
+      preview.push({
+        videoId: video.id,
+        accountId,
+        platform: caption.platform,
+        scheduledFor: scheduledFor.toISOString(),
+        hook: conceptRow?.hook ?? "",
+        mediaUrl,
+        qualityScore: videoQuality?.overall_score ?? null,
+        caption: captionWithLink,
+        ctaLabel: caption.cta ?? undefined,
+        trackedUrl,
+        duplicateWarning,
+        formatWarning,
+        audioNote: nativeSoundNote(caption.platform),
+        qualityBlocked: videoQuality ? !isSchedulable(videoQuality) : false,
+        blockReason: videoQuality?.block_reason ?? null,
+      });
+
+      if (previewOnly) {
+        scheduledCount++;
+        continue;
+      }
+
       const { trackedLinkId, shortCode } = await mintTrackedLink({
         projectId: input.projectId,
         growthRunId: input.growthRunId,
         videoId: video.id,
         connectedAccountId: accountId,
         destinationUrl: input.destinationUrl,
+        intentType: input.intentType ?? "product",
         utmSource: account.platform,
         utmContent: `acct_${account.handle}_v_${video.id.slice(0, 8)}`,
       });
-      const trackedUrl = buildTrackedUrl({ baseUrl: input.baseAppUrl, shortCode });
-
-      const captionWithLink = `${caption.caption}\n\n${trackedUrl}`;
-      const mediaUrl = videoMedia.get(video.id)!;
+      const liveTrackedUrl = buildTrackedUrl({ baseUrl: input.baseAppUrl, shortCode });
+      const liveCaptionWithLink = `${caption.caption}\n\n${liveTrackedUrl}`;
 
       const { data: scheduleRow, error: sErr } = await supabase
         .from("schedule_items")
@@ -217,12 +390,12 @@ export async function scheduleApprovedVideos(
           status: postizEnabled ? "sending" : "queued",
           postiz_payload: {
             channel: account.postiz_account_id,
-            caption: captionWithLink,
+            caption: liveCaptionWithLink,
             hashtags: caption.hashtags,
             cta: caption.cta,
             media_url: mediaUrl,
             tracked_link_id: trackedLinkId,
-            tracked_url: trackedUrl,
+            tracked_url: liveTrackedUrl,
           } as never,
         })
         .select("id")
@@ -262,7 +435,7 @@ export async function scheduleApprovedVideos(
       const resp = await sendToPostiz(creds, {
         channel: account.postiz_account_id,
         scheduledFor: scheduledFor.toISOString(),
-        caption: captionWithLink,
+        caption: liveCaptionWithLink,
         mediaUrls: [mediaUrl],
         cta: caption.cta ?? undefined,
         externalRef: `gr_${input.growthRunId.slice(0, 8)}/v_${video.id.slice(0, 8)}`,
@@ -313,26 +486,32 @@ export async function scheduleApprovedVideos(
     }
   }
 
-  return { scheduledCount, skippedCount, failureCount, diagnostics };
+  return { scheduledCount, skippedCount, failureCount, diagnostics, preview };
 }
 
 async function checkAccountHealth(
   client: ReturnType<typeof createSupabaseAdminClient>,
-  accountId: string,
-  projectId: string,
-  videoId: string
+  opts: {
+    accountId: string;
+    projectId: string;
+    videoId: string;
+    hookWindowDays: number;
+    formatWindowDays: number;
+    videoType: string | null;
+    productionMode: string | null;
+  }
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  // Rule: do not reuse the same hook within 7 days on the same account.
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const hookSince = new Date(Date.now() - opts.hookWindowDays * 24 * 60 * 60 * 1000).toISOString();
+  const formatSince = new Date(Date.now() - opts.formatWindowDays * 24 * 60 * 60 * 1000).toISOString();
   const { data: targetVideo } = await client
     .from("videos")
     .select("concept_id")
-    .eq("id", videoId)
+    .eq("id", opts.videoId)
     .single();
   if (!targetVideo?.concept_id) return { ok: true };
   const { data: targetConcept } = await client
     .from("video_concepts")
-    .select("hook")
+    .select("hook, video_type, production_mode")
     .eq("id", targetVideo.concept_id)
     .single();
   if (!targetConcept?.hook) return { ok: true };
@@ -340,9 +519,9 @@ async function checkAccountHealth(
   const { data: recentSchedules } = await client
     .from("schedule_items")
     .select("video_id")
-    .eq("connected_account_id", accountId)
-    .eq("project_id", projectId)
-    .gte("scheduled_for", sevenDaysAgo)
+    .eq("connected_account_id", opts.accountId)
+    .eq("project_id", opts.projectId)
+    .gte("scheduled_for", hookSince)
     .in("status", ["scheduled", "posted", "sending"]);
   const recentVideoIds = (recentSchedules ?? []).map((r) => r.video_id);
   if (!recentVideoIds.length) return { ok: true };
@@ -358,14 +537,33 @@ async function checkAccountHealth(
 
   const { data: recentConcepts } = await client
     .from("video_concepts")
-    .select("hook")
+    .select("hook, video_type, production_mode")
     .in("id", recentConceptIds);
   const recentHooks = new Set<string>(
     (recentConcepts ?? []).map((c) => c.hook.toLowerCase())
   );
   if (recentHooks.has(targetConcept.hook.toLowerCase())) {
-    return { ok: false, reason: "duplicate hook within 7d on this account" };
+    return { ok: false, reason: `duplicate hook within ${opts.hookWindowDays}d on this account` };
   }
+
+  const targetFormat = targetConcept.production_mode ?? targetConcept.video_type;
+  const recentFormats = new Set(
+    (recentConcepts ?? []).map((c) => (c.production_mode ?? c.video_type).toLowerCase())
+  );
+  const { data: formatSchedules } = await client
+    .from("schedule_items")
+    .select("video_id")
+    .eq("connected_account_id", opts.accountId)
+    .eq("project_id", opts.projectId)
+    .gte("scheduled_for", formatSince)
+    .in("status", ["scheduled", "posted", "sending"]);
+  if ((formatSchedules?.length ?? 0) >= 2 && recentFormats.has(targetFormat.toLowerCase())) {
+    return {
+      ok: false,
+      reason: `duplicate format (${targetFormat}) posted too tightly on this account`,
+    };
+  }
+
   return { ok: true };
 }
 

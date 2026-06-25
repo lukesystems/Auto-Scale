@@ -235,6 +235,11 @@ export async function generateObject<T extends ZodTypeAny>(
 
   while (retries <= maxRetries) {
 
+    const repairHint =
+      retries > 0 && lastError
+        ? `\n\nYour previous JSON did not match the contract. Correct every validation error below and return the COMPLETE object again:\n${lastError.message.slice(0, 6000)}`
+        : "";
+
     const result = await generateText({
 
       provider: params.provider,
@@ -245,7 +250,7 @@ export async function generateObject<T extends ZodTypeAny>(
 
       system: fullSystem,
 
-      prompt: params.prompt + (retries > 0 ? "\n\nYour last response was not valid JSON. Try again." : "") + schemaHint,
+      prompt: params.prompt + repairHint + schemaHint,
 
       temperature: params.temperature ?? 0.5,
 

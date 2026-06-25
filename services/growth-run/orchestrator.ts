@@ -1,12 +1,11 @@
 import "server-only";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
 import {
   GrowthRunOptionsSchema,
   type GrowthRunOptions,
 } from "./schema";
 import {
-  completeRun,
   createGrowthRun,
   markPhaseStatus,
   setPhase,
@@ -33,6 +32,8 @@ export interface StartGrowthRunInput {
   ownerId: string;
   options?: Partial<GrowthRunOptions>;
   trigger?: "manual" | "autopilot" | "scheduled";
+  /** Cron/autopilot — bypass RLS with service role. */
+  trustedServiceRole?: boolean;
 }
 
 export interface StartGrowthRunResult {
@@ -42,11 +43,24 @@ export interface StartGrowthRunResult {
   failures: Array<{ conceptId: string; error: string }>;
 }
 
+export class GrowthRunExecutionError extends Error {
+  constructor(
+    public readonly growthRunId: string,
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "GrowthRunExecutionError";
+  }
+}
+
 export async function startGrowthRun(
   input: StartGrowthRunInput
 ): Promise<StartGrowthRunResult> {
   const options = GrowthRunOptionsSchema.parse(input.options ?? {});
-  const supabase = createSupabaseServerClient();
+  const supabase = input.trustedServiceRole
+    ? createSupabaseAdminClient()
+    : createSupabaseServerClient();
 
   const run = await createGrowthRun({
     projectId: input.projectId,
@@ -56,6 +70,8 @@ export async function startGrowthRun(
     postingAggressiveness: options.posting_aggressiveness,
     targetPlatforms: options.target_platforms,
     brandConstraints: options.brand_constraints,
+    distributionMode: options.distribution_mode,
+    client: supabase,
   });
 
   const runId = run.id;
@@ -165,14 +181,35 @@ export async function startGrowthRun(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await supabase
+    const { data: current } = await supabase
+      .from("growth_runs")
+      .select("phase, phase_status")
+      .eq("id", runId)
+      .single();
+    const failedPhase = current?.phase ?? "brief";
+    const phaseStatus = (current?.phase_status ?? {}) as Record<string, unknown>;
+    phaseStatus[failedPhase] = {
+      status: "failed",
+      at: new Date().toISOString(),
+      error: message.slice(0, 2000),
+    };
+    const { error: failureWriteError } = await supabase
       .from("growth_runs")
       .update({
         status: "failed",
         error: message,
+        phase_status: phaseStatus as never,
+        completed_at: new Date().toISOString(),
       })
       .eq("id", runId);
-    await completeRun(supabase, runId, "failed");
-    throw err;
+    if (failureWriteError) {
+      console.error("[growth-run] failed to persist execution error", {
+        runId,
+        message: failureWriteError.message,
+      });
+    }
+    throw new GrowthRunExecutionError(runId, message, {
+      cause: err instanceof Error ? err : undefined,
+    });
   }
 }

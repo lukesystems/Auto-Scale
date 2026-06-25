@@ -7,6 +7,7 @@ import {
   loadProductBrief,
   loadVideoPatterns,
 } from "@/services/growth-run/repository";
+import { resolveProductionMode } from "./production-modes";
 import {
   WinningFormatPlanSchema,
   type FormatHypothesis,
@@ -50,6 +51,10 @@ export async function generateVideoConcepts(opts: {
   const allowedEvidence = new Set(availableEvidenceIds);
   const allowedPatterns = new Set(availablePatternIds);
   const formatCount = opts.options.concept_target_count >= 6 ? 2 : 1;
+  const brandCta =
+    (opts.options.brand_constraints?.primary_cta_label as string | undefined) ??
+    brief?.cta ??
+    "Start free";
 
   const platformPriority = Object.entries(opts.strategy.platform_mix)
     .sort((a, b) => Number(b[1]) - Number(a[1]))
@@ -69,6 +74,7 @@ export async function generateVideoConcepts(opts: {
     "Use only evidence_video_ids and source_pattern_ids provided below. Leave arrays empty when support is missing.",
     "Prefer SaaS-native formats: demo, pain-led slide, founder POV, objection, or comparison.",
     "AI b-roll is allowed only when it strengthens the message.",
+    `Hold CTA constant across variants: "${brandCta}".`,
     "",
     "Product brief:",
     JSON.stringify({
@@ -103,18 +109,54 @@ export async function generateVideoConcepts(opts: {
     "",
     "The plan must include one audience pain, fixed body, fixed CTA, fixed audience, a 3-7 day evaluation window,",
     "and 1-2 format fingerprints with transferability, distortion risk, confidence, missing evidence, and three variants.",
+    "Use lowercase enum values exactly as shown. Every format and variant must include every key in this example:",
+    JSON.stringify({
+      audience_pain: "Roblox creators lose hours turning UI ideas into production-ready HUDs.",
+      fixed_body: "Show the manual workflow, then show the same workflow completed with the product.",
+      fixed_cta: "Join the waitlist.",
+      fixed_audience: "Roblox creators shipping polished game interfaces.",
+      tested_variable: "hook",
+      evaluation_window_days: 3,
+      formats: [
+        {
+          format_name: "Pain to product demo",
+          video_type: "demo",
+          platform: "youtube",
+          target_length_seconds: 24,
+          hook_mechanism: "Call out wasted production time.",
+          visual_grammar: "Problem screen, rapid product demo, finished HUD reveal, CTA end card.",
+          script_structure: ["pain", "manual workflow", "product shortcut", "result", "cta"],
+          cta_pattern: "Invite qualified creators to join the waitlist.",
+          business_hypothesis: "A concrete workflow demonstration will drive qualified product clicks.",
+          transferability_score: 0.7,
+          distortion_risk: "low",
+          confidence: 0.6,
+          missing_evidence: ["No linked source video performance metrics."],
+          evidence_video_ids: [],
+          source_pattern_ids: [],
+          observed_evidence: ["The supplied trend report recommends product demonstrations."],
+          strategic_inference: ["Showing the workflow should make the product promise tangible."],
+          variants: [
+            { variant_label: "A", hook: "Still building every Roblox HUD from scratch?", angle: "Time cost", promise: "Move from idea to a production-ready direction faster.", hypothesis: "A time-loss hook will attract creators with urgent production pain.", expected_signal: "Qualified product link clicks." },
+            { variant_label: "B", hook: "Your Roblox UI should not take an entire sprint.", angle: "Sprint delay", promise: "Shorten the path from concept to Studio handoff.", hypothesis: "A delivery-speed hook will attract small teams.", expected_signal: "Qualified product link clicks." },
+            { variant_label: "C", hook: "The slowest part of your Roblox game might be the HUD.", angle: "Workflow bottleneck", promise: "Turn a UI direction into usable production guidance quickly.", hypothesis: "A bottleneck hook will earn higher intent engagement.", expected_signal: "Qualified product link clicks." },
+          ],
+        },
+      ],
+    }),
+    `Return exactly ${formatCount} item${formatCount === 1 ? "" : "s"} in formats; when two are required, repeat the full format object shape with a different controlled format hypothesis.`,
   ].join("\n");
 
   const response = await generateObject({
     schema: WinningFormatPlanSchema,
     schemaDescription:
-      "WinningFormatPlan: fixed experiment controls plus 1-2 format hypotheses, each with exactly 3 hook variants and evidence linkage.",
+      "WinningFormatPlan JSON. Top-level: audience_pain, fixed_body, fixed_cta, fixed_audience, tested_variable ('hook'), evaluation_window_days, formats. Every format requires format_name, lowercase video_type, lowercase platform, target_length_seconds, hook_mechanism, visual_grammar, script_structure, cta_pattern, business_hypothesis, transferability_score, lowercase distortion_risk, confidence, missing_evidence, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, and exactly 3 variants. Every variant requires variant_label, hook, angle, promise, hypothesis, expected_signal.",
     taskType: "content",
     system:
       "You design controlled short-form video experiments. You optimize for causal learning and business signals, not output volume.",
     prompt,
     temperature: 0.4,
-    maxTokens: 5000,
+    maxTokens: 7000,
   });
 
   await logAIRun({
@@ -196,12 +238,14 @@ export async function generateVideoConcepts(opts: {
     }
 
     for (const variant of normalized.variants) {
+      const productionMode = resolveProductionMode(normalized.video_type);
       const { data: concept, error: conceptError } = await supabase
         .from("video_concepts")
         .insert({
           growth_run_id: opts.growthRunId,
           project_id: opts.projectId,
           video_type: normalized.video_type,
+          production_mode: productionMode,
           platform: normalized.platform,
           target_length_seconds: normalized.target_length_seconds,
           hook: variant.hook,
@@ -212,7 +256,7 @@ export async function generateVideoConcepts(opts: {
           source_pattern_id: normalized.source_pattern_ids[0] ?? null,
           evidence_video_ids: normalized.evidence_video_ids as never,
           status: "draft",
-        })
+        } as never)
         .select("id")
         .single();
       if (conceptError || !concept) {
@@ -234,6 +278,23 @@ export async function generateVideoConcepts(opts: {
       if (!normalized.evidence_video_ids.length && !normalized.source_pattern_ids.length) {
         missingEvidence.push("No source video or mined pattern was linked to this format.");
       }
+      const hasEvidence =
+        normalized.evidence_video_ids.length > 0 || normalized.source_pattern_ids.length > 0;
+      const receiptConfidence = hasEvidence
+        ? normalized.confidence
+        : Math.min(normalized.confidence, 0.35);
+      const whyThisExists = [
+        "Why this exists:",
+        `Observed evidence: ${normalized.observed_evidence.join(" | ")}`,
+        `Source pattern: ${normalized.source_pattern_ids.length ? normalized.source_pattern_ids.join(", ") : "none linked"}`,
+        `Strategic inference: ${normalized.strategic_inference.join(" | ")}`,
+        `Expected signal: ${variant.expected_signal}`,
+        `Confidence: ${receiptConfidence.toFixed(2)}`,
+        hasEvidence
+          ? "Missing evidence: none critical"
+          : `Missing evidence: ${missingEvidence.join("; ")}`,
+      ].join("\n");
+
       const { error: receiptError } = await supabase.from("trend_receipts").insert({
         project_id: opts.projectId,
         growth_run_id: opts.growthRunId,
@@ -244,11 +305,8 @@ export async function generateVideoConcepts(opts: {
         observed_evidence: normalized.observed_evidence as never,
         strategic_inference: [...normalized.strategic_inference, variant.hypothesis] as never,
         expected_signal: variant.expected_signal,
-        reasoning: normalized.business_hypothesis,
-        confidence:
-          normalized.evidence_video_ids.length || normalized.source_pattern_ids.length
-            ? normalized.confidence
-            : Math.min(normalized.confidence, 0.35),
+        reasoning: `${whyThisExists}\n\n${normalized.business_hypothesis}`,
+        confidence: receiptConfidence,
         missing_evidence: missingEvidence as never,
       });
       if (receiptError) throw new Error(`trend_receipts insert: ${receiptError.message}`);

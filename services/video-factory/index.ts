@@ -12,6 +12,13 @@ import { generateCaptionsForVideo } from "./captions";
 import { loadConnectedAccounts } from "@/services/growth-run/repository";
 import { renderConceptVideo } from "./render-concept";
 import { isFfmpegAvailable } from "./ffmpeg";
+import { resolveProductionMode } from "./production-modes";
+import {
+  ensureProductionJob,
+  linkStoryboardToJob,
+  setProductionJobStage,
+  tagAssetsWithJob,
+} from "./production-job";
 
 /**
  * Video Factory orchestrator.
@@ -36,10 +43,20 @@ export async function buildVideosForRun(opts: {
     try {
       const { data: concept, error } = await supabase
         .from("video_concepts")
-        .select("id, video_type, platform, target_length_seconds")
+        .select("id, video_type, platform, target_length_seconds, hook, cta, production_mode")
         .eq("id", conceptId)
         .single();
       if (error || !concept) throw new Error(`concept missing: ${error?.message}`);
+
+      const productionMode =
+        (concept.production_mode as ReturnType<typeof resolveProductionMode> | null) ??
+        resolveProductionMode(concept.video_type as never);
+      if (!concept.production_mode) {
+        await supabase
+          .from("video_concepts")
+          .update({ production_mode: productionMode })
+          .eq("id", conceptId);
+      }
 
       const { script } = await generateScriptForConcept({
         conceptId,
@@ -51,9 +68,14 @@ export async function buildVideosForRun(opts: {
         projectId: opts.projectId,
         script,
         videoType: concept.video_type,
+        productionMode,
+        hook: concept.hook,
+        cta: concept.cta ?? "",
         platform: concept.platform,
         targetLengthSeconds: concept.target_length_seconds,
-        preferFalForBroll: ["ai_broll", "trend_remix"].includes(concept.video_type),
+        preferFalForBroll: ["ai_broll", "trend_remix", "ai_broll_short"].includes(
+          productionMode
+        ) || ["ai_broll", "trend_remix"].includes(concept.video_type),
       });
 
       const { data: scenes, error: scErr } = await supabase
@@ -94,8 +116,21 @@ export async function buildVideosForRun(opts: {
         durationSeconds: Math.round(storyboard.total_duration_seconds),
       });
 
+      const { jobId } = await ensureProductionJob({
+        projectId: opts.projectId,
+        growthRunId: opts.growthRunId,
+        videoId,
+        conceptId,
+        productionMode,
+        platform: concept.platform,
+      });
+      await linkStoryboardToJob(storyboardId, jobId);
+      await setProductionJobStage(jobId, "planning", "storyboard");
+      await setProductionJobStage(jobId, "generating_assets", "scene_assets");
+
       if (isFfmpegAvailable()) {
         try {
+          await setProductionJobStage(jobId, "assembling", "render");
           await renderConceptVideo({
             projectId: opts.projectId,
             growthRunId: opts.growthRunId,
@@ -103,13 +138,24 @@ export async function buildVideosForRun(opts: {
             videoId,
             finalAssetId,
           });
+          await tagAssetsWithJob(conceptId, jobId);
+          await setProductionJobStage(jobId, "quality_check", "quality_gate");
+          await setProductionJobStage(jobId, "ready", "ready");
         } catch (renderErr) {
+          await setProductionJobStage(
+            jobId,
+            "failed",
+            "render",
+            renderErr instanceof Error ? renderErr.message : String(renderErr)
+          );
           failures.push({
             conceptId,
             error: renderErr instanceof Error ? renderErr.message : String(renderErr),
           });
           continue;
         }
+      } else {
+        await setProductionJobStage(jobId, "queued", "awaiting_ffmpeg");
       }
 
       // Per-account captions: only spin up captions for accounts on this
