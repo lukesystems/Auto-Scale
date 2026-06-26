@@ -1,35 +1,59 @@
 import "server-only";
 
 /**
- * Provider-agnostic social publishing contract.
+ * Generic publishing provider contract.
  *
- * Postiz and Post Bridge are swapped via PUBLISHING_PROVIDER without
- * changing scheduling logic elsewhere in the engine.
+ * AutoScale scheduler → provider interface → Postiz adapter (now)
+ * → PostBridge adapter (later) → export-only fallback (always).
  */
 
-export type PublishingProviderId = "postiz" | "postbridge";
+export type PublishingProviderName = "postiz" | "postbridge" | "export_only";
 
-export type PublishingCredentialSource = "managed" | "byok";
+/** @deprecated Use PublishingProviderName */
+export type PublishingProviderId = PublishingProviderName;
 
-export interface PostizPublishingCredentials {
-  provider: "postiz";
-  apiUrl: string;
-  apiKey: string;
+export type PublishingCredentialSource = "managed" | "byok" | "none";
+
+export type PublishingPlatform =
+  | "tiktok"
+  | "instagram"
+  | "youtube"
+  | "x"
+  | "linkedin"
+  | "facebook"
+  | "threads"
+  | "pinterest"
+  | "bluesky";
+
+export const GROWTH_PUBLISHING_PLATFORMS = ["tiktok", "instagram", "youtube"] as const;
+
+export type GrowthSyncPlatform = (typeof GROWTH_PUBLISHING_PLATFORMS)[number];
+
+export interface PublishingCredentials {
+  provider: PublishingProviderName;
+  apiUrl?: string | null;
+  apiKey?: string | null;
   source: PublishingCredentialSource;
 }
 
-export interface PostBridgePublishingCredentials {
-  provider: "postbridge";
-  apiKey: string;
-  source: PublishingCredentialSource;
+export interface PublishingAccount {
+  id: string;
+  name: string;
+  platform: string;
+  disabled: boolean;
+  profile: string | null;
+  raw: unknown;
 }
 
-export type PublishingCredentials =
-  | PostizPublishingCredentials
-  | PostBridgePublishingCredentials;
+/** @deprecated Use PublishingAccount */
+export type ConnectedPublishingAccount = PublishingAccount;
 
-export interface SchedulePostPayload {
-  /** Connected account / integration ID in the active provider */
+export interface PublishingCredentialsInput {
+  credentials: PublishingCredentials;
+}
+
+export interface PublishingScheduleInput {
+  credentials: PublishingCredentials;
   accountId: string;
   scheduledFor: string;
   caption: string;
@@ -41,54 +65,83 @@ export interface SchedulePostPayload {
   platform?: string | null;
 }
 
-export type SchedulePostStatus = "scheduled" | "failed" | "pending";
+/** Payload without credentials — used by scheduler call sites. */
+export type PublishingSchedulePayload = Omit<PublishingScheduleInput, "credentials">;
 
-export interface SchedulePostResult {
+/** @deprecated Use PublishingSchedulePayload */
+export type SchedulePostPayload = PublishingSchedulePayload;
+
+export type PublishingScheduleStatus = "scheduled" | "failed" | "pending" | "queued";
+
+export interface PublishingScheduleResult {
   ok: boolean;
-  status: SchedulePostStatus;
+  status: PublishingScheduleStatus;
   remoteId?: string;
   error?: string;
   raw?: unknown;
   requestUrl?: string;
 }
 
-export interface ConnectedPublishingAccount {
-  id: string;
-  name: string;
-  platform: string;
-  disabled: boolean;
-  profile: string | null;
-  raw: unknown;
+/** @deprecated Use PublishingScheduleResult */
+export type SchedulePostResult = PublishingScheduleResult;
+
+/** @deprecated Use PublishingScheduleStatus */
+export type SchedulePostStatus = PublishingScheduleStatus;
+
+export interface PublishingPostStatusInput {
+  credentials: PublishingCredentials;
+  remoteId: string;
 }
 
-export interface PostStatusResult {
+export interface PublishingPostStatusResult {
   status: string;
   postedUrl?: string | null;
   raw?: unknown;
 }
 
-export interface SocialPublishingProvider {
-  readonly id: PublishingProviderId;
-  testConnection(credentials: PublishingCredentials): Promise<{ ok: boolean; error?: string }>;
-  listConnectedAccounts(credentials: PublishingCredentials): Promise<ConnectedPublishingAccount[]>;
-  schedulePost(
-    credentials: PublishingCredentials,
-    payload: SchedulePostPayload
-  ): Promise<SchedulePostResult>;
-  getPostStatus?(
-    credentials: PublishingCredentials,
-    remoteId: string
-  ): Promise<PostStatusResult | null>;
+/** @deprecated Use PublishingPostStatusResult */
+export type PostStatusResult = PublishingPostStatusResult;
+
+export interface PublishingProvider {
+  readonly name: PublishingProviderName;
+  validateCredentials(input: PublishingCredentialsInput): Promise<{ ok: boolean; reason?: string }>;
+  listAccounts(input: PublishingCredentialsInput): Promise<PublishingAccount[]>;
+  schedulePost(input: PublishingScheduleInput): Promise<PublishingScheduleResult>;
+  getPostStatus(input: PublishingPostStatusInput): Promise<PublishingPostStatusResult | null>;
+  supportsPlatform(platform: string): boolean;
+}
+
+/** @deprecated Use PublishingProvider */
+export type SocialPublishingProvider = PublishingProvider;
+
+export function normalizePublishingPlatform(platform: string): string {
+  const key = platform.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  if (key === "x" || key.includes("twitter")) return "x";
+  return key;
+}
+
+export function isGrowthPublishingPlatform(platform: string): platform is GrowthSyncPlatform {
+  const normalized = normalizePublishingPlatform(platform);
+  return (GROWTH_PUBLISHING_PLATFORMS as readonly string[]).includes(normalized);
 }
 
 export function isPostizCredentials(
   credentials: PublishingCredentials
-): credentials is PostizPublishingCredentials {
+): credentials is PublishingCredentials & { provider: "postiz"; apiUrl: string; apiKey: string } {
   return credentials.provider === "postiz";
 }
 
 export function isPostBridgeCredentials(
   credentials: PublishingCredentials
-): credentials is PostBridgePublishingCredentials {
+): credentials is PublishingCredentials & { provider: "postbridge"; apiKey: string } {
   return credentials.provider === "postbridge";
 }
+
+export function isExportOnlyCredentials(
+  credentials: PublishingCredentials
+): credentials is PublishingCredentials & { provider: "export_only" } {
+  return credentials.provider === "export_only";
+}
+
+export const POSTBRIDGE_PROVIDER_STUB_REASON =
+  "Post Bridge provider is stubbed until API docs, auth, upload, scheduling, status, limits, and pricing are confirmed.";

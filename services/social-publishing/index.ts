@@ -1,10 +1,13 @@
 import "server-only";
 
 import {
-  getManagedPostBridgeCredentials,
   getManagedPostizCredentials,
 } from "@/services/providers/config";
-import type { PublishingCredentials, SchedulePostPayload, SchedulePostResult } from "./provider";
+import type {
+  PublishingCredentials,
+  PublishingSchedulePayload,
+  PublishingScheduleResult,
+} from "./provider";
 import {
   getPublishingProvider,
   getPublishingProviderId,
@@ -12,12 +15,21 @@ import {
 
 export type {
   ConnectedPublishingAccount,
-  PostBridgePublishingCredentials,
-  PostizPublishingCredentials,
   PostStatusResult,
+  PublishingAccount,
   PublishingCredentialSource,
   PublishingCredentials,
+  PublishingCredentialsInput,
+  PublishingPlatform,
+  PublishingPostStatusInput,
+  PublishingPostStatusResult,
+  PublishingProvider,
   PublishingProviderId,
+  PublishingProviderName,
+  PublishingScheduleInput,
+  PublishingSchedulePayload,
+  PublishingScheduleResult,
+  PublishingScheduleStatus,
   SchedulePostPayload,
   SchedulePostResult,
   SchedulePostStatus,
@@ -25,38 +37,57 @@ export type {
 } from "./provider";
 
 export {
+  GROWTH_PUBLISHING_PLATFORMS,
+  POSTBRIDGE_PROVIDER_STUB_REASON,
+  isExportOnlyCredentials,
+  isGrowthPublishingPlatform,
   isPostBridgeCredentials,
   isPostizCredentials,
+  normalizePublishingPlatform,
 } from "./provider";
 
 export {
   getPublishingProvider,
   getPublishingProviderId,
   isPublishingConfigured,
+  isRemotePublishingEnabled,
   resolvePublishingCredentials,
 } from "./resolver";
 
+export async function validatePublishingCredentials(
+  credentials: PublishingCredentials
+): Promise<{ ok: boolean; reason?: string; error?: string }> {
+  const provider = getPublishingProvider(credentials.provider);
+  const result = await provider.validateCredentials({ credentials });
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason, error: result.reason };
+}
+
+/** @deprecated Use validatePublishingCredentials */
 export async function testPublishingConnection(
   credentials: PublishingCredentials
 ): Promise<{ ok: boolean; error?: string }> {
-  const provider = getPublishingProvider(credentials.provider);
-  return provider.testConnection(credentials);
+  const result = await validatePublishingCredentials(credentials);
+  return result.ok ? { ok: true } : { ok: false, error: result.error ?? result.reason };
 }
 
 export async function schedulePostViaProvider(
   credentials: PublishingCredentials,
-  payload: SchedulePostPayload
-): Promise<SchedulePostResult> {
+  payload: PublishingSchedulePayload
+): Promise<PublishingScheduleResult> {
   const provider = getPublishingProvider(credentials.provider);
-  return provider.schedulePost(credentials, payload);
+  return provider.schedulePost({ credentials, ...payload });
 }
 
-/** Managed-mode credential probe for the active publishing provider. */
+export async function getPublishingPostStatus(
+  credentials: PublishingCredentials,
+  remoteId: string
+): Promise<import("./provider").PublishingPostStatusResult | null> {
+  const provider = getPublishingProvider(credentials.provider);
+  return provider.getPostStatus({ credentials, remoteId });
+}
+
+/** Managed-mode credential probe for remote Postiz publishing. */
 export function getActiveManagedPublishingConfigured(): boolean {
-  const providerId = getPublishingProviderId();
-  if (providerId === "postbridge") {
-    return Boolean(getManagedPostBridgeCredentials());
-  }
   return Boolean(getManagedPostizCredentials());
 }
 
@@ -68,7 +99,6 @@ export {
   isGrowthSyncPlatform,
   mapAccountToConnectedAccountRow,
   mapAccountToChannelRow,
-  normalizePublishingPlatform,
   syncOwnerPublishingChannels,
   syncProjectConnectedAccounts,
 } from "./sync-accounts";

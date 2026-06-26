@@ -3,42 +3,40 @@ import "server-only";
 import type { ProviderMode } from "@/lib/provider-mode";
 import { isManagedMode } from "@/lib/provider-mode";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { ConnectedPublishingAccount, PublishingCredentials } from "./provider";
+import type { PublishingAccount, PublishingCredentials } from "./provider";
+import { GROWTH_PUBLISHING_PLATFORMS, isGrowthPublishingPlatform, normalizePublishingPlatform } from "./provider";
 import {
   getPublishingProvider,
   getPublishingProviderId,
-  isPublishingConfigured,
+  isRemotePublishingEnabled,
   resolvePublishingCredentials,
 } from "./resolver";
 
-export const GROWTH_SYNC_PLATFORMS = ["tiktok", "instagram", "youtube"] as const;
+export const GROWTH_SYNC_PLATFORMS = GROWTH_PUBLISHING_PLATFORMS;
 export type GrowthSyncPlatform = (typeof GROWTH_SYNC_PLATFORMS)[number];
 
-export function normalizePublishingPlatform(platform: string): string {
-  const key = platform.toLowerCase().replace(/[^a-z0-9-]/g, "");
-  if (key === "x" || key.includes("twitter")) return "x";
-  return key;
-}
-
 export function isGrowthSyncPlatform(platform: string): platform is GrowthSyncPlatform {
-  const normalized = normalizePublishingPlatform(platform);
-  return (GROWTH_SYNC_PLATFORMS as readonly string[]).includes(normalized);
+  return isGrowthPublishingPlatform(platform);
 }
 
 export function getPublishingProviderLabel(
   providerId = getPublishingProviderId()
-): "Postiz" | "Post Bridge" {
-  return providerId === "postbridge" ? "Post Bridge" : "Postiz";
+): "Postiz" | "Post Bridge" | "Export" {
+  if (providerId === "postbridge") return "Post Bridge";
+  if (providerId === "export_only") return "Export";
+  return "Postiz";
 }
 
 export function getPublishingNotConfiguredMessage(
   providerMode: ProviderMode,
   providerId = getPublishingProviderId()
 ): string {
+  if (providerId === "export_only") {
+    return "Export-only mode — posts are saved locally for manual export.";
+  }
+
   if (providerId === "postbridge") {
-    return isManagedMode(providerMode)
-      ? "Post Bridge is not connected. Set POST_BRIDGE_API_KEY on the server (managed mode)."
-      : "Post Bridge is not connected. Connect Post Bridge in Settings (BYOK).";
+    return "Post Bridge is not enabled yet. Switch to Postiz or export-only until the Post Bridge adapter is confirmed.";
   }
 
   return isManagedMode(providerMode)
@@ -49,19 +47,28 @@ export function getPublishingNotConfiguredMessage(
 export async function fetchPublishingAccounts(
   userId: string,
   providerMode: ProviderMode
-): Promise<{ credentials: PublishingCredentials; accounts: ConnectedPublishingAccount[] }> {
+): Promise<{ credentials: PublishingCredentials; accounts: PublishingAccount[] }> {
+  const providerId = getPublishingProviderId();
+  if (providerId === "export_only") {
+    throw new Error("Export-only mode does not sync remote publishing accounts.");
+  }
+  if (providerId === "postbridge") {
+    throw new Error(getPublishingNotConfiguredMessage(providerMode, providerId));
+  }
+
   const credentials = await resolvePublishingCredentials(userId, providerMode);
-  if (!isPublishingConfigured(credentials)) {
+  if (!isRemotePublishingEnabled(credentials)) {
     throw new Error(getPublishingNotConfiguredMessage(providerMode));
   }
 
-  const provider = getPublishingProvider(credentials.provider);
-  const accounts = await provider.listConnectedAccounts(credentials);
-  return { credentials, accounts };
+  const creds = credentials!;
+  const provider = getPublishingProvider(creds.provider);
+  const accounts = await provider.listAccounts({ credentials: creds });
+  return { credentials: creds, accounts };
 }
 
 export function mapAccountToConnectedAccountRow(
-  account: ConnectedPublishingAccount,
+  account: PublishingAccount,
   projectId: string
 ): {
   project_id: string;
@@ -89,13 +96,13 @@ export function mapAccountToConnectedAccountRow(
 }
 
 export function mapAccountToChannelRow(
-  account: ConnectedPublishingAccount,
+  account: PublishingAccount,
   ownerId: string,
-  credentialSource: PublishingCredentials["source"]
+  credentialSource: Exclude<PublishingCredentials["source"], "none">
 ): {
   owner_id: string;
   integration_id: string;
-  provider: PublishingCredentials["source"];
+  provider: Exclude<PublishingCredentials["source"], "none">;
   platform: string;
   name: string;
   profile: string | null;
@@ -143,8 +150,13 @@ export async function syncOwnerPublishingChannels(opts: {
   providerMode: ProviderMode;
 }): Promise<{ synced: number; provider: ReturnType<typeof getPublishingProviderId> }> {
   const { credentials, accounts } = await fetchPublishingAccounts(opts.ownerId, opts.providerMode);
+  if (credentials.source === "none") {
+    throw new Error("Export-only mode does not sync remote publishing channels.");
+  }
+  const credentialSource = credentials.source;
+
   const rows = accounts.map((account) =>
-    mapAccountToChannelRow(account, opts.ownerId, credentials.source)
+    mapAccountToChannelRow(account, opts.ownerId, credentialSource)
   );
 
   if (rows.length) {

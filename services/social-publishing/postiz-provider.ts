@@ -7,58 +7,58 @@ import {
   type PostizCredentials,
 } from "@/services/postiz/client";
 import type {
-  ConnectedPublishingAccount,
-  PostizPublishingCredentials,
+  PublishingAccount,
   PublishingCredentials,
-  SchedulePostPayload,
-  SchedulePostResult,
-  SocialPublishingProvider,
+  PublishingProvider,
+  PublishingScheduleInput,
+  PublishingScheduleResult,
 } from "./provider";
-import { isPostizCredentials } from "./provider";
+import { isGrowthPublishingPlatform, isPostizCredentials } from "./provider";
 
-function toPostizCredentials(credentials: PostizPublishingCredentials): PostizCredentials {
+function toPostizCredentials(credentials: PublishingCredentials): PostizCredentials {
   return {
-    apiUrl: credentials.apiUrl,
-    apiKey: credentials.apiKey,
+    apiUrl: credentials.apiUrl ?? undefined,
+    apiKey: credentials.apiKey ?? undefined,
   };
 }
 
 function assertPostizCredentials(
   credentials: PublishingCredentials
-): PostizPublishingCredentials {
-  if (!isPostizCredentials(credentials)) {
+): PublishingCredentials & { provider: "postiz"; apiUrl: string; apiKey: string } {
+  if (!isPostizCredentials(credentials) || !credentials.apiUrl?.trim() || !credentials.apiKey?.trim()) {
     throw new Error("Postiz provider requires Postiz credentials.");
   }
   return credentials;
 }
 
-function mapSchedulePayload(payload: SchedulePostPayload) {
+function mapSchedulePayload(input: PublishingScheduleInput) {
   return {
-    channel: payload.accountId,
-    scheduledFor: payload.scheduledFor,
-    caption: payload.caption,
-    slides: payload.slides,
-    imageUrls: payload.imageUrls,
-    mediaUrls: payload.mediaUrls,
-    cta: payload.cta,
-    externalRef: payload.externalRef,
-    platform: payload.platform,
+    channel: input.accountId,
+    scheduledFor: input.scheduledFor,
+    caption: input.caption,
+    slides: input.slides,
+    imageUrls: input.imageUrls,
+    mediaUrls: input.mediaUrls,
+    cta: input.cta,
+    externalRef: input.externalRef,
+    platform: input.platform,
   };
 }
 
-export const postizPublishingProvider: SocialPublishingProvider = {
-  id: "postiz",
+export const postizPublishingProvider: PublishingProvider = {
+  name: "postiz",
 
-  async testConnection(credentials) {
+  async validateCredentials({ credentials }) {
     const postiz = assertPostizCredentials(credentials);
-    return testPostizConnection(toPostizCredentials(postiz));
+    const result = await testPostizConnection(toPostizCredentials(postiz));
+    return result.ok ? { ok: true } : { ok: false, reason: result.error };
   },
 
-  async listConnectedAccounts(credentials) {
+  async listAccounts({ credentials }) {
     const postiz = assertPostizCredentials(credentials);
     const integrations = await fetchPostizIntegrations(toPostizCredentials(postiz));
     return integrations.map(
-      (integration): ConnectedPublishingAccount => ({
+      (integration): PublishingAccount => ({
         id: integration.id,
         name: integration.name,
         platform: integration.identifier,
@@ -69,12 +69,12 @@ export const postizPublishingProvider: SocialPublishingProvider = {
     );
   },
 
-  async schedulePost(credentials, payload): Promise<SchedulePostResult> {
-    const postiz = assertPostizCredentials(credentials);
-    return sendToPostiz(toPostizCredentials(postiz), mapSchedulePayload(payload));
+  async schedulePost(input): Promise<PublishingScheduleResult> {
+    const postiz = assertPostizCredentials(input.credentials);
+    return sendToPostiz(toPostizCredentials(postiz), mapSchedulePayload(input));
   },
 
-  async getPostStatus(credentials, remoteId) {
+  async getPostStatus({ credentials, remoteId }) {
     const postiz = assertPostizCredentials(credentials);
     const base = (postiz.apiUrl ?? "https://api.postiz.com").replace(/\/$/, "");
     const url = `${base}/public/v1/posts/${remoteId}`;
@@ -94,5 +94,9 @@ export const postizPublishingProvider: SocialPublishingProvider = {
       postedUrl: body.publishedUrl ?? null,
       raw: body,
     };
+  },
+
+  supportsPlatform(platform: string) {
+    return isGrowthPublishingPlatform(platform);
   },
 };

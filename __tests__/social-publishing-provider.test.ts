@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getPublishingProvider,
   getPublishingProviderId,
+  POSTBRIDGE_PROVIDER_STUB_REASON,
   schedulePostViaProvider,
 } from "@/services/social-publishing";
 
@@ -23,20 +24,38 @@ describe("social publishing provider", () => {
   it("defaults to postiz when PUBLISHING_PROVIDER is unset", () => {
     delete process.env.PUBLISHING_PROVIDER;
     expect(getPublishingProviderId()).toBe("postiz");
-    expect(getPublishingProvider().id).toBe("postiz");
+    expect(getPublishingProvider().name).toBe("postiz");
   });
 
-  it("selects postbridge when configured", () => {
-    process.env.PUBLISHING_PROVIDER = "postbridge";
-    expect(getPublishingProviderId()).toBe("postbridge");
-    expect(getPublishingProvider().id).toBe("postbridge");
+  it("selects export_only when configured", () => {
+    process.env.PUBLISHING_PROVIDER = "export_only";
+    expect(getPublishingProviderId()).toBe("export_only");
+    expect(getPublishingProvider().name).toBe("export_only");
   });
 
-  it("schedules via postbridge with media_urls", async () => {
-    process.env.PUBLISHING_PROVIDER = "postbridge";
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "pb_post_123" }), { status: 200 })
+  it("queues locally via export_only without remote calls", async () => {
+    process.env.PUBLISHING_PROVIDER = "export_only";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    const result = await schedulePostViaProvider(
+      { provider: "export_only", source: "none" },
+      {
+        accountId: "42",
+        scheduledFor: "2026-07-01T12:00:00.000Z",
+        caption: "Hello from AutoScale",
+        mediaUrls: ["https://example.com/video.mp4"],
+        platform: "tiktok",
+      }
     );
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe("queued");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not call Post Bridge APIs while stubbed", async () => {
+    process.env.PUBLISHING_PROVIDER = "postbridge";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
 
     const result = await schedulePostViaProvider(
       { provider: "postbridge", apiKey: "pb_live_test", source: "managed" },
@@ -49,21 +68,8 @@ describe("social publishing provider", () => {
       }
     );
 
-    expect(result.ok).toBe(true);
-    expect(result.remoteId).toBe("pb_post_123");
-    expect(fetchMock).toHaveBeenCalledOnce();
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/posts");
-    expect(init.method).toBe("POST");
-    expect(init.headers).toMatchObject({
-      Authorization: "Bearer pb_live_test",
-      "Content-Type": "application/json",
-    });
-
-    const body = JSON.parse(String(init.body));
-    expect(body.social_accounts).toEqual(["42"]);
-    expect(body.media_urls).toEqual(["https://example.com/video.mp4"]);
-    expect(body.caption).toContain("Hello from AutoScale");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(POSTBRIDGE_PROVIDER_STUB_REASON);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

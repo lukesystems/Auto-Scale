@@ -19,9 +19,10 @@ export interface ProviderStatus {
     };
   };
   publishing: {
-    provider: "postiz" | "postbridge";
-    label: "Postiz" | "Post Bridge";
+    provider: "postiz" | "postbridge" | "export_only";
+    label: "Postiz" | "Post Bridge" | "Export";
     configured: boolean;
+    remoteEnabled: boolean;
   };
   postiz: {
     configured: boolean;
@@ -29,6 +30,7 @@ export interface ProviderStatus {
   };
   postbridge: {
     configured: boolean;
+    enabled: boolean;
   };
   fal: {
     configured: boolean;
@@ -42,8 +44,15 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
   const warnings: string[] = [];
   const publishingProvider = getPublishingProviderId();
   const publishingLabel = getPublishingProviderLabel(publishingProvider);
+  const postizConfigured = config.postiz.configured;
+  const postBridgeConfigured = config.postBridge.configured;
   const publishingConfigured =
-    publishingProvider === "postbridge" ? config.postBridge.configured : config.postiz.configured;
+    publishingProvider === "export_only"
+      ? true
+      : publishingProvider === "postbridge"
+        ? false
+        : postizConfigured;
+  const remoteEnabled = publishingProvider === "postiz" && postizConfigured;
 
   if (mode === "managed") {
     if (!config.openrouter.configured) {
@@ -51,16 +60,15 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
         "Managed OpenRouter is not configured. AI generation will fail until OPENROUTER_API_KEY is set."
       );
     }
-    if (!publishingConfigured) {
-      if (publishingProvider === "postbridge") {
-        warnings.push(
-          "Managed Post Bridge is not configured. Scheduling will queue locally until POST_BRIDGE_API_KEY is set."
-        );
-      } else {
-        warnings.push(
-          "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
-        );
-      }
+    if (publishingProvider === "postiz" && !postizConfigured) {
+      warnings.push(
+        "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
+      );
+    }
+    if (publishingProvider === "postbridge") {
+      warnings.push(
+        "Post Bridge adapter is stubbed. Scheduling queues locally until the Post Bridge integration is confirmed."
+      );
     }
   }
 
@@ -74,13 +82,15 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
       provider: publishingProvider,
       label: publishingLabel,
       configured: publishingConfigured,
+      remoteEnabled,
     },
     postiz: {
-      configured: config.postiz.configured,
+      configured: postizConfigured,
       apiUrlConfigured: Boolean(config.postiz.apiUrl),
     },
     postbridge: {
-      configured: config.postBridge.configured,
+      configured: postBridgeConfigured,
+      enabled: false,
     },
     fal: {
       configured: config.fal.configured,

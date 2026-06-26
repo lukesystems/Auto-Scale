@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PostizControls } from "./postiz-controls";
 
-type ProviderId = "postiz" | "postbridge";
+type ProviderId = "postiz" | "postbridge" | "export_only";
 
 export function PostizForm({
   providerId,
@@ -26,7 +26,17 @@ export function PostizForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [removing, startRemoving] = useTransition();
-  const label = providerId === "postbridge" ? "Post Bridge" : "Postiz";
+  const label =
+    providerId === "postbridge" ? "Post Bridge" : providerId === "export_only" ? "Export" : "Postiz";
+
+  if (providerId === "export_only") {
+    return (
+      <div className="space-y-2 text-sm text-muted-foreground">
+        <p>Export-only mode is active. No remote publishing credentials are required.</p>
+        <p>Set <code className="text-xs">PUBLISHING_PROVIDER=postiz</code> on the server to re-enable Postiz scheduling.</p>
+      </div>
+    );
+  }
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {

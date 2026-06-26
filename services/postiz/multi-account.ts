@@ -4,7 +4,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import {
-  isPublishingConfigured,
+  getPublishingProviderId,
+  isRemotePublishingEnabled,
   resolvePublishingCredentials,
   schedulePostViaProvider,
 } from "@/services/social-publishing";
@@ -194,9 +195,10 @@ export async function scheduleApprovedVideos(
 
   const providerMode = await getProviderModeForUser(input.ownerId);
   const credentials = await resolvePublishingCredentials(input.ownerId, providerMode);
-  const publishingEnabled = isPublishingConfigured(credentials);
+  const remotePublishing = isRemotePublishingEnabled(credentials);
+  const exportOnly = getPublishingProviderId() === "export_only";
 
-  if (!publishingEnabled) {
+  if (!remotePublishing && !exportOnly) {
     await logAutopilotSkip(admin, {
       projectId: input.projectId,
       growthRunId: input.growthRunId,
@@ -390,7 +392,7 @@ export async function scheduleApprovedVideos(
           connected_account_id: accountId,
           platform: caption.platform,
           scheduled_for: scheduledFor.toISOString(),
-          status: publishingEnabled ? "sending" : "queued",
+          status: remotePublishing ? "sending" : "queued",
           postiz_payload: {
             channel: account.postiz_account_id,
             caption: liveCaptionWithLink,
@@ -420,18 +422,20 @@ export async function scheduleApprovedVideos(
         .update({ schedule_item_id: scheduleRow!.id })
         .eq("id", trackedLinkId);
 
-      if (!publishingEnabled) {
+      if (!remotePublishing) {
         scheduledCount++;
         diagnostics.push({
           videoId: video.id,
           accountId,
           outcome: "queued",
-          reason: "publishing provider not configured — queued for export",
+          reason: exportOnly
+            ? "export-only mode — queued for export pack"
+            : "publishing provider not configured — queued for export",
         });
         continue;
       }
 
-      const resp = await schedulePostViaProvider(credentials, {
+      const resp = await schedulePostViaProvider(credentials!, {
         accountId: account.postiz_account_id,
         scheduledFor: scheduledFor.toISOString(),
         caption: liveCaptionWithLink,

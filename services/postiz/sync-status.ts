@@ -3,8 +3,8 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import {
-  getPublishingProvider,
-  isPublishingConfigured,
+  getPublishingPostStatus,
+  isRemotePublishingEnabled,
   resolvePublishingCredentials,
 } from "@/services/social-publishing";
 
@@ -43,7 +43,7 @@ export async function syncPostizScheduleStatus(opts: {
 
   if (!items?.length) return result;
 
-  if (!isPublishingConfigured(credentials)) {
+  if (!isRemotePublishingEnabled(credentials)) {
     for (const item of items) {
       await admin
         .from("schedule_items")
@@ -57,8 +57,7 @@ export async function syncPostizScheduleStatus(opts: {
     return result;
   }
 
-  const provider = getPublishingProvider(credentials.provider);
-  const getPostStatus = provider.getPostStatus;
+  const creds = credentials!;
 
   for (const item of items) {
     try {
@@ -74,19 +73,7 @@ export async function syncPostizScheduleStatus(opts: {
         continue;
       }
 
-      if (!getPostStatus) {
-        await admin
-          .from("schedule_items")
-          .update({
-            postiz_status: "scheduled_status_unknown",
-            postiz_status_synced_at: new Date().toISOString(),
-          } as never)
-          .eq("id", item.id);
-        result.unknown++;
-        continue;
-      }
-
-      const statusResult = await getPostStatus(credentials, item.postiz_post_id);
+      const statusResult = await getPublishingPostStatus(creds, item.postiz_post_id);
 
       if (!statusResult) {
         await admin

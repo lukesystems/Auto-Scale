@@ -4,13 +4,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { sendToPostiz } from "@/services/postiz/client";
 import { checkChainIntegrity } from "@/lib/chain-integrity";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import {
   getPublishingNotConfiguredMessage,
   getPublishingProviderLabel,
-  isPublishingConfigured,
+  getPublishingProviderId,
+  isRemotePublishingEnabled,
   resolvePublishingCredentials,
   schedulePostViaProvider,
 } from "@/services/social-publishing";
@@ -81,7 +81,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     return { ok: false, error: `That ${getPublishingProviderLabel()} channel is disabled.` };
   }
   const credentials = await resolvePublishingCredentials(user.id, providerMode);
-  if (isPublishingConfigured(credentials) && !channel) {
+  if (isRemotePublishingEnabled(credentials) && !channel) {
     return {
       ok: false,
       error: `Sync ${getPublishingProviderLabel()} channels in Settings and choose a discovered integration.`,
@@ -117,8 +117,9 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   let errorMessage: string | null = null;
   let postizResponse: unknown = {};
 
-  if (isPublishingConfigured(credentials)) {
-    const response = await schedulePostViaProvider(credentials, {
+  if (isRemotePublishingEnabled(credentials)) {
+    const creds = credentials!;
+    const response = await schedulePostViaProvider(creds, {
       accountId: parsed.data.channel,
       scheduledFor: payload.scheduledFor,
       caption: payload.caption,
@@ -129,14 +130,17 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     });
     finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
-    postizResponse = { ...(response.raw ?? {}), credentialSource: credentials.source };
+    postizResponse = { ...(response.raw ?? {}), credentialSource: creds.source };
     await supabase
       .from("scheduled_posts")
       .update({ remote_id: response.remoteId ?? null })
       .eq("id", row.id);
   } else {
     finalStatus = "queued_local";
-    errorMessage = getPublishingNotConfiguredMessage(providerMode);
+    errorMessage =
+      getPublishingProviderId() === "export_only"
+        ? "Export-only mode — saved locally for manual export."
+        : getPublishingNotConfiguredMessage(providerMode);
   }
 
   await supabase
