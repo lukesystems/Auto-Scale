@@ -51,30 +51,25 @@ export function ProjectNav({ projectId, pipeline = [] }: ProjectNavProps) {
   const pathname = usePathname();
   const base = `/projects/${projectId}`;
   const doneKeys = new Set(pipeline.filter((s) => s.done).map((s) => s.key));
+  const completedCount = NAV_ITEMS.slice(1).filter((item) => doneKeys.has(item.key)).length;
+  const progress = Math.round((completedCount / (NAV_ITEMS.length - 1)) * 100);
 
   return (
-    <div className="border-b border-border bg-background/95 backdrop-blur-sm sticky top-14 z-30">
-      <div className="container">
-        {/* Mini progress bar */}
-        <div className="flex items-center gap-0.5 pt-2 pb-1 px-1">
-          {NAV_ITEMS.slice(1).map((item, i) => {
-            const done = doneKeys.has(item.key);
-            const isLast = i === NAV_ITEMS.length - 2;
-            return (
-              <div key={item.key} className="flex items-center flex-1 min-w-0">
-                <div
-                  className={cn(
-                    "h-0.5 flex-1 rounded-full transition-colors duration-500",
-                    done ? "bg-primary" : "bg-border"
-                  )}
-                />
-                {!isLast && <div className="w-0.5" />}
-              </div>
-            );
-          })}
+    <div className="sticky top-14 z-30 border-b border-border bg-background/90 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.7)] backdrop-blur-xl backdrop-saturate-150">
+      <div className="container py-2">
+        <div className="flex items-center gap-3 px-1 pb-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="hidden text-[11px] font-medium text-muted-foreground sm:inline">
+            {completedCount}/{NAV_ITEMS.length - 1} complete
+          </span>
         </div>
 
-        <nav className="flex items-center gap-0.5 overflow-x-auto py-2 scrollbar-thin -mx-1 px-1">
+        <nav className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-1 scrollbar-thin">
           {NAV_ITEMS.map((item) => {
             const href = item.href ? `${base}${item.href}` : base;
             const isActive = item.href === "" ? pathname === base : pathname.startsWith(href);
@@ -85,18 +80,18 @@ export function ProjectNav({ projectId, pipeline = [] }: ProjectNavProps) {
                 key={item.href || "overview"}
                 href={href}
                 className={cn(
-                  "relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-all duration-200",
+                  "relative inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                    ? "bg-foreground text-background shadow-sm"
                     : done
                       ? "text-foreground/80 hover:bg-secondary hover:text-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/80"
+                      : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
                 )}
               >
-                <item.icon className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary-foreground")} />
+                <item.icon className={cn("h-4 w-4 shrink-0", isActive && "text-background")} />
                 <span className="hidden sm:inline">{item.label}</span>
                 {done && !isActive && (
-                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-background" />
+                  <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-background" />
                 )}
               </Link>
             );

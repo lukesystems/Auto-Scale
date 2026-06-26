@@ -1,6 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, Brain, FileText, FlaskConical, Layers, Lightbulb, Network, Package, Send, Shield, Trophy } from "lucide-react";
-import { PageHeader } from "@/components/app/page-header";
+import {
+  ArrowRight,
+  Brain,
+  Check,
+  FileText,
+  FlaskConical,
+  Layers,
+  Lightbulb,
+  Network,
+  Send,
+  Shield,
+  Sparkles,
+  Trophy,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/utils";
@@ -22,51 +34,106 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
 
   const nextRaw = computeNextAction({ brief, stats });
   const next = { ...nextRaw, href: `/projects/${params.id}/${nextRaw.href}` };
+  const statusIsHealthy = project.status === "brief_saved" || project.status === "active";
 
   return (
-    <div className="container py-10 space-y-8">
-      <PageHeader
-        badge={<Badge variant={project.status === "brief_saved" || project.status === "active" ? "success" : project.status === "brief_failed" ? "destructive" : "secondary"}>{project.status}</Badge>}
-        title={project.name}
-        description={project.niche || project.description || "Set your niche in the project brief to sharpen TrendWatch."}
-        actions={
-          <Button asChild variant="glow">
-            <Link href={next.href}>
-              {next.label}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        }
-      />
+    <div className="bg-[linear-gradient(180deg,hsl(var(--secondary)/0.7)_0%,hsl(var(--background))_280px)]">
+      <div className="container space-y-7 py-8">
+        <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-[0_22px_70px_-48px_rgba(15,23,42,0.55)] sm:p-8">
+          <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_70%_35%,hsl(var(--primary)/0.18),transparent_34%),linear-gradient(135deg,transparent,hsl(var(--secondary)/0.82))] lg:block" />
+          <div className="relative flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <Badge variant={statusIsHealthy ? "success" : project.status === "brief_failed" ? "destructive" : "secondary"}>
+                {project.status}
+              </Badge>
+              <h1 className="mt-4 font-display text-3xl font-semibold tracking-tight text-balance md:text-5xl">
+                {project.name}
+              </h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">
+                {project.niche || project.description || "Set your niche in the project brief to sharpen TrendWatch."}
+              </p>
+              <div className="mt-6 flex flex-wrap gap-2">
+                <SignalPill label="Brief" done={Boolean(brief?.product_summary && brief?.target_customer)} />
+                <SignalPill label="Sources" done={stats.sourceCount > 0} />
+                <SignalPill label="Insights" done={stats.insightCount > 0} />
+                <SignalPill label="Distribution" done={stats.scheduledCount > 0} />
+              </div>
+            </div>
 
-      <div className="grid lg:grid-cols-[2fr_1fr] gap-6">
-        <div className="space-y-4">
-          <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-primary/[0.06] to-primary/[0.02] p-6 shadow-sm shadow-primary/5">
-            <div className="text-xs uppercase tracking-widest text-primary font-semibold">Recommended next action</div>
-            <h3 className="mt-2 font-display text-xl font-semibold tracking-tight">{next.label}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{next.description}</p>
-            <Button asChild className="mt-4" size="sm">
-              <Link href={next.href}>Take action <ArrowRight className="h-3.5 w-3.5" /></Link>
-            </Button>
+            <div className="flex shrink-0 flex-col gap-3 rounded-xl border border-primary/15 bg-primary/[0.04] p-4 shadow-inner shadow-primary/5 sm:min-w-72">
+              <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                <Sparkles className="h-4 w-4" />
+                Recommended next move
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight">{next.label}</h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{next.description}</p>
+              </div>
+              <Button asChild variant="glow" size="lg" className="mt-1 w-full justify-between">
+                <Link href={next.href}>
+                  {next.label}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-6 xl:grid-cols-[1.06fr_0.94fr]">
+          <div className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <StatCard label="Sources analyzed" value={stats.sourceCount} icon={<Network className="h-4 w-4" />} />
+              <StatCard label="Insights" value={stats.insightCount} icon={<Brain className="h-4 w-4" />} />
+              <StatCard label="Hooks" value={stats.hookCount} icon={<Lightbulb className="h-4 w-4" />} />
+              <StatCard label="Legacy ideas" value={stats.ideaCount} icon={<Lightbulb className="h-4 w-4" />} />
+              <StatCard label="Legacy posts" value={stats.postCount} icon={<Layers className="h-4 w-4" />} />
+              <StatCard label="Approved" value={stats.approvedCount} icon={<Shield className="h-4 w-4" />} />
+              <StatCard label="Scheduled" value={stats.scheduledCount} icon={<Send className="h-4 w-4" />} />
+              <StatCard label="Experiments" value={stats.experimentCount} icon={<FlaskConical className="h-4 w-4" />} />
+              <StatCard label="Winners" value={stats.winnerCount} icon={<Trophy className="h-4 w-4" />} highlight />
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold tracking-tight">Evidence chain</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Keep every idea tied to sources, insights, and measured outcomes.</p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/projects/${params.id}/sources`}>
+                    Sources
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                <PipelineRow done={Boolean(brief?.product_summary && brief?.target_customer)} label="Product Brief complete" href={`/projects/${params.id}/brief`} />
+                <PipelineRow done={stats.sourceCount > 0} label="Sources gathered" href={`/projects/${params.id}/sources`} />
+                <PipelineRow done={stats.insightCount > 0} label="TrendWatch run" href={`/projects/${params.id}/trendwatch`} />
+                <PipelineRow done={stats.ideaCount > 0} label="Legacy ideas generated" href={`/projects/${params.id}/ideas`} />
+                <PipelineRow done={stats.postCount > 0} label="Legacy posts drafted" href={`/projects/${params.id}/content`} />
+                <PipelineRow done={stats.approvedCount > 0} label="Approved" href={`/projects/${params.id}/approval`} />
+                <PipelineRow done={stats.scheduledCount > 0} label="Scheduled" href={`/projects/${params.id}/schedule`} />
+                <PipelineRow done={stats.experimentCount > 0} label="Measured" href={`/projects/${params.id}/experiments`} />
+                <PipelineRow done={stats.winnerCount > 0} label="Compounded" href={`/projects/${params.id}/winners`} />
+              </div>
+            </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <StatCard label="Sources analyzed" value={stats.sourceCount} icon={<Network className="h-4 w-4" />} />
-            <StatCard label="Insights" value={stats.insightCount} icon={<Brain className="h-4 w-4" />} />
-            <StatCard label="Hooks" value={stats.hookCount} icon={<Lightbulb className="h-4 w-4" />} />
-            <StatCard label="Legacy ideas" value={stats.ideaCount} icon={<Lightbulb className="h-4 w-4" />} />
-            <StatCard label="Legacy posts" value={stats.postCount} icon={<Layers className="h-4 w-4" />} />
-            <StatCard label="Approved" value={stats.approvedCount} icon={<Shield className="h-4 w-4" />} />
-            <StatCard label="Scheduled" value={stats.scheduledCount} icon={<Send className="h-4 w-4" />} />
-            <StatCard label="Experiments" value={stats.experimentCount} icon={<FlaskConical className="h-4 w-4" />} />
-            <StatCard label="Winners" value={stats.winnerCount} icon={<Trophy className="h-4 w-4" />} highlight />
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-6">
-            <h4 className="text-sm font-semibold tracking-tight">Project snapshot</h4>
-            <dl className="mt-4 space-y-3 text-sm">
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Project snapshot</h2>
+                <p className="mt-1 text-sm text-muted-foreground">The saved brief that guides discovery, TrendWatch, and content generation.</p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <Link href={`/projects/${params.id}/brief`}>
+                  <FileText className="h-3.5 w-3.5" />
+                  Edit
+                </Link>
+              </Button>
+            </div>
+            <dl className="mt-6 grid gap-4">
               <Row label="Niche" value={project.niche || "Not set"} />
               <Row label="Product URL" value={project.product_url || "Not set"} />
               <Row label="Last TrendWatch" value={stats.lastTrendwatch ? formatRelativeTime(stats.lastTrendwatch) : "Never"} />
@@ -74,26 +141,6 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
               <Row label="Offer" value={brief?.offer || "Not set"} />
               <Row label="CTA" value={brief?.cta || "Not set"} />
             </dl>
-            <Button asChild variant="outline" size="sm" className="mt-5 w-full">
-              <Link href={`/projects/${params.id}/brief`}>
-                <FileText className="h-3.5 w-3.5" /> Edit brief
-              </Link>
-            </Button>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-6">
-            <h4 className="text-sm font-semibold tracking-tight">Pipeline</h4>
-            <ul className="mt-4 space-y-2 text-sm">
-              <PipelineRow done={Boolean(brief?.product_summary && brief?.target_customer)} label="Product Brief complete" href={`/projects/${params.id}/brief`} />
-              <PipelineRow done={stats.sourceCount > 0} label="Sources gathered" href={`/projects/${params.id}/sources`} />
-              <PipelineRow done={stats.insightCount > 0} label="TrendWatch run" href={`/projects/${params.id}/trendwatch`} />
-              <PipelineRow done={stats.ideaCount > 0} label="Legacy ideas generated" href={`/projects/${params.id}/ideas`} />
-              <PipelineRow done={stats.postCount > 0} label="Legacy posts drafted" href={`/projects/${params.id}/content`} />
-              <PipelineRow done={stats.approvedCount > 0} label="Approved" href={`/projects/${params.id}/approval`} />
-              <PipelineRow done={stats.scheduledCount > 0} label="Scheduled" href={`/projects/${params.id}/schedule`} />
-              <PipelineRow done={stats.experimentCount > 0} label="Measured" href={`/projects/${params.id}/experiments`} />
-              <PipelineRow done={stats.winnerCount > 0} label="Compounded" href={`/projects/${params.id}/winners`} />
-            </ul>
           </div>
         </div>
       </div>
@@ -103,36 +150,43 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
 
 function StatCard({ label, value, icon, highlight }: { label: string; value: number; icon: React.ReactNode; highlight?: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 transition-all duration-200 hover:shadow-sm ${highlight ? "border-primary/40 bg-primary/[0.04] shadow-sm shadow-primary/5" : "border-border bg-card hover:border-border/80"}`}>
-      <div className="flex items-center justify-between text-muted-foreground">
-        <span className="text-xs">{label}</span>
-        <span className={highlight ? "text-primary" : ""}>{icon}</span>
+    <div className={`group rounded-2xl border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${highlight ? "border-primary/35 bg-primary/[0.05] shadow-sm shadow-primary/10" : "border-border bg-card hover:border-primary/25"}`}>
+      <div className="flex items-center justify-between gap-3 text-muted-foreground">
+        <span className="text-xs font-medium">{label}</span>
+        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${highlight ? "border-primary/20 bg-primary/10 text-primary" : "border-border bg-secondary/60 group-hover:text-primary"}`}>{icon}</span>
       </div>
-      <div className={`mt-2 text-2xl font-semibold tracking-tight ${highlight ? "text-primary" : ""}`}>{value}</div>
+      <div className={`mt-3 text-3xl font-semibold tracking-tight ${highlight ? "text-primary" : ""}`}>{value}</div>
     </div>
   );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <dt className="text-muted-foreground w-24 text-xs uppercase tracking-wider">{label}</dt>
-      <dd className="flex-1 text-sm text-foreground truncate">{value}</dd>
+    <div className="grid gap-1 border-b border-border/70 pb-4 last:border-b-0 last:pb-0 sm:grid-cols-[132px_1fr] sm:gap-5">
+      <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm leading-6 text-foreground">{value}</dd>
     </div>
   );
 }
 
 function PipelineRow({ done, label, href }: { done: boolean; label: string; href: string }) {
   return (
-    <li>
-      <Link href={href} className="group flex items-center gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-secondary/60 transition-colors">
-        <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${done ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground border border-border"}`}>
-          {done ? "✓" : ""}
-        </span>
-        <span className={`flex-1 text-sm ${done ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
-        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-      </Link>
-    </li>
+    <Link href={href} className="group flex items-center gap-3 rounded-xl border border-border bg-background/70 px-3 py-2.5 transition-all hover:border-primary/30 hover:bg-primary/[0.03]">
+      <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${done ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20" : "border border-border bg-secondary text-muted-foreground"}`}>
+        {done ? <Check className="h-3.5 w-3.5" /> : ""}
+      </span>
+      <span className={`min-w-0 flex-1 text-sm ${done ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+    </Link>
+  );
+}
+
+function SignalPill({ label, done }: { label: string; done: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${done ? "border-primary/20 bg-primary/10 text-primary" : "border-border bg-background/70 text-muted-foreground"}`}>
+      {done && <Check className="h-3 w-3" />}
+      {label}
+    </span>
   );
 }
 

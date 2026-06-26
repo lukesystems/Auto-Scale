@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
+
+export { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
 
 /**
  * Shared Zod contracts for the Growth Run spine.
@@ -69,7 +72,10 @@ export const CtaPatternSchema = z.object({
 
 export const PlatformPatternSchema = z.object({
   platform: z.enum(PLATFORMS),
-  preferred_length_seconds: z.tuple([z.number(), z.number()]).optional(),
+  preferred_length_seconds: z.preprocess(
+    normalizePreferredLengthSeconds,
+    z.tuple([z.number(), z.number()]).optional()
+  ),
   preferred_aspect_ratio: z.string().default("9:16"),
   notes: z.string().optional(),
 });
