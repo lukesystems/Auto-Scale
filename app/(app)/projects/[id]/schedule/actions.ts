@@ -7,7 +7,13 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { sendToPostiz } from "@/services/postiz/client";
 import { checkChainIntegrity } from "@/lib/chain-integrity";
 import { getProviderModeForUser } from "@/lib/provider-mode";
-import { resolvePostizCredentials } from "@/lib/postiz-credentials";
+import {
+  getPublishingNotConfiguredMessage,
+  getPublishingProviderLabel,
+  isPublishingConfigured,
+  resolvePublishingCredentials,
+  schedulePostViaProvider,
+} from "@/services/social-publishing";
 
 const Schema = z.object({
   project_id: z.string().uuid(),
@@ -71,10 +77,15 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     .eq("owner_id", user.id)
     .eq("integration_id", parsed.data.channel)
     .maybeSingle();
-  if (channel?.disabled) return { ok: false, error: "That Postiz channel is disabled." };
-  const credentials = await resolvePostizCredentials(user.id, providerMode);
-  if (credentials && !channel) {
-    return { ok: false, error: "Sync Postiz channels in Settings and choose a discovered integration." };
+  if (channel?.disabled) {
+    return { ok: false, error: `That ${getPublishingProviderLabel()} channel is disabled.` };
+  }
+  const credentials = await resolvePublishingCredentials(user.id, providerMode);
+  if (isPublishingConfigured(credentials) && !channel) {
+    return {
+      ok: false,
+      error: `Sync ${getPublishingProviderLabel()} channels in Settings and choose a discovered integration.`,
+    };
   }
 
   const payload = {
@@ -106,11 +117,16 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
   let errorMessage: string | null = null;
   let postizResponse: unknown = {};
 
-  if (credentials) {
-    const response = await sendToPostiz(
-      { apiUrl: credentials.apiUrl, apiKey: credentials.apiKey },
-      payload
-    );
+  if (isPublishingConfigured(credentials)) {
+    const response = await schedulePostViaProvider(credentials, {
+      accountId: parsed.data.channel,
+      scheduledFor: payload.scheduledFor,
+      caption: payload.caption,
+      cta: payload.cta,
+      platform: channel?.platform ?? post.platform,
+      slides: payload.slides,
+      externalRef: post.id,
+    });
     finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
     postizResponse = { ...(response.raw ?? {}), credentialSource: credentials.source };
@@ -120,10 +136,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       .eq("id", row.id);
   } else {
     finalStatus = "queued_local";
-    errorMessage =
-      providerMode === "managed"
-        ? "Managed Postiz not configured — saved locally. Set POSTIZ_API_URL and POSTIZ_API_KEY on the server."
-        : "Postiz not connected — saved locally. Configure in /settings/postiz to send.";
+    errorMessage = getPublishingNotConfiguredMessage(providerMode);
   }
 
   await supabase

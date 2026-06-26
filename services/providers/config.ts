@@ -14,6 +14,11 @@ export interface ManagedProviderConfig {
     apiKey: string | null;
     configured: boolean;
   };
+  postBridge: {
+    apiKey: string | null;
+    configured: boolean;
+  };
+  publishingProvider: "postiz" | "postbridge";
   fal: {
     apiKey: string | null;
     configured: boolean;
@@ -47,14 +52,21 @@ function readEnv(key: string): string | null {
   return value ? value : null;
 }
 
+function readPublishingProvider(): "postiz" | "postbridge" {
+  const configured = readEnv("PUBLISHING_PROVIDER");
+  return configured?.toLowerCase() === "postbridge" ? "postbridge" : "postiz";
+}
+
 export function getManagedProviderConfig(): ManagedProviderConfig {
   const openrouterKey = readEnv("OPENROUTER_API_KEY");
   const postizUrl = readEnv("POSTIZ_API_URL");
   const postizKey = readEnv("POSTIZ_API_KEY");
+  const postBridgeKey = readEnv("POST_BRIDGE_API_KEY");
   const falKey = readEnv("FAL_KEY");
 
   return {
     mode: getDefaultProviderMode(),
+    publishingProvider: readPublishingProvider(),
     openrouter: {
       apiKey: openrouterKey,
       configured: Boolean(openrouterKey),
@@ -63,6 +75,10 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
       apiUrl: postizUrl,
       apiKey: postizKey,
       configured: Boolean(postizUrl && postizKey),
+    },
+    postBridge: {
+      apiKey: postBridgeKey,
+      configured: Boolean(postBridgeKey),
     },
     fal: {
       apiKey: falKey,
@@ -109,6 +125,14 @@ export function getManagedPostizCredentials(): { apiUrl: string; apiKey: string 
     return null;
   }
   return { apiUrl: config.postiz.apiUrl, apiKey: config.postiz.apiKey };
+}
+
+export function getManagedPostBridgeCredentials(): { apiKey: string } | null {
+  const config = getManagedProviderConfig();
+  if (!config.postBridge.configured || !config.postBridge.apiKey) {
+    return null;
+  }
+  return { apiKey: config.postBridge.apiKey };
 }
 
 export function getManagedOpenRouterCredentials(): { apiKey: string; baseUrl: string } | null {

@@ -17,10 +17,9 @@ import {
   regenerateCaptions,
   rerenderVideo,
 } from "@/services/video-revision";
-import { resolvePostizCredentials } from "@/lib/postiz-credentials";
-import { fetchPostizIntegrations } from "@/services/postiz/client";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { syncProjectConnectedAccounts } from "@/services/social-publishing";
 import {
   loadProjectGrowthSettings,
   resolveConnectedAccountIds,
@@ -280,31 +279,11 @@ export async function syncPostizAccountsAction(formData: FormData): Promise<void
   const user = await requireUser();
   const parsed = SyncAccountsSchema.parse({ projectId: formData.get("projectId") });
   const mode = await getProviderModeForUser(user.id);
-  const credentials = await resolvePostizCredentials(user.id, mode);
-  if (!credentials) {
-    throw new Error(
-      "Postiz is not connected. Add POSTIZ_API_URL + POSTIZ_API_KEY (managed) or connect Postiz in Settings (BYOK)."
-    );
-  }
-  const integrations = await fetchPostizIntegrations(credentials);
-  const supabase = createSupabaseServerClient();
-  const wanted = ["tiktok", "instagram", "youtube"];
-  const rows = integrations
-    .filter((i) => wanted.includes(i.identifier))
-    .map((i) => ({
-      project_id: parsed.projectId,
-      platform: i.identifier as "tiktok" | "instagram" | "youtube",
-      handle: i.profile ?? i.name,
-      display_name: i.name,
-      postiz_account_id: i.id,
-      postiz_provider_id: i.identifier,
-      status: i.disabled ? ("paused" as const) : ("active" as const),
-    }));
-  if (rows.length) {
-    await supabase
-      .from("connected_accounts")
-      .upsert(rows, { onConflict: "project_id,platform,handle", ignoreDuplicates: false });
-  }
+  await syncProjectConnectedAccounts({
+    projectId: parsed.projectId,
+    userId: user.id,
+    providerMode: mode,
+  });
   revalidatePath(`/projects/${parsed.projectId}/growth`);
 }
 

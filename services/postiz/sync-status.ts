@@ -1,8 +1,12 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { getProviderModeForUser } from "@/lib/provider-mode";
+import {
+  getPublishingProvider,
+  isPublishingConfigured,
+  resolvePublishingCredentials,
+} from "@/services/social-publishing";
 
 export interface PostizSyncResult {
   checked: number;
@@ -12,8 +16,8 @@ export interface PostizSyncResult {
 }
 
 /**
- * Sync schedule_items status from Postiz where possible.
- * When Postiz API does not expose post status, marks postiz_status = unknown.
+ * Sync schedule_items status from the active publishing provider where possible.
+ * When the provider API does not expose post status, marks postiz_status = unknown.
  */
 export async function syncPostizScheduleStatus(opts: {
   projectId: string;
@@ -22,7 +26,7 @@ export async function syncPostizScheduleStatus(opts: {
 }): Promise<PostizSyncResult> {
   const admin = createSupabaseAdminClient();
   const mode = await getProviderModeForUser(opts.ownerId);
-  const credentials = await resolvePostizCredentials(opts.ownerId, mode);
+  const credentials = await resolvePublishingCredentials(opts.ownerId, mode);
 
   let query = admin
     .from("schedule_items")
@@ -39,7 +43,7 @@ export async function syncPostizScheduleStatus(opts: {
 
   if (!items?.length) return result;
 
-  if (!credentials?.apiKey) {
+  if (!isPublishingConfigured(credentials)) {
     for (const item of items) {
       await admin
         .from("schedule_items")
@@ -52,6 +56,9 @@ export async function syncPostizScheduleStatus(opts: {
     }
     return result;
   }
+
+  const provider = getPublishingProvider(credentials.provider);
+  const getPostStatus = provider.getPostStatus;
 
   for (const item of items) {
     try {
@@ -67,14 +74,7 @@ export async function syncPostizScheduleStatus(opts: {
         continue;
       }
 
-      const base = (credentials.apiUrl ?? "https://api.postiz.com").replace(/\/$/, "");
-      const url = `${base}/public/v1/posts/${item.postiz_post_id}`;
-      const res = await fetch(url, {
-        headers: { Authorization: credentials.apiKey },
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!res.ok) {
+      if (!getPostStatus) {
         await admin
           .from("schedule_items")
           .update({
@@ -86,8 +86,21 @@ export async function syncPostizScheduleStatus(opts: {
         continue;
       }
 
-      const body = (await res.json()) as { status?: string; state?: string; publishedUrl?: string };
-      const remoteStatus = (body.status ?? body.state ?? "").toLowerCase();
+      const statusResult = await getPostStatus(credentials, item.postiz_post_id);
+
+      if (!statusResult) {
+        await admin
+          .from("schedule_items")
+          .update({
+            postiz_status: "scheduled_status_unknown",
+            postiz_status_synced_at: new Date().toISOString(),
+          } as never)
+          .eq("id", item.id);
+        result.unknown++;
+        continue;
+      }
+
+      const remoteStatus = statusResult.status.toLowerCase();
 
       if (remoteStatus.includes("publish") || remoteStatus.includes("posted") || remoteStatus === "success") {
         await admin
@@ -95,7 +108,7 @@ export async function syncPostizScheduleStatus(opts: {
           .update({
             status: "posted",
             postiz_status: "posted",
-            posted_url: body.publishedUrl ?? null,
+            posted_url: statusResult.postedUrl ?? null,
             postiz_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);

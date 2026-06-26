@@ -426,6 +426,22 @@ export interface Database {
         Relationships: [];
       };
 
+      postbridge_connections: {
+        Row: {
+          id: string;
+          owner_id: string;
+          api_key: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["postbridge_connections"]["Row"]> & {
+          owner_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["postbridge_connections"]["Row"]>;
+        Relationships: [];
+      };
+
       postiz_channels: {
         Row: {
           id: string;

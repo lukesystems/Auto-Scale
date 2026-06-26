@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { startGrowthRunAction, syncPostizAccountsAction, importReferenceVideoAction } from "./actions";
+import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
 
@@ -39,6 +40,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   ]);
 
   const accountCount = accounts.data?.length ?? 0;
+  const publishingLabel = getPublishingProviderLabel();
   const byPlatform = (accounts.data ?? []).reduce<Record<string, number>>((acc, a) => {
     acc[a.platform] = (acc[a.platform] ?? 0) + 1;
     return acc;
@@ -91,7 +93,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             <h2 className="text-sm font-semibold">Connected accounts</h2>
             <p className="text-xs text-muted-foreground">
               {accountCount === 0
-                ? "No accounts linked yet. Sync from Postiz to enable multi-account posting."
+                ? `No accounts linked yet. Sync from ${publishingLabel} to enable multi-account posting.`
                 : `${accountCount} account${accountCount === 1 ? "" : "s"} — ${Object.entries(byPlatform)
                     .map(([p, n]) => `${n} ${p}`)
                     .join(", ")}`}
@@ -103,7 +105,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
               type="submit"
               className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
             >
-              Sync Postiz accounts
+              Sync {publishingLabel} accounts
             </button>
           </form>
         </div>

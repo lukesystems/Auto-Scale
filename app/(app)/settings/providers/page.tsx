@@ -88,14 +88,19 @@ export default async function ProvidersSettingsPage() {
         <div className="flex items-start gap-3">
           <KeyRound className="h-5 w-5 text-primary mt-0.5" />
           <div className="flex-1 space-y-3">
-            <h3 className="font-semibold">Postiz (scheduling)</h3>
-            <StatusRow label="Configured" ok={status.postiz.configured} />
-            <StatusRow label="API URL set" ok={status.postiz.apiUrlConfigured} />
+            <h3 className="font-semibold">{status.publishing.label} (scheduling)</h3>
+            <StatusRow label="Active provider" ok={true} customValue={status.publishing.label} />
+            <StatusRow label="Configured" ok={status.publishing.configured} />
+            {status.publishing.provider === "postiz" && (
+              <StatusRow label="API URL set" ok={status.postiz.apiUrlConfigured} />
+            )}
             {isManagedMode(mode) ? (
-              <p className="text-sm text-muted-foreground">Managed by AutoScale — no API key required in the UI.</p>
+              <p className="text-sm text-muted-foreground">
+                Managed by AutoScale — no API key required in the UI.
+              </p>
             ) : (
               <Button asChild variant="outline" size="sm">
-                <Link href="/settings/postiz">Manage Postiz connection</Link>
+                <Link href="/settings/postiz">Manage {status.publishing.label} connection</Link>
               </Button>
             )}
           </div>
@@ -130,12 +135,22 @@ export default async function ProvidersSettingsPage() {
   );
 }
 
-function StatusRow({ label, ok }: { label: string; ok: boolean }) {
+function StatusRow({
+  label,
+  ok,
+  customValue,
+}: {
+  label: string;
+  ok: boolean;
+  customValue?: string;
+}) {
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className={`h-2 w-2 rounded-full ${ok ? "bg-success" : "bg-muted-foreground"}`} />
       <span>{label}:</span>
-      <span className={ok ? "text-foreground" : "text-muted-foreground"}>{ok ? "Yes" : "No"}</span>
+      <span className={ok ? "text-foreground" : "text-muted-foreground"}>
+        {customValue ?? (ok ? "Yes" : "No")}
+      </span>
     </div>
   );
 }

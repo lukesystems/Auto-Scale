@@ -2,6 +2,8 @@ import "server-only";
 
 import type { ProviderMode } from "@/lib/provider-mode";
 import { getManagedProviderConfig } from "./config";
+import { getPublishingProviderId } from "@/services/social-publishing/resolver";
+import { getPublishingProviderLabel } from "@/services/social-publishing/sync-accounts";
 
 export interface ProviderStatus {
   mode: ProviderMode;
@@ -16,9 +18,17 @@ export interface ProviderStatus {
       default: string | null;
     };
   };
+  publishing: {
+    provider: "postiz" | "postbridge";
+    label: "Postiz" | "Post Bridge";
+    configured: boolean;
+  };
   postiz: {
     configured: boolean;
     apiUrlConfigured: boolean;
+  };
+  postbridge: {
+    configured: boolean;
   };
   fal: {
     configured: boolean;
@@ -30,6 +40,10 @@ export interface ProviderStatus {
 export function getProviderStatus(mode: ProviderMode): ProviderStatus {
   const config = getManagedProviderConfig();
   const warnings: string[] = [];
+  const publishingProvider = getPublishingProviderId();
+  const publishingLabel = getPublishingProviderLabel(publishingProvider);
+  const publishingConfigured =
+    publishingProvider === "postbridge" ? config.postBridge.configured : config.postiz.configured;
 
   if (mode === "managed") {
     if (!config.openrouter.configured) {
@@ -37,10 +51,16 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
         "Managed OpenRouter is not configured. AI generation will fail until OPENROUTER_API_KEY is set."
       );
     }
-    if (!config.postiz.configured) {
-      warnings.push(
-        "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
-      );
+    if (!publishingConfigured) {
+      if (publishingProvider === "postbridge") {
+        warnings.push(
+          "Managed Post Bridge is not configured. Scheduling will queue locally until POST_BRIDGE_API_KEY is set."
+        );
+      } else {
+        warnings.push(
+          "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
+        );
+      }
     }
   }
 
@@ -50,9 +70,17 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
       configured: config.openrouter.configured,
       modelDefaults: config.models,
     },
+    publishing: {
+      provider: publishingProvider,
+      label: publishingLabel,
+      configured: publishingConfigured,
+    },
     postiz: {
       configured: config.postiz.configured,
       apiUrlConfigured: Boolean(config.postiz.apiUrl),
+    },
+    postbridge: {
+      configured: config.postBridge.configured,
     },
     fal: {
       configured: config.fal.configured,

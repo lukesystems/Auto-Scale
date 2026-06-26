@@ -4,31 +4,47 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Link2Off, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
-import { disconnectPostizAction, savePostizConnectionAction } from "./actions";
+import {
+  disconnectPostizAction,
+  savePostBridgeConnectionAction,
+  savePostizConnectionAction,
+} from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PostizControls } from "./postiz-controls";
 
-export function PostizForm({ initial }: { initial: { api_url: string; has_key: boolean } }) {
+type ProviderId = "postiz" | "postbridge";
+
+export function PostizForm({
+  providerId,
+  initial,
+}: {
+  providerId: ProviderId;
+  initial: { api_url: string; has_key: boolean };
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [removing, startRemoving] = useTransition();
+  const label = providerId === "postbridge" ? "Post Bridge" : "Postiz";
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {
-      const result = await savePostizConnectionAction(formData);
+      const result =
+        providerId === "postbridge"
+          ? await savePostBridgeConnectionAction(formData)
+          : await savePostizConnectionAction(formData);
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Postiz connection saved.");
+      toast.success(result.message ?? `${label} connection saved.`);
       router.refresh();
     });
   }
 
   function onDisconnect() {
-    if (!confirm("Disconnect Postiz?")) return;
+    if (!confirm(`Disconnect ${label}?`)) return;
     startRemoving(async () => {
       const result = await disconnectPostizAction();
       if (!result.ok) {
@@ -42,10 +58,18 @@ export function PostizForm({ initial }: { initial: { api_url: string; has_key: b
 
   return (
     <form action={onSubmit} className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="api_url">Postiz API URL</Label>
-        <Input id="api_url" name="api_url" type="url" defaultValue={initial.api_url} placeholder="https://api.postiz.com" />
-      </div>
+      {providerId === "postiz" && (
+        <div className="space-y-1.5">
+          <Label htmlFor="api_url">Postiz API URL</Label>
+          <Input
+            id="api_url"
+            name="api_url"
+            type="url"
+            defaultValue={initial.api_url}
+            placeholder="https://api.postiz.com"
+          />
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="api_key">API key</Label>
         <Input
@@ -53,7 +77,7 @@ export function PostizForm({ initial }: { initial: { api_url: string; has_key: b
           name="api_key"
           type="password"
           defaultValue={initial.has_key ? "**********" : ""}
-          placeholder="pst_..."
+          placeholder={providerId === "postbridge" ? "pb_live_..." : "pst_..."}
         />
         <p className="text-xs text-muted-foreground">Leave masked value as-is to keep current key.</p>
       </div>

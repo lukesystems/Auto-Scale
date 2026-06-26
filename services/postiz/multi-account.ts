@@ -2,9 +2,12 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { getProviderModeForUser } from "@/lib/provider-mode";
-import { sendToPostiz, type PostizCredentials } from "./client";
+import {
+  isPublishingConfigured,
+  resolvePublishingCredentials,
+  schedulePostViaProvider,
+} from "@/services/social-publishing";
 import { mintTrackedLink, buildTrackedUrl } from "@/services/tracking/links";
 import type { Database } from "@/lib/supabase/types";
 import { loadVideoQualityScore } from "@/services/video-quality/persist";
@@ -190,10 +193,10 @@ export async function scheduleApprovedVideos(
     }> | null) ?? [];
 
   const providerMode = await getProviderModeForUser(input.ownerId);
-  const credentials = await resolvePostizCredentials(input.ownerId, providerMode);
-  const postizEnabled = !!credentials?.apiKey && !!credentials?.apiUrl;
+  const credentials = await resolvePublishingCredentials(input.ownerId, providerMode);
+  const publishingEnabled = isPublishingConfigured(credentials);
 
-  if (!postizEnabled) {
+  if (!publishingEnabled) {
     await logAutopilotSkip(admin, {
       projectId: input.projectId,
       growthRunId: input.growthRunId,
@@ -266,7 +269,7 @@ export async function scheduleApprovedVideos(
           videoId: video.id,
           accountId,
           outcome: "skipped",
-          reason: "account not linked to a Postiz integration",
+          reason: "account not linked to a publishing provider",
         });
         skippedCount++;
         continue;
@@ -387,7 +390,7 @@ export async function scheduleApprovedVideos(
           connected_account_id: accountId,
           platform: caption.platform,
           scheduled_for: scheduledFor.toISOString(),
-          status: postizEnabled ? "sending" : "queued",
+          status: publishingEnabled ? "sending" : "queued",
           postiz_payload: {
             channel: account.postiz_account_id,
             caption: liveCaptionWithLink,
@@ -417,23 +420,19 @@ export async function scheduleApprovedVideos(
         .update({ schedule_item_id: scheduleRow!.id })
         .eq("id", trackedLinkId);
 
-      if (!postizEnabled) {
+      if (!publishingEnabled) {
         scheduledCount++;
         diagnostics.push({
           videoId: video.id,
           accountId,
           outcome: "queued",
-          reason: "postiz not configured — queued for export",
+          reason: "publishing provider not configured — queued for export",
         });
         continue;
       }
 
-      const creds: PostizCredentials = {
-        apiUrl: credentials!.apiUrl,
-        apiKey: credentials!.apiKey,
-      };
-      const resp = await sendToPostiz(creds, {
-        channel: account.postiz_account_id,
+      const resp = await schedulePostViaProvider(credentials, {
+        accountId: account.postiz_account_id,
         scheduledFor: scheduledFor.toISOString(),
         caption: liveCaptionWithLink,
         mediaUrls: [mediaUrl],
