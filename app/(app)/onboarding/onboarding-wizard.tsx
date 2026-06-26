@@ -119,6 +119,7 @@ export function OnboardingWizard({ initialProviderMode }: { initialProviderMode:
       setBrief(result.brief);
       setFetchFailed(Boolean(result.fetchFailed));
       setLowConfidence(Boolean(result.lowConfidence));
+      if (result.fetchWarning) toast.warning(result.fetchWarning);
       setStep("review");
     });
   }

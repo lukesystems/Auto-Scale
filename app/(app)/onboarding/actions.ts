@@ -6,18 +6,24 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { ProviderMode } from "@/lib/provider-mode";
-import { fetchSiteForAutoBrief, normalizeProductUrl, type SiteFetchOutput } from "@/services/autobrief/fetch-site";
-import { generateAutoBrief } from "@/services/autobrief/generate";
-import { AutoBriefSchema, LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
 import { createBriefGeneratingProject, createProjectFromAutoBrief } from "@/services/autobrief/create-project";
-import { mapAutoBriefError, isAIError } from "@/services/autobrief/map-error";
-import { logAIRun } from "@/services/ai/logger";
+import { AutoBriefSchema, LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
+import {
+  parseProductUrl,
+  runUrlToBriefPipeline,
+} from "@/services/autobrief/run-url-to-brief-pipeline";
 
 const ProviderModeSchema = z.enum(["managed", "byok"]);
-const UrlSchema = z.string().min(3, "Enter a website URL.");
 
 export type OnboardingActionResult =
-  | { ok: true; projectId?: string; brief?: z.infer<typeof AutoBriefSchema>; fetchFailed?: boolean; lowConfidence?: boolean }
+  | {
+      ok: true;
+      projectId?: string;
+      brief?: z.infer<typeof AutoBriefSchema>;
+      fetchFailed?: boolean;
+      fetchWarning?: string;
+      lowConfidence?: boolean;
+    }
   | { ok: false; projectId?: string; error: string };
 
 export async function saveProviderModeAction(mode: ProviderMode): Promise<OnboardingActionResult> {
@@ -64,15 +70,8 @@ async function fetchAndGenerateAutoBriefActionImpl(input: {
 }): Promise<OnboardingActionResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
 
-  const urlParsed = UrlSchema.safeParse(input.productUrl);
-  if (!urlParsed.success) return { ok: false, error: urlParsed.error.errors[0]?.message ?? "Invalid URL." };
-
-  let normalizedUrl: string;
-  try {
-    normalizedUrl = normalizeProductUrl(urlParsed.data);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Invalid URL." };
-  }
+  const urlParsed = parseProductUrl(input.productUrl);
+  if (!urlParsed.ok) return { ok: false, error: urlParsed.error };
 
   const supabase = createSupabaseServerClient();
   const {
@@ -84,105 +83,35 @@ async function fetchAndGenerateAutoBriefActionImpl(input: {
   try {
     const project = await createBriefGeneratingProject({
       userId: user.id,
-      productUrl: normalizedUrl,
+      productUrl: urlParsed.url,
     });
     projectId = project.projectId;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to create project." };
   }
 
-  let siteFetch: SiteFetchOutput | null = null;
-  let fetchFailed = false;
+  const pipeline = await runUrlToBriefPipeline({
+    userId: user.id,
+    productUrl: input.productUrl,
+    profile: "signup",
+    projectId,
+  });
 
-  try {
-    siteFetch = await fetchSiteForAutoBrief({ url: normalizedUrl, projectId });
-    if (!siteFetch.ok) fetchFailed = true;
-  } catch (err) {
-    fetchFailed = true;
-    siteFetch = {
-      ok: false,
-      url: normalizedUrl,
-      finalUrl: null,
-      title: null,
-      description: null,
-      textSnippet: null,
-      pages: [],
-      error: err instanceof Error ? err.message : "Website fetch failed.",
-    };
+  if (!pipeline.ok) {
+    return { ok: false, projectId: pipeline.projectId ?? projectId, error: pipeline.error };
   }
 
-  if (fetchFailed) {
-    const error = siteFetch?.error
-      ? `We could not read this website: ${siteFetch.error}. Check the URL and try again.`
-      : "We could not read this website. Check the URL and try again.";
-    await supabase
-      .from("projects")
-      .update({ status: "brief_failed", description: error })
-      .eq("id", projectId);
-    return { ok: false, projectId, error };
-  }
+  const lowConfidence =
+    pipeline.lowConfidence || pipeline.brief.confidence_score < LOW_CONFIDENCE_THRESHOLD;
 
-  try {
-    const generated = await generateAutoBrief({
-      productUrl: normalizedUrl,
-      siteFetch,
-    });
-
-    await logAIRun({
-      ownerId: user.id,
-      projectId,
-      kind: "autobrief",
-      provider: generated.provider,
-      model: generated.model,
-      input: {
-        productUrl: normalizedUrl,
-        fetchFailed,
-        pagesRead: siteFetch?.pages.length ?? 0,
-        crawlId: siteFetch?.crawlId ?? null,
-        factsCount: siteFetch?.factsCount ?? 0,
-      },
-      rawOutput: generated.raw,
-      parsedOutput: generated.brief as never,
-      status: "success",
-      latencyMs: generated.latencyMs,
-    });
-
-    const lowConfidence = generated.brief.confidence_score < LOW_CONFIDENCE_THRESHOLD || fetchFailed;
-
-    return {
-      ok: true,
-      projectId,
-      brief: generated.brief,
-      fetchFailed,
-      lowConfidence,
-    };
-  } catch (err) {
-    const errorMessage = mapAutoBriefError(err, fetchFailed);
-
-    await logAIRun({
-      ownerId: user.id,
-      projectId,
-      kind: "autobrief",
-      provider: isAIError(err) ? err.provider : "unknown",
-      model: "unknown",
-      input: {
-        productUrl: normalizedUrl,
-        fetchFailed,
-        pagesRead: siteFetch?.pages.length ?? 0,
-        crawlId: siteFetch?.crawlId ?? null,
-        factsCount: siteFetch?.factsCount ?? 0,
-      },
-      status: "failed",
-      errorMessage,
-    });
-
-    await supabase
-      .from("projects")
-      .update({ status: "brief_failed", description: errorMessage })
-      .eq("id", projectId);
-
-    return { ok: false, projectId, error: errorMessage };
-  }
+  return {
+    ok: true,
+    projectId,
+    brief: pipeline.brief,
+    fetchFailed: pipeline.fetchFailed,
+    fetchWarning: pipeline.fetchWarning,
+    lowConfidence,
+  };
 }
 
 export async function confirmAutoBriefAction(input: {
@@ -226,4 +155,3 @@ export async function confirmAutoBriefAction(input: {
 
   redirect(`/projects/${savedProjectId}`);
 }
-
