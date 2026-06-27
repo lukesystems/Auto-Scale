@@ -107,6 +107,18 @@ export function extractVisibleMetric(text: string, label: "views" | "likes" | "c
   return null;
 }
 
+export function extractVisibleFollowerCount(text: string): number | null {
+  const patterns = [
+    /(?:^|[^\w])([0-9]+(?:[.,][0-9]+)?\s*[KMB]?)\s+followers?(?:[^\w]|$)/i,
+    /followers?\s*[:·-]\s*([0-9]+(?:[.,][0-9]+)?\s*[KMB]?)(?:[^\w]|$)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return parseMetric(match[1].replace(/\s+/g, ""));
+  }
+  return null;
+}
+
 export async function extractVideoEvidence(url: string): Promise<VideoEvidence> {
   const info = inspectVideoUrl(url);
   const base = {
@@ -163,6 +175,7 @@ export async function extractVideoEvidence(url: string): Promise<VideoEvidence> 
   const hashtags = extractHashtags(visibleText);
   const postedAt = extractDate(html);
   const durationSeconds = extractDurationSeconds(html);
+  const followerCount = extractVisibleFollowerCount(visibleText);
 
   return VideoEvidenceSchema.parse({
     ...base,
@@ -171,6 +184,7 @@ export async function extractVideoEvidence(url: string): Promise<VideoEvidence> 
     caption,
     hashtags,
     durationSeconds,
+    followerCount,
     viewCount: extractVisibleMetric(visibleText, "views"),
     likeCount: extractVisibleMetric(visibleText, "likes"),
     commentCount: extractVisibleMetric(visibleText, "comments"),

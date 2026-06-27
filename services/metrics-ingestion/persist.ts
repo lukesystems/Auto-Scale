@@ -120,6 +120,12 @@ export async function persistMetricsSnapshot(
           comments: input.snapshot.comments,
           shares: input.snapshot.shares,
           saves: input.snapshot.saves,
+          save_rate:
+            input.snapshot.views != null &&
+            input.snapshot.views > 0 &&
+            input.snapshot.saves != null
+              ? input.snapshot.saves / input.snapshot.views
+              : (prior.save_rate as number | undefined) ?? null,
           watch_time_seconds: input.snapshot.watchTimeSeconds,
           impressions: input.snapshot.impressions,
           engagement_rate: input.snapshot.engagementRate,

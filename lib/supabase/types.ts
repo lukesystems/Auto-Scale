@@ -1087,6 +1087,8 @@ export interface Database {
           weak_completion_threshold: number;
           weak_click_rate_threshold: number;
           flat_views_threshold: number;
+          promising_save_rate_threshold: number;
+          strong_save_rate_threshold: number;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -1190,7 +1192,8 @@ export interface Database {
           brand_constraints: Json;
           target_platforms: Json;
           phase:
-            | "brief" | "videotrend" | "strategy" | "loadout" | "concepts"
+            | "brief" | "deep_discovery" | "video_discovery" | "pattern_mining"
+            | "videotrend" | "strategy" | "loadout" | "concepts"
             | "scripts" | "storyboards" | "assets" | "videos" | "captions"
             | "approval" | "schedule" | "live" | "compound" | "done";
           phase_status: Json;
@@ -1324,7 +1327,7 @@ export interface Database {
           fingerprint_key: string;
           video_type:
             | "slide" | "demo" | "founder_pov" | "pain_led"
-            | "trend_remix" | "ai_broll" | "objection" | "comparison";
+            | "trend_remix" | "ai_broll" | "objection" | "comparison" | "carousel";
           platform: "tiktok" | "instagram" | "youtube";
           hook_mechanism: string;
           visual_grammar: string;
@@ -1450,7 +1453,7 @@ export interface Database {
           project_id: string;
           video_type:
             | "slide" | "demo" | "founder_pov" | "pain_led"
-            | "trend_remix" | "ai_broll" | "objection" | "comparison";
+            | "trend_remix" | "ai_broll" | "objection" | "comparison" | "carousel";
           platform: "tiktok" | "instagram" | "youtube";
           target_length_seconds: number;
           hook: string;

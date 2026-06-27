@@ -1,16 +1,20 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
+import type { Database, AccountType, SourcePlatform } from "@/lib/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
 import { detectPlatform } from "@/services/trendwatch/ingestion";
 
+type SupabaseClientType = SupabaseClient<Database>;
+
 export async function promoteCandidateToSource(input: {
   projectId: string;
   candidateId: string;
+  client?: SupabaseClientType;
 }): Promise<{ sourceId: string }> {
-  const supabase = createSupabaseServerClient();
+  const supabase = input.client ?? createSupabaseServerClient();
 
   const { data: candidate, error: candidateError } = await supabase
     .from("source_candidates")

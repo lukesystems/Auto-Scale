@@ -11,6 +11,7 @@ import {
   extractHashtags,
   extractHook,
   extractLinkedUrls,
+  extractVisibleFollowerCount,
   extractVisibleMetric,
   guessVideoFormat,
   parseMetric,
@@ -18,6 +19,8 @@ import {
 import {
   buildVideoDiscoveryQueries,
   dedupeVideoCandidates,
+  inferVideoAccountType,
+  rankNadiaVideoCandidate,
 } from "@/services/intelligence/video/discover-video-evidence";
 import { toVideoEvidenceRow } from "@/services/intelligence/video/save-video-evidence";
 import { VideoEvidenceSchema } from "@/services/intelligence/video/schema";
@@ -70,6 +73,8 @@ describe("deterministic visible evidence extraction", () => {
     expect(parseMetric("lots")).toBeNull();
     expect(extractVisibleMetric("This video has 1.2K views and 82 likes", "views")).toBe(1_200);
     expect(extractVisibleMetric("No public count", "views")).toBeNull();
+    expect(extractVisibleFollowerCount("Creator with 125K followers on TikTok")).toBe(125_000);
+    expect(extractVisibleFollowerCount("No follower count")).toBeNull();
   });
 });
 
@@ -85,6 +90,47 @@ describe("video search discovery", () => {
     expect(queries.some((item) => item.query.includes("site:instagram.com/reel"))).toBe(true);
     expect(queries.some((item) => item.query.includes("site:youtube.com/shorts"))).toBe(true);
     expect(queries.some((item) => item.query.includes('"Acme" "TikTok"'))).toBe(true);
+    expect(queries.some((item) => item.query.includes("10k followers"))).toBe(true);
+    expect(queries.some((item) => item.query.includes("shadow account"))).toBe(true);
+  });
+
+  it("infers shadow accounts and ranks Nadia candidates", () => {
+    expect(inferVideoAccountType({
+      evidence: { accountHandle: "acme_fan", competitorId: null, followerCount: 45_000 },
+      competitorNames: ["Acme"],
+      snippet: "Unofficial Acme walkthrough",
+      title: null,
+      caption: null,
+    })).toBe("shadow");
+
+    const shadowRank = rankNadiaVideoCandidate({
+      score: 0.5,
+      evidence: VideoEvidenceSchema.parse({
+        platform: "tiktok",
+        videoUrl: "https://tiktok.com/@fan/video/1",
+        canonicalUrl: "https://tiktok.com/@fan/video/1",
+        accountType: "shadow",
+        followerCount: 80_000,
+        fetchStatus: "success",
+        fetchMethod: "safe_public_html",
+        rawSourceType: "video",
+      }),
+    });
+    const megaRank = rankNadiaVideoCandidate({
+      score: 0.5,
+      evidence: VideoEvidenceSchema.parse({
+        platform: "tiktok",
+        videoUrl: "https://tiktok.com/@mega/video/2",
+        canonicalUrl: "https://tiktok.com/@mega/video/2",
+        accountType: "creator",
+        followerCount: 2_000_000,
+        fetchStatus: "success",
+        fetchMethod: "safe_public_html",
+        rawSourceType: "video",
+      }),
+    });
+    expect(shadowRank).toBeGreaterThan(megaRank);
+    expect(megaRank).toBe(-Infinity);
   });
 
   it("deduplicates by canonical URL", () => {
@@ -117,6 +163,24 @@ describe("video persistence shape", () => {
       canonical_url: evidence.canonicalUrl,
       view_count: null,
       metadata: { observed: true },
+    });
+  });
+
+  it("persists follower_count and account_type in metadata when set", () => {
+    const evidence = VideoEvidenceSchema.parse({
+      projectId: "11111111-1111-4111-8111-111111111111",
+      platform: "tiktok",
+      videoUrl: "https://tiktok.com/@creator/video/1",
+      canonicalUrl: "https://tiktok.com/@creator/video/1",
+      followerCount: 120_000,
+      accountType: "shadow",
+      fetchStatus: "success",
+      fetchMethod: "safe_public_html",
+      rawSourceType: "video",
+    });
+    expect(toVideoEvidenceRow(evidence).metadata).toMatchObject({
+      follower_count: 120_000,
+      account_type: "shadow",
     });
   });
 });

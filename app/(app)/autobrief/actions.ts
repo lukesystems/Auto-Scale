@@ -34,7 +34,7 @@ export type ExecuteAutoBriefRunActionResult =
   | { ok: false; projectId?: string; error: string };
 
 export type BeginOnboardingGrowthRunResult =
-  | { ok: true; growthRunId: string }
+  | { ok: true; growthRunId: string; ffmpegWarning?: string }
   | { ok: false; error: string };
 
 export type ExecuteOnboardingGrowthRunResult =
@@ -175,12 +175,9 @@ export async function beginOnboardingGrowthRunAction(input: {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
 
   const ffmpeg = checkFfmpegHealth();
-  if (!ffmpeg.available) {
-    return {
-      ok: false,
-      error: `${ffmpeg.message}${ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""}`,
-    };
-  }
+  const ffmpegWarning = !ffmpeg.available
+    ? `${ffmpeg.message}${ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""} Discovery and concept generation can still run; video rendering will fail until ffmpeg is available.`
+    : undefined;
 
   const supabase = createSupabaseServerClient();
   const {
@@ -202,7 +199,7 @@ export async function beginOnboardingGrowthRunAction(input: {
       distributionMode: options.distribution_mode,
     });
 
-    return { ok: true, growthRunId: run.id };
+    return { ok: true, growthRunId: run.id, ffmpegWarning };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to start Growth Run." };
   }

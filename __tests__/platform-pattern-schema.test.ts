@@ -92,7 +92,11 @@ describe("VideoTrendReportSchema regression", () => {
         why_it_works: "Fast proof",
       },
     ],
-    hook_patterns: [{ label: "Pain hook", pattern: "Still doing X manually?" }],
+    hook_patterns: [{
+      label: "Pain hook",
+      pattern: "Still doing X manually?",
+      reference_url: "https://tiktok.com/@creator/video/123",
+    }],
     opening_frames: ["Screen recording of the pain"],
     cta_patterns: [{ label: "Try free", pattern: "Link in bio" }],
     platform_patterns: [

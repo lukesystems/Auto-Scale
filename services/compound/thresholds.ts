@@ -8,6 +8,10 @@ export interface ClassifierThresholds {
   weakCompletionThreshold: number;
   weakClickRateThreshold: number;
   flatViewsThreshold: number;
+  /** Saves / views at or above this rate signals conversion intent (Nadia: ~2%). */
+  promisingSaveRateThreshold: number;
+  /** Saves / views at or above this rate is a strong conversion signal (Nadia: ~3%). */
+  strongSaveRateThreshold: number;
 }
 
 export const DEFAULT_CLASSIFIER_THRESHOLDS: ClassifierThresholds = {
@@ -15,6 +19,8 @@ export const DEFAULT_CLASSIFIER_THRESHOLDS: ClassifierThresholds = {
   weakCompletionThreshold: 0.35,
   weakClickRateThreshold: 0.005,
   flatViewsThreshold: 500,
+  promisingSaveRateThreshold: 0.02,
+  strongSaveRateThreshold: 0.03,
 };
 
 export async function loadClassifierThresholds(
@@ -24,7 +30,7 @@ export async function loadClassifierThresholds(
   const { data } = await supabase
     .from("project_growth_settings")
     .select(
-      "winner_signup_threshold, weak_completion_threshold, weak_click_rate_threshold, flat_views_threshold"
+      "winner_signup_threshold, weak_completion_threshold, weak_click_rate_threshold, flat_views_threshold, promising_save_rate_threshold, strong_save_rate_threshold"
     )
     .eq("project_id", projectId)
     .maybeSingle();
@@ -40,5 +46,11 @@ export async function loadClassifierThresholds(
       data.weak_click_rate_threshold ?? DEFAULT_CLASSIFIER_THRESHOLDS.weakClickRateThreshold
     ),
     flatViewsThreshold: data.flat_views_threshold ?? DEFAULT_CLASSIFIER_THRESHOLDS.flatViewsThreshold,
+    promisingSaveRateThreshold: Number(
+      data.promising_save_rate_threshold ?? DEFAULT_CLASSIFIER_THRESHOLDS.promisingSaveRateThreshold
+    ),
+    strongSaveRateThreshold: Number(
+      data.strong_save_rate_threshold ?? DEFAULT_CLASSIFIER_THRESHOLDS.strongSaveRateThreshold
+    ),
   };
 }

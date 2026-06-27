@@ -29,6 +29,9 @@ export interface ManagedProviderConfig {
     autobrief: string | null;
     trendwatch: string | null;
     discovery_reasoning: string | null;
+    videotrend_reasoning: string | null;
+    hook_generation: string | null;
+    strategy_generation: string | null;
     content: string | null;
     quality_gate: string | null;
     compound: string | null;
@@ -92,6 +95,9 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
       autobrief: readEnv("AUTOSCALE_MODEL_AUTOBRIEF"),
       trendwatch: readEnv("AUTOSCALE_MODEL_TRENDWATCH"),
       discovery_reasoning: readEnv("AUTOSCALE_MODEL_DISCOVERY_REASONING"),
+      videotrend_reasoning: readEnv("AUTOSCALE_MODEL_VIDEOTREND_REASONING"),
+      hook_generation: readEnv("AUTOSCALE_MODEL_HOOK_GENERATION"),
+      strategy_generation: readEnv("AUTOSCALE_MODEL_STRATEGY_GENERATION"),
       content: readEnv("AUTOSCALE_MODEL_CONTENT"),
       quality_gate: readEnv("AUTOSCALE_MODEL_QUALITY_GATE"),
       compound: readEnv("AUTOSCALE_MODEL_COMPOUND"),

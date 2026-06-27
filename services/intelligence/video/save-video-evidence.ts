@@ -35,7 +35,11 @@ export function toVideoEvidenceRow(evidence: VideoEvidence) {
     fetch_status: evidence.fetchStatus,
     fetch_method: evidence.fetchMethod,
     raw_source_type: evidence.rawSourceType,
-    metadata: evidence.metadata as Json,
+    metadata: {
+      ...evidence.metadata,
+      ...(evidence.followerCount != null ? { follower_count: evidence.followerCount } : {}),
+      ...(evidence.accountType !== "unknown" ? { account_type: evidence.accountType } : {}),
+    } as Json,
   };
 }
 

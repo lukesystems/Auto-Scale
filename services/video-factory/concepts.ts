@@ -103,6 +103,12 @@ export async function generateVideoConcepts(opts: {
     brief?.cta ??
     "Start free";
 
+  const productionConstraints = brief?.production_constraints as
+    | { can_make_carousels?: boolean }
+    | null
+    | undefined;
+  const canMakeCarousels = productionConstraints?.can_make_carousels !== false;
+
   const platformPriority = Object.entries(opts.strategy.platform_mix)
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .map(([platform]) => platform);
@@ -120,6 +126,9 @@ export async function generateVideoConcepts(opts: {
     "Separate observed evidence from strategic inference. Never invent metrics or source IDs.",
     "Use only evidence_video_ids and source_pattern_ids provided below. Leave arrays empty when support is missing.",
     "Prefer SaaS-native formats: demo, pain-led slide, founder POV, objection, or comparison.",
+    canMakeCarousels
+      ? "Carousel production is enabled: you may include one carousel format hypothesis (video_type: carousel, platform: instagram). Carousels are planned as slide sequences — rendered via the slide video path, not a separate carousel exporter."
+      : "Do not propose carousel formats — production_constraints.can_make_carousels is false.",
     "AI b-roll is allowed only when it strengthens the message.",
     `Hold CTA constant across variants: "${brandCta}".`,
     "",
@@ -206,7 +215,7 @@ export async function generateVideoConcepts(opts: {
     schema: WinningFormatPlanSchema,
     schemaDescription:
       "WinningFormatPlan JSON. Top-level: audience_pain, fixed_body, fixed_cta, fixed_audience, tested_variable ('hook'), evaluation_window_days, formats. Every format requires format_name, lowercase video_type, lowercase platform, target_length_seconds, hook_mechanism, visual_grammar, script_structure, cta_pattern, business_hypothesis, transferability_score, lowercase distortion_risk, confidence, missing_evidence, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, and exactly 3 variants. Every variant requires variant_label, hook, angle, promise, hypothesis, expected_signal.",
-    taskType: "content",
+    taskType: "hook_generation",
     system:
       "You design controlled short-form video experiments. You optimize for causal learning and business signals, not output volume.",
     prompt,

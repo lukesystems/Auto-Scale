@@ -18,6 +18,8 @@ interface OnboardingPipelineShellProps {
   title?: string;
   subtitle?: string;
   showSlowHint?: boolean;
+  thinEvidenceWarning?: string | null;
+  ffmpegWarning?: string | null;
   errorMessage?: string | null;
 }
 
@@ -29,10 +31,32 @@ export function OnboardingPipelineShell({
   title = "Building your growth engine…",
   subtitle = "We read your site, save your product brief internally, and launch your first Growth Run.",
   showSlowHint,
+  thinEvidenceWarning,
+  ffmpegWarning,
   errorMessage,
 }: OnboardingPipelineShellProps) {
   const crawlMessage = autobriefProgress?.currentMessage ?? "Starting…";
   const growthMessage = growthProgress?.currentMessage ?? "Preparing Growth Run…";
+
+  const discoveryPhases = ["deep_discovery", "video_discovery", "pattern_mining"] as const;
+  const discoveryRunning = discoveryPhases.some((phase) => {
+    const entry = growthProgress?.phaseStatus[phase] as { status?: string } | undefined;
+    return entry?.status === "running" || growthProgress?.phase === phase;
+  });
+  const discoveryDone = discoveryPhases.every((phase) => {
+    const entry = growthProgress?.phaseStatus[phase] as { status?: string } | undefined;
+    return entry?.status === "succeeded";
+  });
+  const discoveryDetail =
+    growthProgress?.phase === "deep_discovery"
+      ? (growthProgress.currentMessage ?? "Gathering niche evidence…")
+      : growthProgress?.phase === "video_discovery"
+        ? (growthProgress.currentMessage ?? "Discovering video signals…")
+        : growthProgress?.phase === "pattern_mining"
+          ? (growthProgress.currentMessage ?? "Mining competitor patterns…")
+          : discoveryDone
+            ? "Niche evidence gathered"
+            : "Queued after product brief";
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -88,6 +112,21 @@ export function OnboardingPipelineShell({
             }
           />
           <PipelineStep
+            label="Gather niche evidence"
+            detail={discoveryDetail}
+            status={
+              stage === "growth" && discoveryRunning
+                ? "running"
+                : stage === "growth" && discoveryDone
+                  ? "done"
+                  : stage === "done"
+                    ? "done"
+                    : stage === "failed" && brief
+                      ? "failed"
+                      : "pending"
+            }
+          />
+          <PipelineStep
             label="Run Growth Run"
             detail={growthMessage}
             status={
@@ -123,6 +162,18 @@ export function OnboardingPipelineShell({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {thinEvidenceWarning && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+            {thinEvidenceWarning}
+          </div>
+        )}
+
+        {ffmpegWarning && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+            {ffmpegWarning}
           </div>
         )}
 

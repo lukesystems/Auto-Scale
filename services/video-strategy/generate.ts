@@ -72,6 +72,12 @@ export async function generateVideoStrategy(opts: {
       }
     : null;
 
+  const productionConstraints = brief?.production_constraints as
+    | { can_make_carousels?: boolean }
+    | null
+    | undefined;
+  const canMakeCarousels = productionConstraints?.can_make_carousels !== false;
+
   const accountPacket = accounts.map((a) => ({
     id: a.id,
     platform: a.platform,
@@ -123,7 +129,10 @@ export async function generateVideoStrategy(opts: {
     "",
     "Return a strict JSON object matching VideoStrategy:",
     "- platform_mix: weights summing to 1.0 across the target platforms only.",
-    "- video_type_mix: weights summing to 1.0 across video types (slide / demo / founder_pov / pain_led / trend_remix / ai_broll / objection / comparison). Prefer slide + demo for SaaS unless evidence says otherwise.",
+    "- video_type_mix: weights summing to 1.0 across video types (slide / demo / founder_pov / pain_led / trend_remix / ai_broll / objection / comparison / carousel). Prefer slide + demo for SaaS unless evidence says otherwise.",
+    canMakeCarousels
+      ? "- carousel is allowed when brief production_constraints.can_make_carousels is true — weight it on instagram when evidence supports swipeable formats."
+      : "- do not allocate weight to carousel — production_constraints.can_make_carousels is false.",
     "- campaign_hypotheses: 3-6 testable hypotheses tied to the trend evidence.",
     "  Every hypothesis object MUST include hypothesis and metric_to_watch strings.",
     "- rationale: 3-5 sentences explaining the mix.",
@@ -147,7 +156,7 @@ export async function generateVideoStrategy(opts: {
     schema: VideoStrategySchema,
     schemaDescription:
       "VideoStrategy JSON with platform_mix and video_type_mix numeric records; campaign_hypotheses is an array of objects where every object contains hypothesis:string and metric_to_watch:string, plus optional success_threshold:string and kill_threshold:string; rationale:string.",
-    taskType: "content",
+    taskType: "strategy_generation",
     system:
       "You are a growth strategist for SaaS short-form video. You output deterministic, founder-actionable mixes. Never recommend more volume than the connected accounts can support.",
     prompt,

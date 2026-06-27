@@ -23,6 +23,7 @@ export const VIDEO_TYPES = [
   "ai_broll",
   "objection",
   "comparison",
+  "carousel",
 ] as const;
 export type VideoType = (typeof VIDEO_TYPES)[number];
 
@@ -53,6 +54,7 @@ export const SCENE_ROLES = [
 export const HookPatternSchema = z.object({
   label: z.string(),
   pattern: z.string(),
+  reference_url: z.string().url(),
   example: z.string().optional(),
   when_to_use: z.string().optional(),
 });

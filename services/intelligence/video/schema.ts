@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const VideoPlatformSchema = z.enum(["tiktok", "instagram", "youtube", "other"]);
 export const VideoSourceTypeSchema = z.enum(["video", "profile", "unknown"]);
+export const VideoAccountTypeSchema = z.enum([
+  "official", "competitor", "shadow", "creator", "partner", "affiliate", "review", "unknown",
+]);
 
 export const VideoEvidenceSchema = z.object({
   projectId: z.string().uuid().nullable().default(null),
@@ -30,6 +33,8 @@ export const VideoEvidenceSchema = z.object({
     "listicle", "teardown", "transformation", "product_showcase", "unknown",
   ]).default("unknown"),
   topicGuess: z.string().nullable().default(null),
+  followerCount: z.number().int().nonnegative().nullable().default(null),
+  accountType: VideoAccountTypeSchema.default("unknown"),
   sourceConfidence: z.number().min(0).max(1).default(0),
   fetchStatus: z.enum(["pending", "success", "failed", "skipped"]),
   fetchMethod: z.string(),
@@ -40,3 +45,4 @@ export const VideoEvidenceSchema = z.object({
 export type VideoEvidence = z.infer<typeof VideoEvidenceSchema>;
 export type VideoPlatform = z.infer<typeof VideoPlatformSchema>;
 export type VideoSourceType = z.infer<typeof VideoSourceTypeSchema>;
+export type VideoAccountType = z.infer<typeof VideoAccountTypeSchema>;

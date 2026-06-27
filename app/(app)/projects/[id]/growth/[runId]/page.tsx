@@ -7,8 +7,12 @@ import {
   runCompoundAction,
   scheduleRunAction,
 } from "../actions";
-import { ProductionWorkspace, type ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
+import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
 import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
+import {
+  ProductionWorkspace,
+  type ProductionWorkspaceVideo,
+} from "@/components/growth/production-workspace";
 import {
   mapScheduleItemStatusToState,
   ScheduleStatusBadge,
@@ -598,7 +602,7 @@ function ConceptsPanel({ concepts }: { concepts: Array<{ id: string; video_type:
           <tbody>
             {concepts.map((c) => (
               <tr key={c.id} className="border-t">
-                <td className="px-2 py-1">{c.video_type}</td>
+                <td className="px-2 py-1">{formatVideoTypeLabel(c.video_type)}</td>
                 <td className="px-2 py-1">{c.platform}</td>
                 <td className="px-2 py-1">{c.target_length_seconds}s</td>
                 <td className="px-2 py-1">{c.hook}</td>
@@ -687,7 +691,7 @@ function WinningFormatLabPanel({
                 <div>
                   <h3 className="text-sm font-semibold">{fingerprint.name}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {fingerprint.platform} · {fingerprint.video_type} · testing {experiment?.tested_variable ?? "unknown"}
+                    {fingerprint.platform} · {formatVideoTypeLabel(fingerprint.video_type)} · testing {experiment?.tested_variable ?? "unknown"}
                   </p>
                 </div>
                 <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">

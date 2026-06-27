@@ -10,6 +10,7 @@ import { isBriefComplete } from "@/lib/brief-completeness";
 import { getProductBrief, getProjectStats } from "../../queries";
 import { getNextMove } from "@/lib/next-move";
 import { formatRelativeTime } from "@/lib/utils";
+import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
 import { compoundWinnerAction } from "./actions";
 
 interface PageProps {
@@ -47,6 +48,11 @@ export default async function GrowthWinnersPage({ params }: PageProps) {
 
       <NextMoveBanner move={next} />
 
+      <p className="text-sm text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+        Save-rate signal (Nadia): 2–3% saves/views often indicates conversion intent on TikTok and
+        Instagram — iterate CTA when saves are strong but signups lag.
+      </p>
+
       {winners.length === 0 ? (
         <EmptyState
           icon={<Trophy className="h-5 w-5" />}
@@ -72,7 +78,16 @@ export default async function GrowthWinnersPage({ params }: PageProps) {
               {w.diagnosis && <p className="text-sm text-muted-foreground">{w.diagnosis}</p>}
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 {w.views != null ? <span>{w.views.toLocaleString()} views</span> : null}
+                {w.saveRate != null ? (
+                  <span className={w.saveRate >= 0.02 ? "text-amber-600 dark:text-amber-400 font-medium" : ""}>
+                    {(w.saveRate * 100).toFixed(1)}% save rate
+                    {w.saves != null ? ` (${w.saves} saves)` : ""}
+                  </span>
+                ) : w.saves != null ? (
+                  <span>{w.saves} saves</span>
+                ) : null}
                 {w.signups != null ? <span>{w.signups} signups</span> : null}
+                {w.videoType ? <span>{formatVideoTypeLabel(w.videoType)}</span> : null}
                 {w.platform ? <span className="capitalize">{w.platform}</span> : null}
               </div>
               {w.classification === "winner" ? (
@@ -107,7 +122,10 @@ type WinnerRow = {
   created_at: string;
   hook: string | null;
   platform: string | null;
+  videoType: string | null;
   views: number | null;
+  saves: number | null;
+  saveRate: number | null;
   signups: number | null;
 };
 
@@ -135,18 +153,19 @@ async function loadWinners(projectId: string): Promise<WinnerRow[]> {
       .select("id, concept_id")
       .in("id", videoIds),
     snapshotIds.length
-      ? supabase.from("metrics_snapshots").select("id, views").in("id", snapshotIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; views: number | null }> }),
+      ? supabase.from("metrics_snapshots").select("id, views, saves").in("id", snapshotIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; views: number | null; saves: number | null }> }),
   ]);
 
   const conceptIds = (videos ?? []).map((v) => v.concept_id).filter(Boolean) as string[];
   const { data: concepts } = conceptIds.length
-    ? await supabase.from("video_concepts").select("id, hook, platform").in("id", conceptIds)
-    : { data: [] as Array<{ id: string; hook: string; platform: string }> };
+    ? await supabase.from("video_concepts").select("id, hook, platform, video_type").in("id", conceptIds)
+    : { data: [] as Array<{ id: string; hook: string; platform: string; video_type: string }> };
 
   const conceptById = new Map((concepts ?? []).map((c) => [c.id, c]));
   const videoConceptId = new Map((videos ?? []).map((v) => [v.id, v.concept_id]));
   const snapshotViews = new Map((snapshots ?? []).map((s) => [s.id, s.views]));
+  const snapshotSaves = new Map((snapshots ?? []).map((s) => [s.id, s.saves]));
 
   return results.map((r) => {
     const conceptId = videoConceptId.get(r.video_id);
@@ -155,6 +174,15 @@ async function loadWinners(projectId: string): Promise<WinnerRow[]> {
     const views =
       (r.latest_metrics_snapshot_id ? snapshotViews.get(r.latest_metrics_snapshot_id) : null) ??
       (typeof summary.views === "number" ? summary.views : null);
+    const saves =
+      (r.latest_metrics_snapshot_id ? snapshotSaves.get(r.latest_metrics_snapshot_id) : null) ??
+      (typeof summary.saves === "number" ? summary.saves : null);
+    const saveRate =
+      typeof summary.save_rate === "number"
+        ? summary.save_rate
+        : views != null && views > 0 && saves != null
+          ? saves / views
+          : null;
     return {
       id: r.id,
       video_id: r.video_id,
@@ -164,7 +192,10 @@ async function loadWinners(projectId: string): Promise<WinnerRow[]> {
       created_at: r.created_at,
       hook: concept?.hook ?? null,
       platform: concept?.platform ?? null,
+      videoType: concept?.video_type ?? null,
       views: views ?? null,
+      saves: saves ?? null,
+      saveRate,
       signups: typeof summary.signups === "number" ? summary.signups : null,
     };
   });

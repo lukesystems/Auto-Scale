@@ -10,6 +10,7 @@ import {
   markPhaseStatus,
   setPhase,
 } from "./repository";
+import { runDiscoveryPhase } from "./run-discovery-phase";
 import { generateVideoTrendReport } from "@/services/videotrend/generate";
 import { generateVideoStrategy } from "@/services/video-strategy/generate";
 import { generateVideoConcepts } from "@/services/video-factory/concepts";
@@ -18,7 +19,7 @@ import { buildVideosForRun } from "@/services/video-factory";
 /**
  * runGrowthRun(): the "Run AutoScale" button.
  *
- * Sequences the closed loop: brief → videotrend → strategy → loadout →
+ * Sequences the closed loop: brief → niche discovery → videotrend → strategy →
  * concepts → scripts → storyboards → assets → videos → captions →
  * awaiting_approval. Posting + tracking + compound run as separate phases
  * after the user (or autopilot) approves the videos.
@@ -90,6 +91,16 @@ export async function startGrowthRun(
     await setPhase(supabase, runId, "brief", { status: "running" });
     await markPhaseStatus(supabase, runId, "brief", "succeeded");
 
+    const discovery = await runDiscoveryPhase({
+      projectId: input.projectId,
+      growthRunId: runId,
+      client: supabase,
+      onSubPhase: async (phase, status, details) => {
+        await setPhase(supabase, runId, phase);
+        await markPhaseStatus(supabase, runId, phase, status, details);
+      },
+    });
+
     // VideoTrend
     await setPhase(supabase, runId, "videotrend");
     await markPhaseStatus(supabase, runId, "videotrend", "running");
@@ -97,10 +108,14 @@ export async function startGrowthRun(
       projectId: input.projectId,
       growthRunId: runId,
       ownerId: input.ownerId,
+      lowConfidenceEvidence: discovery.lowConfidence,
+      evidenceCount: discovery.evidenceCount,
     });
     await markPhaseStatus(supabase, runId, "videotrend", "succeeded", {
       confidence: report.confidence,
       structures: report.winning_structures.length,
+      lowConfidence: discovery.lowConfidence,
+      evidenceCount: discovery.evidenceCount,
     });
 
     // Strategy + loadout

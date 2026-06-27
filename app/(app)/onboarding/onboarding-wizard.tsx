@@ -19,6 +19,7 @@ import {
 } from "@/components/onboarding/onboarding-pipeline-shell";
 import { useAutobriefProgress } from "@/hooks/use-autobrief-progress";
 import { useGrowthRunProgress } from "@/hooks/use-growth-run-progress";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,8 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [slowHint, setSlowHint] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
+  const [thinEvidenceWarning, setThinEvidenceWarning] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const runIdRef = useRef(0);
 
@@ -61,6 +64,30 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
     return () => clearTimeout(timer);
   }, [step]);
 
+  useEffect(() => {
+    if (!growthProgress || stage !== "growth") return;
+
+    const videotrend = growthProgress.phaseStatus.videotrend as {
+      lowConfidence?: boolean;
+      evidenceCount?: number;
+      confidence?: number;
+      status?: string;
+    } | undefined;
+
+    if (videotrend?.status !== "succeeded" && videotrend?.status !== "running") return;
+
+    const thin =
+      videotrend.lowConfidence === true ||
+      (typeof videotrend.evidenceCount === "number" && videotrend.evidenceCount < 3) ||
+      (typeof videotrend.confidence === "number" && videotrend.confidence < LOW_CONFIDENCE_THRESHOLD);
+
+    if (thin) {
+      setThinEvidenceWarning(
+        "Thin niche evidence — patterns are directional only. Add competitor video URLs in Sources for stronger VideoTrend output."
+      );
+    }
+  }, [growthProgress, stage]);
+
   function onStart() {
     if (!productUrl.trim()) {
       toast.error("Paste your product URL first.");
@@ -72,6 +99,8 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
     setStep("running");
     setIsRunning(true);
     setErrorMessage(null);
+    setFfmpegWarning(null);
+    setThinEvidenceWarning(null);
     setProjectId(null);
     setCrawlId(null);
     setGrowthRunId(null);
@@ -126,6 +155,12 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
       }
 
       if (briefResult.fetchWarning) toast.warning(briefResult.fetchWarning);
+      if (briefResult.lowConfidence) {
+        const pct = Math.round(briefResult.brief.confidence_score * 100);
+        const msg = `Low-confidence brief (${pct}%). Add competitor URLs in Sources after onboarding for stronger experiments.`;
+        toast.warning(msg);
+        setThinEvidenceWarning(msg);
+      }
 
       flushSync(() => {
         setBrief(briefResult.brief);
@@ -141,6 +176,11 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
         setStep("error");
         setIsRunning(false);
         return;
+      }
+
+      if (growthBegin.ffmpegWarning) {
+        setFfmpegWarning(growthBegin.ffmpegWarning);
+        toast.warning(growthBegin.ffmpegWarning);
       }
 
       flushSync(() => {
@@ -231,6 +271,8 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
           autobriefProgress={autobriefProgress}
           growthProgress={growthProgress}
           brief={brief}
+          thinEvidenceWarning={thinEvidenceWarning}
+          ffmpegWarning={ffmpegWarning}
           errorMessage={errorMessage}
         />
         <Button type="button" onClick={returnToUrl}>
@@ -247,6 +289,8 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
       growthProgress={growthProgress}
       brief={brief}
       showSlowHint={slowHint}
+      thinEvidenceWarning={thinEvidenceWarning}
+      ffmpegWarning={ffmpegWarning}
     />
   );
 }

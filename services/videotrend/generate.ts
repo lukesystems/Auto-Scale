@@ -27,6 +27,8 @@ export async function generateVideoTrendReport(opts: {
   projectId: string;
   growthRunId: string;
   ownerId: string;
+  lowConfidenceEvidence?: boolean;
+  evidenceCount?: number;
 }): Promise<{ report: VideoTrendReport; evidenceVideoIds: string[]; recordId: string }> {
   const [brief, evidence, patterns] = await Promise.all([
     loadProductBrief(opts.projectId),
@@ -37,6 +39,7 @@ export async function generateVideoTrendReport(opts: {
   // Compact evidence packets so the prompt stays small.
   const evidencePackets = evidence.slice(0, 40).map((e) => ({
     id: e.id,
+    url: e.video_url,
     platform: e.platform,
     handle: e.account_handle ?? null,
     hook: e.detected_hook ?? null,
@@ -83,7 +86,7 @@ export async function generateVideoTrendReport(opts: {
     "",
     "Produce a strict JSON object matching the VideoTrendReport schema:",
     "- winning_structures[]: named beat sequences (e.g. 'Painful manual → product shortcut → result reveal')",
-    "- hook_patterns[]: reusable opening hook templates",
+    "- hook_patterns[]: reusable opening hook templates — every item MUST include reference_url (a video_url from the evidence packets that inspired the hook)",
     "- opening_frames[]: 0-2s visual ideas that earn the watch",
     "- cta_patterns[]: closing calls to action",
     "- platform_patterns[]: per-platform length/aspect/notes",
@@ -92,6 +95,10 @@ export async function generateVideoTrendReport(opts: {
     "- repurposable_formats[]: formats that translate across platforms",
     "- audience_language[]: phrases the target actually uses",
     "- confidence: 0..1, lower when evidence is sparse.",
+    "",
+    "Nadia rules:",
+    "- Prefer hooks derived from shadow/creator accounts (10k–250k followers) over mega-account distortion.",
+    "- Every hook_patterns[].reference_url must be an exact url from the evidence packets — never invent URLs.",
   ].join("\n");
 
   let result: VideoTrendReport;
@@ -103,7 +110,7 @@ export async function generateVideoTrendReport(opts: {
         `VideoTrendReport with this exact shape and lowercase enum values:
 {
   "winning_structures": [{"name":"string","beats":["beat 1","beat 2"],"ideal_length_seconds":22,"why_it_works":"string"}],
-  "hook_patterns": [{"label":"string","pattern":"string","example":"string","when_to_use":"string"}],
+  "hook_patterns": [{"label":"string","pattern":"string","reference_url":"https://...","example":"string","when_to_use":"string"}],
   "opening_frames": ["string"],
   "cta_patterns": [{"label":"string","pattern":"string","best_for":["string"]}],
   "audience_language": ["string"],
@@ -113,9 +120,9 @@ export async function generateVideoTrendReport(opts: {
   "repurposable_formats": ["string"],
   "confidence": 0.5
 }`,
-      taskType: "trendwatch",
+      taskType: "videotrend_reasoning",
       system:
-        "You convert real video evidence into reusable short-form video patterns. Never invent. Cite via the recommended_experiments rationale field.",
+        "You convert real video evidence into reusable short-form video patterns. Never invent metrics or URLs. Every hook_patterns item must cite a reference_url from the supplied evidence packets.",
       prompt,
       temperature: 0.4,
       maxTokens: 5000,
@@ -148,6 +155,13 @@ export async function generateVideoTrendReport(opts: {
     throw err;
   }
 
+  if (opts.lowConfidenceEvidence) {
+    result = {
+      ...result,
+      confidence: Math.min(result.confidence, 0.35),
+    };
+  }
+
   const supabase = createSupabaseServerClient();
   const evidenceVideoIds = evidence.slice(0, 40).map((e) => e.id);
   const { data, error } = await supabase
@@ -166,7 +180,11 @@ export async function generateVideoTrendReport(opts: {
       repurposable_formats: result.repurposable_formats as never,
       evidence_video_ids: evidenceVideoIds as never,
       confidence: result.confidence,
-      raw_output: { text: raw } as never,
+      raw_output: {
+        text: raw,
+        low_confidence_evidence: opts.lowConfidenceEvidence ?? false,
+        evidence_count: opts.evidenceCount ?? evidencePackets.length,
+      } as never,
     })
     .select("id")
     .single();

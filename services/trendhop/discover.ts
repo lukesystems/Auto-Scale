@@ -17,15 +17,15 @@ const PLATFORM_QUERIES: Array<{
 }> = [
   {
     platform: "tiktok",
-    query: (niche) => `trending TikTok videos this week ${niche} site:tiktok.com`,
+    query: (niche) => `trending TikTok videos this week ${niche} ("10k followers" OR "50k followers") site:tiktok.com`,
   },
   {
     platform: "youtube_shorts",
-    query: (niche) => `viral YouTube Shorts trending ${niche} site:youtube.com/shorts`,
+    query: (niche) => `viral YouTube Shorts trending ${niche} creator site:youtube.com/shorts`,
   },
   {
     platform: "instagram_reels",
-    query: (niche) => `trending Instagram Reels ${niche} site:instagram.com/reel`,
+    query: (niche) => `trending Instagram Reels ${niche} ("10k followers" OR "100k followers") site:instagram.com/reel`,
   },
   {
     platform: "twitter",
@@ -34,8 +34,8 @@ const PLATFORM_QUERIES: Array<{
 ];
 
 const TREND_TRACKER_QUERIES = (niche: string) => [
-  `top TikTok trends this week ${niche}`,
-  `viral short-form video format ${niche}`,
+  `top TikTok trends this week ${niche} ("50k followers" OR "100k followers")`,
+  `viral short-form video format ${niche} micro creator`,
 ];
 
 /**

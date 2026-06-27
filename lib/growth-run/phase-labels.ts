@@ -1,5 +1,8 @@
 export const GROWTH_RUN_PHASES = [
   "brief",
+  "deep_discovery",
+  "video_discovery",
+  "pattern_mining",
   "videotrend",
   "strategy",
   "loadout",
@@ -16,6 +19,9 @@ export type GrowthRunPhase = (typeof GROWTH_RUN_PHASES)[number];
 
 export const GROWTH_RUN_PHASE_LABELS: Record<GrowthRunPhase, string> = {
   brief: "Loading product brief",
+  deep_discovery: "Gathering niche evidence",
+  video_discovery: "Discovering video signals",
+  pattern_mining: "Mining competitor patterns",
   videotrend: "Analyzing video trends in your niche",
   strategy: "Building video strategy",
   loadout: "Planning posting loadout",
@@ -33,14 +39,42 @@ export function growthPhaseMessage(
   phaseStatus: Record<string, unknown>
 ): string {
   const label = GROWTH_RUN_PHASE_LABELS[phase as GrowthRunPhase] ?? phase;
-  const entry = phaseStatus[phase] as { status?: string; count?: number; structures?: number } | undefined;
+  const entry = phaseStatus[phase] as {
+    status?: string;
+    count?: number;
+    structures?: number;
+    evidenceCount?: number;
+    videoSaved?: number;
+    patternsMined?: number;
+    candidatesSaved?: number;
+    lowConfidence?: boolean;
+    confidence?: number;
+  } | undefined;
   if (entry?.status === "running" || !entry?.status) return `${label}…`;
   if (entry.status === "failed") return `${label} failed`;
+  if (phase === "deep_discovery" && typeof entry.candidatesSaved === "number") {
+    const saved = entry.candidatesSaved as number;
+    return `Found ${saved} source candidate${saved === 1 ? "" : "s"}`;
+  }
+  if (phase === "video_discovery" && typeof entry.videoSaved === "number") {
+    const saved = entry.videoSaved;
+    return `Saved ${saved} video evidence item${saved === 1 ? "" : "s"}`;
+  }
+  if (phase === "pattern_mining" && typeof entry.patternsMined === "number") {
+    const mined = entry.patternsMined;
+    return mined > 0
+      ? `Mined ${mined} pattern${mined === 1 ? "" : "s"}`
+      : "Pattern mining complete (sparse evidence)";
+  }
   if (phase === "concepts" && typeof entry.count === "number") {
     return `Generated ${entry.count} video concept${entry.count === 1 ? "" : "s"}`;
   }
   if (phase === "videotrend" && typeof entry.structures === "number") {
-    return `Found ${entry.structures} winning structure${entry.structures === 1 ? "" : "s"}`;
+    const thin =
+      entry.lowConfidence === true ||
+      (typeof entry.evidenceCount === "number" && entry.evidenceCount < 3);
+    const base = `Found ${entry.structures} winning structure${entry.structures === 1 ? "" : "s"}`;
+    return thin ? `${base} (thin evidence — add Sources for stronger patterns)` : base;
   }
   if (phase === "videos" && typeof entry.count === "number") {
     return `Rendered ${entry.count} video${entry.count === 1 ? "" : "s"}`;

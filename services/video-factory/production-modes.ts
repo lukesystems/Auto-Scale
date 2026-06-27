@@ -31,6 +31,7 @@ export function resolveProductionMode(videoType: VideoType): ProductionMode {
     founder_pov: "founder_pov",
     objection: "fast_slides",
     comparison: "fast_slides",
+    carousel: "fast_slides",
   };
   return map[videoType] ?? "fast_slides";
 }

@@ -185,6 +185,8 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
 interface MetricSummary {
   hasSignal: boolean;
   views: number;
+  saves: number | null;
+  save_rate: number | null;
   completionRate: number | null;
   link_clicks: number;
   pixel_signups: number;
@@ -217,6 +219,8 @@ async function aggregateMetrics(
   const latestMetric = metricRows?.[0];
 
   const views = latestSnapshot?.views ?? latestMetric?.views ?? 0;
+  const saves = latestSnapshot?.saves ?? latestMetric?.saves ?? null;
+  const saveRate = views > 0 && saves != null ? saves / views : null;
   const completionRate =
     latestMetric?.completion_rate ??
     (latestSnapshot?.watch_time_seconds != null && views > 0
@@ -247,8 +251,10 @@ async function aggregateMetrics(
   const allSignups = Math.max(manualSignups, ownedSignups);
 
   return {
-    hasSignal: views > 0 || totalClicks > 0 || allSignups > 0,
+    hasSignal: views > 0 || totalClicks > 0 || allSignups > 0 || (saves ?? 0) > 0,
     views,
+    saves,
+    save_rate: saveRate,
     completionRate,
     link_clicks: Math.max(latestMetric?.link_clicks ?? 0, totalClicks),
     pixel_signups: ownedSignups,
@@ -274,9 +280,36 @@ async function classifyOne(input: {
   if (summary.signups >= thresholds.winnerSignupThreshold || summary.paid_users >= 1) {
     return {
       classification: "winner",
-      diagnosis: `Generated ${summary.signups} signups${summary.paid_users ? ` and ${summary.paid_users} paid users` : ""} from ${summary.views || "unknown"} views. Compound.`,
+      diagnosis: `Generated ${summary.signups} signups${summary.paid_users ? ` and ${summary.paid_users} paid users` : ""} from ${summary.views || "unknown"} views.${summary.save_rate != null ? ` Save rate ${(summary.save_rate * 100).toFixed(1)}%.` : ""} Compound.`,
       next_action: "variant",
       confidence: 0.85,
+    };
+  }
+
+  if (
+    summary.save_rate !== null &&
+    summary.save_rate >= thresholds.strongSaveRateThreshold &&
+    summary.views >= thresholds.flatViewsThreshold
+  ) {
+    return {
+      classification: "promising",
+      diagnosis: `Save rate ${(summary.save_rate * 100).toFixed(1)}% (${summary.saves ?? 0} saves / ${summary.views} views) — strong conversion-intent signal. Tighten CTA to capture signups.`,
+      next_action: "rewrite_cta",
+      confidence: 0.8,
+    };
+  }
+
+  if (
+    summary.save_rate !== null &&
+    summary.save_rate >= thresholds.promisingSaveRateThreshold &&
+    summary.views >= thresholds.flatViewsThreshold &&
+    summary.signups === 0
+  ) {
+    return {
+      classification: "promising",
+      diagnosis: `Save rate ${(summary.save_rate * 100).toFixed(1)}% meets the 2%+ intent threshold with ${summary.views} views — audience is saving but not clicking yet.`,
+      next_action: "rewrite_cta",
+      confidence: 0.74,
     };
   }
 
