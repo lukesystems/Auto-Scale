@@ -3,7 +3,15 @@ import net from "node:net";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_REDIRECTS = 3;
-const REQUEST_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 25_000;
+const FETCH_RETRY_STATUSES = new Set([429, 503]);
+const FETCH_MAX_ATTEMPTS = 4;
+const DEFAULT_FETCH_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 
 export interface SafeFetchResult {
   url: string;
@@ -132,11 +140,6 @@ function decodeHtml(value: string): string {
 }
 
 async function readLimitedText(response: Response): Promise<string> {
-  const declaredLength = Number(response.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_BODY_BYTES) {
-    throw new Error("Content exceeds maximum size limit (1MB).");
-  }
-
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -146,15 +149,34 @@ async function readLimitedText(response: Response): Promise<string> {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    bytesRead += value.byteLength;
-    if (bytesRead > MAX_BODY_BYTES) {
+
+    const nextBytesRead = bytesRead + value.byteLength;
+    if (nextBytesRead > MAX_BODY_BYTES) {
+      const allowed = MAX_BODY_BYTES - bytesRead;
+      if (allowed > 0) {
+        output += decoder.decode(value.subarray(0, allowed), { stream: true });
+      }
       await reader.cancel();
-      throw new Error("Content body exceeds maximum size limit (1MB).");
+      break;
     }
+
+    bytesRead = nextBytesRead;
     output += decoder.decode(value, { stream: true });
   }
 
   return output + decoder.decode();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchOnce(current: URL): Promise<Response> {
+  return fetch(current, {
+    redirect: "manual",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: DEFAULT_FETCH_HEADERS,
+  });
 }
 
 async function fetchWithValidatedRedirects(initialUrl: URL): Promise<{ response: Response; finalUrl: URL }> {
@@ -168,14 +190,7 @@ async function fetchWithValidatedRedirects(initialUrl: URL): Promise<{ response:
       throw new Error(`SSRF prevention rejected hostname "${current.hostname}".`);
     }
 
-    const response = await fetch(current, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      headers: {
-        "User-Agent": "AutoScale/1.0 (+https://autoscale.local)",
-        Accept: "text/html,application/xhtml+xml;q=0.9",
-      },
-    });
+    const response = await fetchWithRetry(current);
 
     if (response.status < 300 || response.status >= 400) {
       return { response, finalUrl: current };
@@ -188,6 +203,25 @@ async function fetchWithValidatedRedirects(initialUrl: URL): Promise<{ response:
   }
 
   throw new Error("Source exceeded the redirect limit.");
+}
+
+async function fetchWithRetry(current: URL): Promise<Response> {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt < FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const response = await fetchOnce(current);
+    lastResponse = response;
+
+    if (!FETCH_RETRY_STATUSES.has(response.status) || attempt === FETCH_MAX_ATTEMPTS - 1) {
+      return response;
+    }
+
+    const retryAfter = Number(response.headers.get("retry-after") ?? 0);
+    const delayMs = retryAfter > 0 ? retryAfter * 1000 : [2000, 5000, 10000][attempt] ?? 10000;
+    await sleep(delayMs);
+  }
+
+  return lastResponse!;
 }
 
 export async function safeFetchUrl(urlStr: string): Promise<SafeFetchResult> {

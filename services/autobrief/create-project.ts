@@ -9,6 +9,7 @@ export interface CreateProjectFromAutoBriefInput {
   brief: AutoBrief;
   providerMode: ProviderMode;
   projectId?: string;
+  touchUserSettings?: boolean;
 }
 
 export interface CreateProjectFromAutoBriefResult {
@@ -134,17 +135,19 @@ export async function createProjectFromAutoBrief(
     );
   }
 
-  await supabase
-    .from("user_settings")
-    .upsert(
-      {
-        owner_id: input.userId,
-        provider_mode: input.providerMode,
-        onboarding_completed: true,
-        default_project_id: projectId,
-      },
-      { onConflict: "owner_id" }
-    );
+  if (input.touchUserSettings !== false) {
+    await supabase
+      .from("user_settings")
+      .upsert(
+        {
+          owner_id: input.userId,
+          provider_mode: input.providerMode,
+          onboarding_completed: true,
+          default_project_id: projectId,
+        },
+        { onConflict: "owner_id" }
+      );
+  }
 
   return { projectId, productBriefId: savedBrief.id };
 }
