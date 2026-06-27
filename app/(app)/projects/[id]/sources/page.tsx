@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Brain, ExternalLink, Network } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
+import { NextMoveBanner } from "@/components/app/next-move-banner";
+import { getNextMove } from "@/lib/next-move";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -10,20 +12,28 @@ import { AddCompetitorForm } from "./add-competitor-form";
 import { DeleteSourceButton } from "./delete-source-button";
 import { DiscoverSourcesButton } from "./discover-sources-button";
 import { CandidateReviewButtons } from "./candidate-review-buttons";
-import { getProductBrief } from "../queries";
+import { isBriefComplete } from "@/lib/brief-completeness";
+import { getProductBrief, getProjectStats } from "../queries";
 
 interface PageProps { params: { id: string } }
 
 export const metadata = { title: "Sources" };
 
 export default async function SourcesPage({ params }: PageProps) {
-  const [competitors, competitorAccounts, sources, candidates, brief] = await Promise.all([
+  const [competitors, competitorAccounts, sources, candidates, brief, stats] = await Promise.all([
     loadCompetitors(params.id),
     loadCompetitorAccounts(params.id),
     loadSources(params.id),
     loadCandidates(params.id),
     getProductBrief(params.id),
+    getProjectStats(params.id),
   ]);
+
+  const next = getNextMove({
+    projectId: params.id,
+    briefComplete: isBriefComplete(brief),
+    stats,
+  });
 
   const accountsByCompetitor = new Map<string, typeof competitorAccounts>();
   for (const account of competitorAccounts) {
@@ -40,7 +50,7 @@ export default async function SourcesPage({ params }: PageProps) {
         description="Add the URLs, accounts, and posts TrendWatch should learn from. The richer the input, the sharper the analysis."
         actions={
           <div className="flex items-center gap-2">
-            <DiscoverSourcesButton projectId={params.id} hasBrief={Boolean(brief)} />
+            <DiscoverSourcesButton projectId={params.id} briefComplete={isBriefComplete(brief)} />
             <Button asChild>
               <Link href={`/projects/${params.id}/trendwatch`}>
                 <Brain className="h-4 w-4" /> Run TrendWatch
@@ -49,6 +59,8 @@ export default async function SourcesPage({ params }: PageProps) {
           </div>
         }
       />
+
+      <NextMoveBanner move={next} />
 
       <div className="grid lg:grid-cols-[1fr_2fr] gap-6">
         <div className="space-y-4">
@@ -230,6 +242,9 @@ export default async function SourcesPage({ params }: PageProps) {
                   icon={<Network className="h-5 w-5" />}
                   title="No source posts yet"
                   description="TrendWatch can still run on the niche alone, but signal is much sharper with concrete examples."
+                  action={
+                    <DiscoverSourcesButton projectId={params.id} briefComplete={isBriefComplete(brief)} />
+                  }
                 />
               ) : (
                 sources.map((s) => (

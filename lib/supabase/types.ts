@@ -83,6 +83,7 @@ export interface Database {
           onboarding_completed: boolean;
           preferred_llm_mode: string | null;
           default_project_id: string | null;
+          crawl_mode: "llm" | "heuristic";
           created_at: string;
           updated_at: string;
         };
@@ -222,6 +223,71 @@ export interface Database {
           project_id: string;
         };
         Update: Partial<Database["public"]["Tables"]["trendwatch_runs"]["Row"]>;
+        Relationships: [];
+      };
+
+      trendhop_runs: {
+        Row: {
+          id: string;
+          project_id: string;
+          status: "pending" | "running" | "success" | "failed";
+          trigger: "manual" | "scheduled";
+          started_at: string | null;
+          completed_at: string | null;
+          error: string | null;
+          item_count: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["trendhop_runs"]["Row"]> & {
+          project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trendhop_runs"]["Row"]>;
+        Relationships: [];
+      };
+
+      trendhop_items: {
+        Row: {
+          id: string;
+          run_id: string;
+          project_id: string;
+          platform: string;
+          trend_name: string;
+          why_hot: string | null;
+          references: Json;
+          product_angle: string | null;
+          suggested_hook: string | null;
+          suggested_concept: string | null;
+          recency_score: number | null;
+          confidence: number | null;
+          dismissed_at: string | null;
+          promoted_video_concept_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["trendhop_items"]["Row"]> & {
+          run_id: string;
+          project_id: string;
+          platform: string;
+          trend_name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trendhop_items"]["Row"]>;
+        Relationships: [];
+      };
+
+      trendwatch_schedules: {
+        Row: {
+          id: string;
+          project_id: string;
+          cadence_days: number;
+          next_run_at: string | null;
+          enabled: boolean;
+          last_run_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["trendwatch_schedules"]["Row"]> & {
+          project_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trendwatch_schedules"]["Row"]>;
         Relationships: [];
       };
 
@@ -1017,6 +1083,10 @@ export interface Database {
           run_cooldown_hours: number;
           max_active_runs: number;
           onboarding_completed: boolean;
+          winner_signup_threshold: number;
+          weak_completion_threshold: number;
+          weak_click_rate_threshold: number;
+          flat_views_threshold: number;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -1129,6 +1199,7 @@ export interface Database {
           notes: string | null;
           parent_run_id: string | null;
           distribution_mode: "postiz" | "export_only";
+          batch_kind: "exploration" | "exploitation";
           started_at: string | null;
           completed_at: string | null;
           created_at: string;
@@ -1375,7 +1446,7 @@ export interface Database {
       video_concepts: {
         Row: {
           id: string;
-          growth_run_id: string;
+          growth_run_id: string | null;
           project_id: string;
           video_type:
             | "slide" | "demo" | "founder_pov" | "pain_led"
@@ -1392,12 +1463,13 @@ export interface Database {
             | "founder_pov" | "reference_remix" | "ugc_presenter_later" | null;
           source_pattern_id: string | null;
           evidence_video_ids: Json;
+          trendhop_item_id: string | null;
+          queued_for_next_run: boolean;
           status: "draft" | "scripted" | "approved" | "killed";
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["video_concepts"]["Row"]> & {
-          growth_run_id: string;
           project_id: string;
           video_type: Database["public"]["Tables"]["video_concepts"]["Row"]["video_type"];
           platform: "tiktok" | "instagram" | "youtube";
@@ -1771,6 +1843,37 @@ export interface Database {
         Relationships: [];
       };
 
+      metrics_snapshots: {
+        Row: {
+          id: string;
+          project_id: string;
+          schedule_item_id: string | null;
+          video_id: string | null;
+          growth_experiment_result_id: string | null;
+          remote_post_id: string | null;
+          platform: string;
+          source: "postbridge" | "manual" | "tiktok" | "instagram" | "youtube";
+          fetched_at: string;
+          views: number | null;
+          likes: number | null;
+          comments: number | null;
+          shares: number | null;
+          saves: number | null;
+          watch_time_seconds: number | null;
+          impressions: number | null;
+          engagement_rate: number | null;
+          raw: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["metrics_snapshots"]["Row"]> & {
+          project_id: string;
+          platform: string;
+          source: Database["public"]["Tables"]["metrics_snapshots"]["Row"]["source"];
+        };
+        Update: Partial<Database["public"]["Tables"]["metrics_snapshots"]["Row"]>;
+        Relationships: [];
+      };
+
       growth_experiment_results: {
         Row: {
           id: string;
@@ -1778,8 +1881,7 @@ export interface Database {
           growth_run_id: string;
           video_id: string;
           classification:
-            | "winner" | "weak_hook" | "weak_cta" | "wrong_audience"
-            | "message_mismatch" | "loser" | "inconclusive";
+            | "winner" | "promising" | "flat" | "kill";
           diagnosis: string | null;
           metric_summary: Json;
           next_action:
@@ -1788,6 +1890,7 @@ export interface Database {
           confidence: number;
           controlled_experiment_id: string | null;
           format_fingerprint_id: string | null;
+          latest_metrics_snapshot_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["growth_experiment_results"]["Row"]> & {

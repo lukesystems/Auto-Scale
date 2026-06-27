@@ -142,7 +142,7 @@ export async function runAutopilotTick(opts: {
         .from("growth_runs")
         .update({ status: "live", phase: "live" })
         .eq("id", latestRun.id);
-      actions.push(`scheduled ${schedule.scheduledCount} posts via Postiz`);
+      actions.push(`scheduled ${schedule.scheduledCount} posts remotely`);
       await logAutopilotDecision({
         projectId: opts.projectId,
         growthRunId: latestRun.id,
@@ -161,7 +161,23 @@ export async function runAutopilotTick(opts: {
     growthRunId: latestRun.id,
   });
   if (sync.updated > 0) {
-    actions.push(`synced ${sync.updated} Postiz post status(es)`);
+    actions.push(`synced ${sync.updated} remote post status(es)`);
+  }
+
+  try {
+    const { ingestMetricsForProject } = await import("@/services/metrics-ingestion/run-ingestion");
+    const metrics = await ingestMetricsForProject(opts.projectId, {
+      ownerId: opts.ownerId,
+      sinceDays: 30,
+    });
+    if (metrics.ingested > 0) {
+      actions.push(`ingested metrics for ${metrics.ingested} posted item(s)`);
+    }
+  } catch (err) {
+    console.warn(
+      "[autopilot] metrics ingestion failed:",
+      err instanceof Error ? err.message : String(err)
+    );
   }
 
   return { actions };

@@ -8,6 +8,7 @@ export interface UserSettingsRow {
   onboarding_completed: boolean;
   preferred_llm_mode: string | null;
   default_project_id: string | null;
+  crawl_mode?: "llm" | "heuristic";
 }
 
 const DEFAULT_MODE: ProviderMode =
@@ -40,7 +41,7 @@ export async function getUserSettings(userId: string): Promise<UserSettingsRow |
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
     .from("user_settings")
-    .select("provider_mode, onboarding_completed, preferred_llm_mode, default_project_id")
+    .select("provider_mode, onboarding_completed, preferred_llm_mode, default_project_id, crawl_mode")
     .eq("owner_id", userId)
     .maybeSingle();
 
@@ -58,6 +59,7 @@ export async function getUserSettings(userId: string): Promise<UserSettingsRow |
     onboarding_completed: Boolean(data.onboarding_completed),
     preferred_llm_mode: data.preferred_llm_mode,
     default_project_id: data.default_project_id,
+    crawl_mode: data.crawl_mode === "heuristic" ? "heuristic" : "llm",
   };
 }
 

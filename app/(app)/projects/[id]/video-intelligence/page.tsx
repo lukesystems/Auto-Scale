@@ -1,9 +1,13 @@
-import { ExternalLink, Video } from "lucide-react";
+import { Video } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, PageHeader } from "@/components/app/page-header";
+import { NextMoveBanner } from "@/components/app/next-move-banner";
+import { getNextMove } from "@/lib/next-move";
+import { VideoEvidenceArticle } from "@/components/evidence/video-evidence-article";
+import { isBriefComplete } from "@/lib/brief-completeness";
+import { getProductBrief, getProjectStats } from "../queries";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProductBrief } from "../queries";
 import { VideoControls } from "./video-controls";
 
 interface PageProps { params: { id: string } }
@@ -11,7 +15,16 @@ interface PageProps { params: { id: string } }
 export const metadata = { title: "Video intelligence" };
 
 export default async function VideoIntelligencePage({ params }: PageProps) {
-  const [brief, evidence] = await Promise.all([getProductBrief(params.id), loadEvidence(params.id)]);
+  const [brief, evidence, stats] = await Promise.all([
+    getProductBrief(params.id),
+    loadEvidence(params.id),
+    getProjectStats(params.id),
+  ]);
+  const next = getNextMove({
+    projectId: params.id,
+    briefComplete: isBriefComplete(brief),
+    stats,
+  });
   const groups = ["tiktok", "instagram", "youtube", "other"].map((platform) => ({
     platform,
     items: evidence.filter((item) => item.platform === platform),
@@ -24,8 +37,10 @@ export default async function VideoIntelligencePage({ params }: PageProps) {
         description="Collect public TikTok, Instagram Reels, and YouTube Shorts evidence before AutoScale mines repeatable distribution patterns."
       />
 
+      <NextMoveBanner move={next} />
+
       <section className="rounded-xl border border-border bg-card p-5 md:p-6">
-        <VideoControls projectId={params.id} hasBrief={Boolean(brief)} />
+        <VideoControls projectId={params.id} briefComplete={isBriefComplete(brief)} />
         <p className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
           AutoScale only uses public video evidence. Metrics may be unavailable when platforms hide them or pages cannot be fetched.
         </p>
@@ -35,7 +50,15 @@ export default async function VideoIntelligencePage({ params }: PageProps) {
         <EmptyState
           icon={<Video className="h-5 w-5" />}
           title="No public video evidence yet"
-          description="Paste a known video or creator profile above, or run discovery from your saved Product Brief. Failed public fetches are kept honest—unknown fields remain empty."
+          description="Paste a known video or creator profile above, or run discovery from your saved Product Brief."
+          action={
+            <a
+              href="#video-import"
+              className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Import a reference video
+            </a>
+          }
         />
       ) : (
         <div className="space-y-8">
@@ -47,37 +70,7 @@ export default async function VideoIntelligencePage({ params }: PageProps) {
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
                 {group.items.map((item) => (
-                  <article key={item.id} className="rounded-xl border border-border bg-card p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="capitalize">{item.platform}</Badge>
-                        <Badge variant={item.fetch_status === "success" ? "success" : item.fetch_status === "failed" ? "destructive" : "secondary"}>
-                          {item.fetch_status}
-                        </Badge>
-                        <Badge variant="outline">{Math.round(Number(item.source_confidence) * 100)}% confidence</Badge>
-                      </div>
-                      <a href={item.video_url} target="_blank" rel="noreferrer" aria-label="Open public source" className="text-muted-foreground transition-colors hover:text-foreground">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </div>
-
-                    <h3 className="mt-4 font-medium leading-snug">{item.title || item.caption || "Public source metadata unavailable"}</h3>
-                    {item.title && item.caption && <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{item.caption}</p>}
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>{item.account_handle ? `@${item.account_handle}` : "Account unknown"}</span>
-                      {item.competitor_name && <span>Competitor: {item.competitor_name}</span>}
-                      {item.view_count != null && <span>{formatMetric(item.view_count)} views</span>}
-                      {item.like_count != null && <span>{formatMetric(item.like_count)} likes</span>}
-                      {item.comment_count != null && <span>{formatMetric(item.comment_count)} comments</span>}
-                      {item.share_count != null && <span>{formatMetric(item.share_count)} shares</span>}
-                    </div>
-
-                    <dl className="mt-4 grid gap-3 border-t border-border pt-4 text-sm sm:grid-cols-3">
-                      <EvidenceField label="Hook" value={item.detected_hook} />
-                      <EvidenceField label="CTA" value={item.detected_cta} />
-                      <EvidenceField label="Format" value={item.format_guess === "unknown" ? null : item.format_guess.replace(/_/g, " ")} />
-                    </dl>
-                  </article>
+                  <VideoEvidenceArticle key={item.id} projectId={params.id} item={item} />
                 ))}
               </div>
             </section>
@@ -86,14 +79,6 @@ export default async function VideoIntelligencePage({ params }: PageProps) {
       )}
     </div>
   );
-}
-
-function EvidenceField({ label, value }: { label: string; value: string | null }) {
-  return <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt><dd className="mt-1 line-clamp-3 capitalize">{value ?? "Unknown"}</dd></div>;
-}
-
-function formatMetric(value: number) {
-  return new Intl.NumberFormat("en", { notation: value >= 1_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
 }
 
 async function loadEvidence(projectId: string) {

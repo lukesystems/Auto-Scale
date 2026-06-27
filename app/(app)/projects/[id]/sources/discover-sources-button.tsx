@@ -9,10 +9,10 @@ import { Button } from "@/components/ui/button";
 
 export function DiscoverSourcesButton({
   projectId,
-  hasBrief,
+  briefComplete,
 }: {
   projectId: string;
-  hasBrief: boolean;
+  briefComplete: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -57,12 +57,18 @@ export function DiscoverSourcesButton({
         type="button"
         variant="secondary"
         onClick={onDiscover}
-        disabled={anyPending || !hasBrief}
+        disabled={anyPending || !briefComplete}
+        title={!briefComplete ? "Complete your Product Brief (summary, target customer, primary pain) first" : undefined}
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
         Discover sources
       </Button>
-      <Button type="button" onClick={onDeepResearch} disabled={anyPending || !hasBrief}>
+      <Button
+        type="button"
+        onClick={onDeepResearch}
+        disabled={anyPending || !briefComplete}
+        title={!briefComplete ? "Complete your Product Brief (summary, target customer, primary pain) first" : undefined}
+      >
         {deepPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
         Deep research
       </Button>

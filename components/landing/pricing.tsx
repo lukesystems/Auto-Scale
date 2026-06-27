@@ -4,34 +4,32 @@ import { Button } from "@/components/ui/button";
 
 const PLANS = [
   {
-    name: "Starter",
+    name: "Launch",
     price: 49,
-    tagline: "For solo founders shipping their first growth loop.",
+    tagline: "For solo founders shipping their first Growth Run.",
     features: [
       "1 project",
-      "1 TrendWatch run / month",
-      "30 trend-backed hooks / month",
-      "10 short-form videos / month",
-      "Basic Postiz scheduling",
-      "Manual metrics tracker",
-      "ZIP / CSV / JSON export",
+      "2 Growth Runs / month",
+      "5–8 videos per batch",
+      "TrendWatch refresh weekly",
+      "Postiz scheduling (1 account / platform)",
+      "ZIP / CSV export fallback",
     ],
-    cta: "Start with Starter",
+    cta: "Start with Launch",
     highlight: false,
   },
   {
     name: "Growth",
     price: 149,
-    tagline: "For serious founders running weekly experiments.",
+    tagline: "For founders compounding winners weekly.",
     features: [
       "3 projects",
-      "4 TrendWatch runs / month",
-      "120 trend-backed hooks / month",
-      "40 short-form videos / month",
-      "Full Postiz scheduling",
-      "Winner-to-variants engine",
-      "Competitor tracking",
-      "Experiment tracker",
+      "6 Growth Runs / month",
+      "8–10 videos per batch",
+      "TrendWatch refresh every 3 days",
+      "Variant batches from winners",
+      "Multi-account Postiz scheduling",
+      "Per-video Growth Graph",
     ],
     cta: "Choose Growth",
     highlight: true,
@@ -39,16 +37,15 @@ const PLANS = [
   {
     name: "Operator",
     price: 399,
-    tagline: "For startups and teams running multi-channel programs.",
+    tagline: "For teams running multi-product distribution.",
     features: [
       "10 projects",
-      "Weekly TrendWatch",
-      "300 short-form videos / month",
-      "Multi-channel workflow",
-      "Advanced variant engine",
-      "Learning memory",
-      "Weekly growth plan",
-      "Priority generation",
+      "Unlimited Growth Runs",
+      "10+ videos per batch",
+      "Daily TrendWatch refresh",
+      "Advanced variant engine + learning memory",
+      "Priority video generation",
+      "Weekly growth plan + concierge onboarding",
     ],
     cta: "Go Operator",
     highlight: false,
@@ -64,12 +61,12 @@ export function Pricing() {
             Pricing
           </div>
           <h2 className="mt-4 font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
-            Cheaper than a part-time marketer.
+            Cheaper than a part-time creator.
             <br />
-            <span className="text-muted-foreground">Smarter than an agency retainer.</span>
+            <span className="text-muted-foreground">Faster than learning TikTok yourself.</span>
           </h2>
           <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance">
-            Start with Starter while you learn the loop. Move up when winners start compounding.
+            Start with one Growth Run. Move up when the loop starts compounding.
           </p>
         </div>
 
@@ -121,7 +118,7 @@ export function Pricing() {
         </div>
 
         <p className="mt-10 text-center text-xs text-muted-foreground">
-          14-day money back. Cancel anytime. Concierge onboarding available for $499 setup.
+          14-day money back. Cancel anytime. Plan limits scale per Growth Run, not per post.
         </p>
       </div>
     </section>

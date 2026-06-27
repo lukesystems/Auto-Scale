@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { discoverVideoEvidenceAction, importVideoUrlsAction } from "./actions";
 
-export function VideoControls({ projectId, hasBrief }: { projectId: string; hasBrief: boolean }) {
+export function VideoControls({ projectId, briefComplete }: { projectId: string; briefComplete: boolean }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [importPending, startImport] = useTransition();
@@ -56,7 +56,12 @@ export function VideoControls({ projectId, hasBrief }: { projectId: string; hasB
           Add public evidence
         </Button>
       </form>
-      <Button type="button" onClick={discover} disabled={pending || !hasBrief} title={!hasBrief ? "Save a Product Brief first" : undefined}>
+      <Button
+        type="button"
+        onClick={discover}
+        disabled={pending || !briefComplete}
+        title={!briefComplete ? "Complete your Product Brief (summary, target customer, primary pain) first" : undefined}
+      >
         {discoveryPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
         Discover public video evidence
       </Button>

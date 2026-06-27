@@ -9,11 +9,17 @@ import {
 } from "../actions";
 import { ProductionWorkspace, type ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
 import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
+import {
+  mapScheduleItemStatusToState,
+  ScheduleStatusBadge,
+  type PublishingProviderLabel,
+} from "@/components/schedule-status-badge";
 import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
 import { requireUser } from "@/lib/supabase/server";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { getPublishingProviderLabel } from "@/services/social-publishing";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -50,6 +56,8 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     .eq("project_id", projectId)
     .maybeSingle();
   if (!run) notFound();
+
+  const publishingProviderLabel = getPublishingProviderLabel() as PublishingProviderLabel;
 
   const [
     trendReport,
@@ -147,7 +155,26 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       .eq("project_id", projectId),
   ]);
 
-  const sceneRows = sceneRes.data ?? [];
+  const scheduleItemIds = (scheduleRes.data ?? []).map((s) => s.id);
+  const { data: metricsSnapshotRows } = scheduleItemIds.length
+    ? await supabase
+        .from("metrics_snapshots")
+        .select("schedule_item_id, source, fetched_at")
+        .in("schedule_item_id", scheduleItemIds)
+        .order("fetched_at", { ascending: false })
+    : { data: [] as Array<{ schedule_item_id: string | null; source: string; fetched_at: string }> };
+
+  const latestMetricsBySchedule = new Map<
+    string,
+    { source: string; fetchedAt: string }
+  >();
+  for (const row of metricsSnapshotRows ?? []) {
+    if (!row.schedule_item_id || latestMetricsBySchedule.has(row.schedule_item_id)) continue;
+    latestMetricsBySchedule.set(row.schedule_item_id, {
+      source: row.source,
+      fetchedAt: row.fetched_at,
+    });
+  }
 
   const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
   const boardByConcept = new Map((storyboards ?? []).map((b) => [b.concept_id, b]));
@@ -179,6 +206,7 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     (experimentsRes.data ?? []).map((e) => [e.format_fingerprint_id, e])
   );
   const fpById = new Map((fingerprintsRes.data ?? []).map((f) => [f.id, f]));
+  const sceneRows = sceneRes.data ?? [];
 
   const workspaceVideos: ProductionWorkspaceVideo[] = (videosRes.data ?? []).map((v) => {
     const concept = v.concept_id ? conceptsById.get(v.concept_id) : null;
@@ -371,17 +399,20 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           projectId={projectId}
           growthRunId={runId}
           scheduleAction={scheduleRunAction}
+          providerLabel={publishingProviderLabel}
         />
       ) : allApproved && run.status === "awaiting_approval" ? (
         <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="growthRunId" value={runId} />
-          <p className="mb-3">All videos approved. Push to Postiz across connected accounts:</p>
+          <p className="mb-3">
+            All videos approved. Push to {publishingProviderLabel} across connected accounts:
+          </p>
           <button
             type="submit"
             className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
           >
-            Schedule via Postiz
+            Schedule via {publishingProviderLabel}
           </button>
         </form>
       ) : null}
@@ -389,7 +420,8 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       {videosWithConcept.length > 0 ? (
         <section className="rounded-lg border bg-card p-4 text-sm">
           <p className="mb-3 text-muted-foreground">
-            Postiz unavailable or you prefer manual posting? Download schedule CSV, captions, and media URLs.
+            {publishingProviderLabel} unavailable or you prefer manual posting? Download schedule CSV, captions, and
+            media URLs.
           </p>
           <a
             href={`/api/projects/${projectId}/growth/${runId}/export`}
@@ -404,6 +436,8 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         projectId={projectId}
         runId={runId}
         items={scheduleRes.data ?? []}
+        latestMetricsBySchedule={latestMetricsBySchedule}
+        providerLabel={publishingProviderLabel}
       />
 
       <CompoundPanel
@@ -725,14 +759,49 @@ function countItems(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
+function formatRelativeTime(iso: string): string {
+  const deltaMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.round(deltaMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function MetricsSyncBadge({
+  metrics,
+}: {
+  metrics?: { source: string; fetchedAt: string };
+}) {
+  if (!metrics) return null;
+  const label =
+    metrics.source === "postbridge"
+      ? "Auto-synced via Post Bridge"
+      : metrics.source === "manual"
+        ? "Manual entry"
+        : `Synced (${metrics.source})`;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+      <span className="rounded-full border px-2 py-0.5">{label}</span>
+      <span>Last synced: {formatRelativeTime(metrics.fetchedAt)}</span>
+    </div>
+  );
+}
+
 function SchedulePanel({
   projectId,
   runId,
   items,
+  latestMetricsBySchedule,
+  providerLabel,
 }: {
   projectId: string;
   runId: string;
   items: Array<{ id: string; video_id: string; platform: string; status: string; scheduled_for: string; posted_url: string | null; postiz_post_id: string | null; failure_reason: string | null }>;
+  latestMetricsBySchedule: Map<string, { source: string; fetchedAt: string }>;
+  providerLabel: PublishingProviderLabel;
 }) {
   if (!items.length) return null;
   return (
@@ -742,16 +811,30 @@ function SchedulePanel({
         {items.map((it) => (
           <li key={it.id} className="py-3 space-y-2">
             <div className="flex justify-between gap-4">
-              <div>
-                <div className="font-medium">{it.platform} · {it.status}</div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{it.platform}</span>
+                  <ScheduleStatusBadge
+                    state={mapScheduleItemStatusToState(it.status)}
+                    providerLabel={providerLabel}
+                    detail={
+                      it.status === "failed" && it.failure_reason
+                        ? it.failure_reason
+                        : it.posted_url
+                          ? "live"
+                          : null
+                    }
+                  />
+                </div>
                 <div className="text-muted-foreground">
                   scheduled {new Date(it.scheduled_for).toLocaleString()}
                   {it.posted_url ? ` · live: ${it.posted_url}` : null}
-                  {it.postiz_post_id ? ` · postiz:${it.postiz_post_id}` : null}
+                  {it.postiz_post_id ? ` · remote:${it.postiz_post_id}` : null}
                 </div>
-                {it.failure_reason ? (
+                {it.failure_reason && it.status === "failed" ? (
                   <div className="text-red-600 dark:text-red-300">{it.failure_reason}</div>
                 ) : null}
+                <MetricsSyncBadge metrics={latestMetricsBySchedule.get(it.id)} />
               </div>
             </div>
             <form

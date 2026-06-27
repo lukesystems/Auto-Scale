@@ -15,6 +15,7 @@ export interface ManagedProviderConfig {
     configured: boolean;
   };
   postBridge: {
+    apiUrl: string | null;
     apiKey: string | null;
     configured: boolean;
   };
@@ -40,7 +41,7 @@ export interface ManagedProviderConfig {
 export class ProviderSetupError extends Error {
   constructor(
     message: string,
-    public readonly code: "openrouter_missing" | "postiz_missing" | "fal_missing"
+    public readonly code: "openrouter_missing" | "postiz_missing" | "postbridge_missing" | "fal_missing"
   ) {
     super(message);
     this.name = "ProviderSetupError";
@@ -61,6 +62,7 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
   const openrouterKey = readEnv("OPENROUTER_API_KEY");
   const postizUrl = readEnv("POSTIZ_API_URL");
   const postizKey = readEnv("POSTIZ_API_KEY");
+  const postBridgeUrl = readEnv("POST_BRIDGE_API_URL");
   const postBridgeKey = readEnv("POST_BRIDGE_API_KEY");
   const falKey = readEnv("FAL_KEY");
 
@@ -77,6 +79,7 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
       configured: Boolean(postizUrl && postizKey),
     },
     postBridge: {
+      apiUrl: postBridgeUrl,
       apiKey: postBridgeKey,
       configured: Boolean(postBridgeKey),
     },
@@ -127,12 +130,25 @@ export function getManagedPostizCredentials(): { apiUrl: string; apiKey: string 
   return { apiUrl: config.postiz.apiUrl, apiKey: config.postiz.apiKey };
 }
 
-export function getManagedPostBridgeCredentials(): { apiKey: string } | null {
+export function assertManagedPostBridgeConfigured(): void {
+  const config = getManagedProviderConfig();
+  if (!config.postBridge.configured) {
+    throw new ProviderSetupError(
+      "Managed Post Bridge is not configured. Set POST_BRIDGE_API_KEY on the server.",
+      "postbridge_missing"
+    );
+  }
+}
+
+export function getManagedPostBridgeCredentials(): { apiKey: string; apiUrl?: string } | null {
   const config = getManagedProviderConfig();
   if (!config.postBridge.configured || !config.postBridge.apiKey) {
     return null;
   }
-  return { apiKey: config.postBridge.apiKey };
+  return {
+    apiKey: config.postBridge.apiKey,
+    apiUrl: config.postBridge.apiUrl ?? undefined,
+  };
 }
 
 export function getManagedOpenRouterCredentials(): { apiKey: string; baseUrl: string } | null {

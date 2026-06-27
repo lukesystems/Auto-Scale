@@ -170,17 +170,16 @@ describe("trend receipt confidence downgrade", () => {
 describe("compound action decision", () => {
   function compoundAction(classification: string, nextAction: string) {
     if (classification === "winner") return "scale";
-    if (classification === "loser" || nextAction === "kill") return "kill";
-    if (["weak_hook", "weak_cta", "message_mismatch"].includes(classification)) return "iterate";
-    if (classification === "inconclusive") return "inconclusive";
+    if (classification === "kill" || nextAction === "kill") return "kill";
+    if (["promising", "flat"].includes(classification)) return "iterate";
     return null;
   }
 
   it("maps classifications to compound actions", () => {
     expect(compoundAction("winner", "variant")).toBe("scale");
-    expect(compoundAction("loser", "kill")).toBe("kill");
-    expect(compoundAction("weak_hook", "rewrite_hook")).toBe("iterate");
-    expect(compoundAction("inconclusive", "review")).toBe("inconclusive");
+    expect(compoundAction("kill", "kill")).toBe("kill");
+    expect(compoundAction("flat", "rewrite_hook")).toBe("iterate");
+    expect(compoundAction("promising", "review")).toBe("iterate");
   });
 });
 
@@ -212,7 +211,13 @@ describe("verify report formatter", () => {
       projectId: "proj-1",
       passed: false,
       failedStep: 9,
-      environment: { supabase: true, ffmpeg: true, postiz: false },
+      environment: {
+        supabase: true,
+        ffmpeg: true,
+        postiz: false,
+        publishing: false,
+        publishingProvider: "postiz",
+      },
       steps: [
         {
           step: 9,

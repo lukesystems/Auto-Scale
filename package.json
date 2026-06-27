@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "verify:growth-run": "tsx scripts/verify-growth-run.ts",
-    "smoke:postiz": "vitest run __tests__/postiz-video.smoke.test.ts"
+    "smoke:postiz": "vitest run __tests__/postiz-video.smoke.test.ts",
+    "smoke:postbridge": "vitest run __tests__/postbridge-video.smoke.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

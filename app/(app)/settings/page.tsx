@@ -17,6 +17,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 import { isManagedMode } from "@/lib/provider-mode";
+import { CrawlModeToggle } from "./crawl-mode-toggle";
 
 
 
@@ -31,6 +32,7 @@ export default async function SettingsPage() {
   const active = getDefaultProvider();
 
   let mode = "managed" as "managed" | "byok";
+  let crawlMode: "llm" | "heuristic" = "llm";
 
 
 
@@ -47,6 +49,13 @@ export default async function SettingsPage() {
     if (user) {
 
       mode = await getProviderModeForUser(user.id);
+
+      const { data } = await supabase
+        .from("user_settings")
+        .select("crawl_mode")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+      crawlMode = data?.crawl_mode === "heuristic" ? "heuristic" : "llm";
 
     }
 
@@ -103,6 +112,26 @@ export default async function SettingsPage() {
             </Button>
 
           </div>
+
+        </div>
+
+      </section>
+
+
+
+      <section className="rounded-xl border border-border bg-card p-6">
+
+        <h3 className="font-semibold tracking-tight">Product crawl mode</h3>
+
+        <p className="mt-1 text-sm text-muted-foreground">
+
+          Controls how AutoBrief reads your product website on re-fetch. LLM crawl extracts structured facts; heuristic mode is faster but shallower.
+
+        </p>
+
+        <div className="mt-4">
+
+          <CrawlModeToggle currentMode={crawlMode} />
 
         </div>
 

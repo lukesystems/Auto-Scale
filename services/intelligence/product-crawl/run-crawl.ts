@@ -2,10 +2,14 @@ import type { Json } from "@/lib/supabase/types";
 import type { CrawlAdapterName, ProductCrawlResult, ProductPageType, ProductSiteFact } from "../types";
 import { discoverPages, prioritizePageUrls } from "./discover-pages";
 import { extractPage } from "./extract-page";
-import { classifyAndExtractFacts } from "./extract-facts";
+import { classifyAndExtractFactsAsync } from "./extract-facts";
+import { getCrawlModeForProject } from "./get-crawl-mode";
+import { summarizeLlmFacts } from "./llm-facts-mapper";
 import { saveProductCrawl } from "../memory/save-product-crawl";
 import { saveProductPage } from "../memory/save-product-page";
 import { saveProductFacts } from "../memory/save-product-facts";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 const DEFAULT_MAX_PAGES = 25;
 const MIN_TOTAL_TEXT = 300;
@@ -88,12 +92,29 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
   const allPages = [homepage, ...extraPages];
   for (const page of allPages) adaptersUsed.add(page.adapterUsed);
 
-  const classified = classifyAndExtractFacts(allPages, normalizedUrl);
+  const crawlMode = await getCrawlModeForProject(input.projectId);
+  let ownerId: string | undefined;
+  if (isSupabaseConfigured() && persist) {
+    const supabase = createSupabaseServerClient();
+    const { data: project } = await supabase
+      .from("projects")
+      .select("owner_id")
+      .eq("id", input.projectId)
+      .maybeSingle();
+    ownerId = project?.owner_id ?? undefined;
+  }
+
+  const classified = await classifyAndExtractFactsAsync(allPages, normalizedUrl, {
+    crawlMode,
+    projectId: input.projectId,
+    ownerId,
+  });
   const facts = classified.flatMap((item) => item.facts);
   const pagesCrawled = allPages.filter((page) => page.fetchStatus === "success").length;
   const pagesFailed = allPages.length - pagesCrawled;
 
   const textSnippet = buildTextSnippet(classified);
+  const llmFactsSummary = crawlMode === "llm" ? summarizeLlmFacts(classified) : null;
   const ok = textSnippet.length >= MIN_TOTAL_TEXT;
 
   if (persist && crawlId) {
@@ -147,6 +168,8 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
     title: homepageItem?.page.title ?? null,
     description: homepageItem?.page.description ?? null,
     textSnippet: ok ? textSnippet : null,
+    llmFactsSummary: ok ? llmFactsSummary : null,
+    crawlMode,
     pages: allPages,
     facts,
     pagesDiscovered,

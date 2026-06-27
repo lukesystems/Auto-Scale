@@ -4,303 +4,147 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { runTrendWatchAnalysis } from "@/services/trendwatch/generate";
-import {
-  aggregateRunConfidence,
-  enrichSourceFromUrl,
-  scoreSourceRecord,
-  toTrendWatchSourceInput,
-  type EnrichedSource,
-  type FetchStatus,
-  type SourceRecord,
-} from "@/services/trendwatch/enrich-sources";
-import type { DistortionRisk, SourcePlatform } from "@/lib/supabase/types";
-import { logAIRun } from "@/services/ai/logger";
-import { classifySource } from "@/services/trendwatch/classify-source";
+import { runTrendHop } from "@/services/trendhop/run";
 
-const RunSchema = z.object({ project_id: z.string().uuid() });
+const ProjectIdSchema = z.string().uuid();
 
-export type RunTrendWatchResult =
-  | { ok: true; runId: string; insightCount: number }
+export type ActionResult<T = unknown> =
+  | { ok: true; data?: T }
   | { ok: false; error: string };
 
-async function enrichProjectSources(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
-  projectId: string,
-  runId: string
-): Promise<EnrichedSource[]> {
-  const { data: rawSources } = await supabase
-    .from("trendwatch_sources")
-    .select(
-      "id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes, fetch_status, fetched_text"
-    )
-    .eq("project_id", projectId);
+export async function runTrendHopAction(formData: FormData): Promise<void> {
+  const parsed = ProjectIdSchema.safeParse(formData.get("projectId"));
+  if (!parsed.success) return;
 
-  const enriched: EnrichedSource[] = [];
-
-  for (const row of rawSources ?? []) {
-    const source = row as SourceRecord;
-    const patch = await enrichSourceFromUrl(source);
-    const classification = await classifySource({ ...source, fetched_text: patch.fetched_text });
-    const rescored = scoreSourceRecord(
-      {
-        ...source,
-        fetched_text: patch.fetched_text,
-        transferability_score: classification.transferability_score,
-      },
-      patch.fetch_status === "success",
-      typeof patch.fetch_metadata.error === "string" ? patch.fetch_metadata.error : null
-    );
-
-    const sourceUpdate = {
-      run_id: runId,
-      fetch_status: patch.fetch_status,
-      fetched_text: patch.fetched_text,
-      fetch_metadata: patch.fetch_metadata,
-      signal_score: rescored.score.signalScore,
-      confidence_score: rescored.score.confidenceScore,
-      scoring_reasons: rescored.score.reasons,
-      distortion_risk: classification.distortion_risk,
-      account_type: classification.account_type,
-      format: classification.format,
-      hook: classification.hook,
-      angle: classification.angle,
-      visual_pattern: classification.visual_pattern,
-      cta_pattern: classification.cta_pattern,
-      audience_pain: classification.audience_pain,
-      why_it_worked: classification.why_it_worked,
-      how_to_adapt: classification.how_to_adapt,
-      transferability_score: classification.transferability_score,
-      platform: patch.platform ?? (source.platform as SourcePlatform),
-    };
-
-    await supabase.from("trendwatch_sources").update(sourceUpdate as never).eq("id", source.id);
-
-    enriched.push({
-      ...source,
-      ...patch,
-      ...classification,
-      signal_score: rescored.score.signalScore,
-      confidence_score: rescored.score.confidenceScore,
-      scoring_reasons: rescored.score.reasons,
-      fetch_metadata: patch.fetch_metadata,
-    });
-  }
-
-  return enriched;
+  await runTrendHop({ projectId: parsed.data, trigger: "manual" });
+  revalidatePath(`/projects/${parsed.data}/trendwatch`);
+  revalidatePath(`/projects/${parsed.data}`);
 }
 
-export async function runTrendWatchAction(formData: FormData): Promise<RunTrendWatchResult> {
-  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
-  const parsed = RunSchema.safeParse({ project_id: formData.get("project_id") });
-  if (!parsed.success) return { ok: false, error: "Missing project_id." };
+const ScheduleSchema = z.object({
+  projectId: z.string().uuid(),
+  cadenceDays: z.coerce.number().int().min(1).max(90),
+  enabled: z.coerce.boolean().optional().default(true),
+});
+
+export async function upsertTrendHopScheduleAction(formData: FormData): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+
+  const parsed = ScheduleSchema.safeParse({
+    projectId: formData.get("projectId"),
+    cadenceDays: formData.get("cadenceDays"),
+    enabled: formData.get("enabled") ?? true,
+  });
+  if (!parsed.success) return;
 
   const supabase = createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
+  const next = new Date();
+  next.setUTCDate(next.getUTCDate() + parsed.data.cadenceDays);
 
-  const projectId = parsed.data.project_id;
+  await supabase
+    .from("trendwatch_schedules")
+    .upsert(
+      {
+        project_id: parsed.data.projectId,
+        cadence_days: parsed.data.cadenceDays,
+        enabled: parsed.data.enabled,
+        next_run_at: next.toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "project_id" }
+    );
+  revalidatePath(`/projects/${parsed.data.projectId}/trendwatch`);
+}
 
-  const [{ data: project }, { data: brief }, { data: competitors }] = await Promise.all([
-    supabase.from("projects").select("name, niche").eq("id", projectId).maybeSingle(),
-    supabase
-      .from("product_briefs")
-      .select("product_summary, target_customer, primary_pain")
-      .eq("project_id", projectId)
-      .maybeSingle(),
-    supabase.from("competitors").select("name").eq("project_id", projectId),
-  ]);
+const DismissSchema = z.object({ itemId: z.string().uuid(), projectId: z.string().uuid() });
 
-  if (!project) return { ok: false, error: "Project not found." };
+export async function dismissTrendHopAction(formData: FormData): Promise<void> {
+  if (!isSupabaseConfigured()) return;
 
-  const { data: run, error: runError } = await supabase
-    .from("trendwatch_runs")
-    .insert({ project_id: projectId, status: "running" })
+  const parsed = DismissSchema.safeParse({
+    itemId: formData.get("itemId"),
+    projectId: formData.get("projectId"),
+  });
+  if (!parsed.success) return;
+
+  const supabase = createSupabaseServerClient();
+  await supabase
+    .from("trendhop_items")
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq("id", parsed.data.itemId)
+    .eq("project_id", parsed.data.projectId);
+
+  revalidatePath(`/projects/${parsed.data.projectId}/trendwatch`);
+}
+
+const SendToGrowthSchema = z.object({
+  itemId: z.string().uuid(),
+  projectId: z.string().uuid(),
+});
+
+/**
+ * Promote a trend hop into a queued video_concept for the next Growth Run.
+ */
+export async function sendTrendHopToGrowthAction(formData: FormData): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const parsed = SendToGrowthSchema.safeParse({
+    itemId: formData.get("itemId"),
+    projectId: formData.get("projectId"),
+  });
+  if (!parsed.success) return;
+
+  const supabase = createSupabaseServerClient();
+  const { data: item } = await supabase
+    .from("trendhop_items")
+    .select("id, platform, trend_name, suggested_hook, suggested_concept, product_angle, promoted_video_concept_id")
+    .eq("id", parsed.data.itemId)
+    .eq("project_id", parsed.data.projectId)
+    .maybeSingle();
+
+  if (!item || item.promoted_video_concept_id) return;
+
+  const platform = normalizePlatform(item.platform);
+  const hook = item.suggested_hook?.trim() || item.trend_name || "Trend hop hook";
+  const angle = item.product_angle?.trim() || item.suggested_concept?.trim() || null;
+
+  const { data: concept, error } = await supabase
+    .from("video_concepts")
+    .insert({
+      project_id: parsed.data.projectId,
+      growth_run_id: null,
+      video_type: "trend_remix",
+      platform,
+      target_length_seconds: 22,
+      hook,
+      angle,
+      promise: item.suggested_concept,
+      cta: null,
+      hypothesis: `Trend hop: ${item.suggested_concept ?? item.product_angle ?? "organic trend remix"}`,
+      trendhop_item_id: item.id,
+      queued_for_next_run: true,
+      status: "draft",
+    })
     .select("id")
     .single();
-  if (runError || !run) return { ok: false, error: runError?.message ?? "Failed to create run." };
 
-  try {
-    const enrichedSources = await enrichProjectSources(supabase, projectId, run.id);
-    const runConfidence = aggregateRunConfidence(enrichedSources);
-
-    const result = await runTrendWatchAnalysis({
-      projectName: project.name,
-      niche: project.niche ?? undefined,
-      productSummary: brief?.product_summary ?? undefined,
-      targetCustomer: brief?.target_customer ?? undefined,
-      primaryPain: brief?.primary_pain ?? undefined,
-      competitors: (competitors ?? []).map((c) => c.name),
-      sources: enrichedSources.map(toTrendWatchSourceInput),
-      runConfidence,
-    });
-
-    await logAIRun({
-      ownerId: user.id,
-      projectId,
-      kind: "trendwatch_analysis",
-      provider: result.provider,
-      model: result.model,
-      input: { project: project.name, source_count: enrichedSources.length },
-      rawOutput: result.raw,
-      parsedOutput: result.analysis,
-      status: "success",
-      latencyMs: result.latencyMs,
-    });
-
-    const insightRows: Array<{
-      project_id: string;
-      run_id: string;
-      insight: string;
-      format: string | null;
-      hook_pattern: string | null;
-      angle: string | null;
-      signal_score: number;
-      confidence_score: number;
-      scoring_reasons: string[];
-      recommended_experiment: string | null;
-      source_id: string | null;
-    }> = [];
-
-    const baseConfidence = runConfidence.confidence;
-    const baseReasons = runConfidence.reasons;
-    const anchorSource = [...enrichedSources].sort((a, b) => b.confidence_score - a.confidence_score)[0] ?? null;
-
-    for (const fmt of result.analysis.winning_formats ?? []) {
-      const scored = scoreSourceRecord(
-        {
-          id: "synthetic",
-          source_url: null,
-          platform: "other",
-          account_handle: null,
-          account_type: "unknown",
-          follower_count: null,
-          views: null,
-          likes: null,
-          saves: null,
-          shares: null,
-          comments: null,
-          transferability_score: 0.7,
-          notes: fmt.reason,
-        },
-        enrichedSources.some((s) => s.fetch_status === "success"),
-        enrichedSources.length === 0 ? "No sources ingested" : null
-      );
-      insightRows.push({
-        project_id: projectId,
-        run_id: run.id,
-        insight: `Winning format: ${fmt.format}. ${fmt.reason}`,
-        format: fmt.format,
-        hook_pattern: null,
-        angle: null,
-        signal_score: scored.score.signalScore,
-        confidence_score: Math.min(baseConfidence, scored.score.confidenceScore),
-        scoring_reasons: [...baseReasons, ...scored.score.reasons],
-        recommended_experiment: null,
-        source_id: anchorSource?.id ?? null,
-      });
-    }
-
-    for (const hook of result.analysis.hook_opportunities ?? []) {
-      const scored = scoreSourceRecord(
-        {
-          id: "synthetic",
-          source_url: null,
-          platform: "other",
-          account_handle: null,
-          account_type: "unknown",
-          follower_count: null,
-          views: null,
-          likes: null,
-          saves: null,
-          shares: null,
-          comments: null,
-          transferability_score: null,
-          notes: hook,
-        },
-        enrichedSources.some((s) => s.fetch_status === "success"),
-        enrichedSources.length === 0 ? "No sources ingested" : null
-      );
-      insightRows.push({
-        project_id: projectId,
-        run_id: run.id,
-        insight: `Hook opportunity: ${hook}`,
-        format: null,
-        hook_pattern: hook,
-        angle: null,
-        signal_score: scored.score.signalScore,
-        confidence_score: Math.min(baseConfidence, scored.score.confidenceScore),
-        scoring_reasons: [...baseReasons, ...scored.score.reasons],
-        recommended_experiment: null,
-        source_id: anchorSource?.id ?? null,
-      });
-    }
-
-    for (const exp of result.analysis.recommended_experiments ?? []) {
-      insightRows.push({
-        project_id: projectId,
-        run_id: run.id,
-        insight: `Recommended experiment: ${exp}`,
-        format: null,
-        hook_pattern: null,
-        angle: null,
-        signal_score: baseConfidence > 0 ? baseConfidence * 0.6 : 0.3,
-        confidence_score: baseConfidence,
-        scoring_reasons: baseReasons,
-        recommended_experiment: exp,
-        source_id: anchorSource?.id ?? null,
-      });
-    }
-
-    if (insightRows.length) {
-      await supabase.from("trendwatch_insights").insert(
-        insightRows.map((row) => ({
-          ...row,
-          scoring_reasons: row.scoring_reasons as never,
-        }))
-      );
-    }
-
-    const notes =
-      enrichedSources.length === 0
-        ? `${result.analysis.niche_summary}\n\n[LOW CONFIDENCE: No sources — output is unverified.]`
-        : runConfidence.confidence < 0.5
-          ? `${result.analysis.niche_summary}\n\n[LOW CONFIDENCE: ${runConfidence.reasons.join(" ")}]`
-          : result.analysis.niche_summary;
-
-    await supabase
-      .from("trendwatch_runs")
-      .update({
-        status: "success",
-        completed_at: new Date().toISOString(),
-        source_count: enrichedSources.length,
-        insight_count: insightRows.length,
-        notes,
-      })
-      .eq("id", run.id);
-
-    revalidatePath(`/projects/${projectId}/trendwatch`);
-    revalidatePath(`/projects/${projectId}/sources`);
-    revalidatePath(`/projects/${projectId}`);
-    return { ok: true, runId: run.id, insightCount: insightRows.length };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "TrendWatch failed.";
-    await supabase
-      .from("trendwatch_runs")
-      .update({ status: "failed", notes: message, completed_at: new Date().toISOString() })
-      .eq("id", run.id);
-    await logAIRun({
-      ownerId: user.id,
-      projectId,
-      kind: "trendwatch_analysis",
-      provider: "unknown",
-      model: "unknown",
-      input: { project: project.name },
-      status: "failed",
-      errorMessage: message,
-    });
-    return { ok: false, error: message };
+  if (error || !concept) {
+    console.warn("[trendhop] send to growth failed", error?.message);
+    return;
   }
+
+  await supabase
+    .from("trendhop_items")
+    .update({ promoted_video_concept_id: concept.id })
+    .eq("id", parsed.data.itemId)
+    .eq("project_id", parsed.data.projectId);
+
+  revalidatePath(`/projects/${parsed.data.projectId}/trendwatch`);
+  revalidatePath(`/projects/${parsed.data.projectId}/growth`);
+}
+
+function normalizePlatform(raw: string): "tiktok" | "instagram" | "youtube" {
+  const p = raw.toLowerCase();
+  if (p.includes("instagram") || p.includes("reels")) return "instagram";
+  if (p.includes("youtube") || p.includes("short")) return "youtube";
+  return "tiktok";
 }

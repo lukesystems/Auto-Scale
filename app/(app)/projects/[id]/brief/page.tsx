@@ -1,5 +1,8 @@
 import { PageHeader } from "@/components/app/page-header";
-import { getProductBrief, getProjectOr404 } from "../queries";
+import { NextMoveBanner } from "@/components/app/next-move-banner";
+import { getNextMove } from "@/lib/next-move";
+import { getProductBrief, getProjectOr404, getProjectStats } from "../queries";
+import { isBriefComplete } from "@/lib/brief-completeness";
 import { BriefForm } from "./brief-form";
 import type { BriefCompetitorEntry } from "@/services/intelligence/memory/merge-brief-competitors";
 
@@ -69,10 +72,17 @@ function MarketIntelligencePanel({ entries }: { entries: BriefCompetitorEntry[] 
 }
 
 export default async function BriefPage({ params }: PageProps) {
-  const [project, brief] = await Promise.all([
+  const [project, brief, stats] = await Promise.all([
     getProjectOr404(params.id),
     getProductBrief(params.id),
+    getProjectStats(params.id),
   ]);
+
+  const next = getNextMove({
+    projectId: params.id,
+    briefComplete: isBriefComplete(brief),
+    stats,
+  });
 
   return (
     <div className="container py-10 max-w-4xl space-y-8">
@@ -80,6 +90,8 @@ export default async function BriefPage({ params }: PageProps) {
         title="Product brief"
         description={`Sharpens TrendWatch and Content Conveyor for ${project.name}. Use AI to seed it, then refine.`}
       />
+
+      <NextMoveBanner move={next} />
 
       <MarketIntelligencePanel entries={parseCompetitorEntries(brief?.likely_competitors)} />
 

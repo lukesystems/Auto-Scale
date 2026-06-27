@@ -23,6 +23,8 @@ export interface CreateGrowthRunInput {
 
 export async function createGrowthRun(input: CreateGrowthRunInput) {
   const supabase = input.client ?? createSupabaseServerClient();
+  const batchKind = await resolveBatchKind(supabase, input.projectId);
+
   const { data, error } = await supabase
     .from("growth_runs")
     .insert({
@@ -35,6 +37,7 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
       brand_constraints: (input.brandConstraints ?? {}) as never,
       distribution_mode: input.distributionMode ?? "postiz",
       parent_run_id: input.parentRunId ?? null,
+      batch_kind: batchKind,
       status: "pending",
       phase: "brief",
       started_at: new Date().toISOString(),
@@ -43,6 +46,33 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
     .single();
   if (error) throw new Error(`growth_runs insert failed: ${error.message}`);
   return data!;
+}
+
+async function resolveBatchKind(
+  supabase: SupabaseClientType,
+  projectId: string
+): Promise<"exploration" | "exploitation"> {
+  const { count: priorRuns } = await supabase
+    .from("growth_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+
+  if ((priorRuns ?? 0) === 0) return "exploration";
+
+  const { count: winnerResults } = await supabase
+    .from("growth_experiment_results")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("classification", "winner");
+
+  if ((winnerResults ?? 0) > 0) return "exploitation";
+
+  const { count: legacyWinners } = await supabase
+    .from("winners")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+
+  return (legacyWinners ?? 0) > 0 ? "exploitation" : "exploration";
 }
 
 export async function setPhase(

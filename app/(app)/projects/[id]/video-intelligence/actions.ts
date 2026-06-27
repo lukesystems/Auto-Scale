@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { briefCompletenessError, isBriefComplete } from "@/lib/brief-completeness";
+import { getProductBrief } from "../queries";
 import { discoverVideoEvidence } from "@/services/intelligence/video/discover-video-evidence";
 import { importManualVideoEvidence, parseManualVideoUrls } from "@/services/intelligence/video/manual-video-import";
 
@@ -40,6 +42,11 @@ export async function discoverVideoEvidenceAction(projectId: string): Promise<Vi
   const supabase = createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  const brief = await getProductBrief(project.data);
+  if (!isBriefComplete(brief)) {
+    return { ok: false, error: briefCompletenessError() };
+  }
 
   try {
     const result = await discoverVideoEvidence(project.data);

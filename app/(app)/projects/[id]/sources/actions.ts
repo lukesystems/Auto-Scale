@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { briefCompletenessError, isBriefComplete } from "@/lib/brief-completeness";
+import { getProductBrief } from "../queries";
 import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
@@ -34,6 +36,14 @@ const SourceSchema = z.object({
 });
 
 export type SourceActionResult = { ok: true } | { ok: false; error: string };
+
+async function assertBriefReadyForDiscovery(projectId: string): Promise<SourceActionResult | null> {
+  const brief = await getProductBrief(projectId);
+  if (!isBriefComplete(brief)) {
+    return { ok: false, error: briefCompletenessError() };
+  }
+  return null;
+}
 
 export async function addSourceAction(formData: FormData): Promise<SourceActionResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
@@ -163,6 +173,9 @@ export async function runDiscoveryAction(projectId: string): Promise<SourceActio
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  const briefGate = await assertBriefReadyForDiscovery(parsed.data);
+  if (briefGate) return briefGate;
+
   try {
     const result = await runDiscovery({ projectId: parsed.data, enrich: true });
 
@@ -204,6 +217,9 @@ export async function runDeepDiscoveryAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  const briefGate = await assertBriefReadyForDiscovery(parsed.data);
+  if (briefGate) return briefGate;
 
   try {
     const result = await runDeepDiscovery({ projectId: parsed.data });

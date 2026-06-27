@@ -6,13 +6,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
 import { getProviderModeForUser } from "@/lib/provider-mode";
+import { testPostBridgeConnection } from "@/services/postbridge/client";
 import { testPostizConnection } from "@/services/postiz/client";
 import {
   getPublishingNotConfiguredMessage,
   getPublishingProviderId,
   getPublishingProviderLabel,
   isRemotePublishingEnabled,
-  POSTBRIDGE_PROVIDER_STUB_REASON,
   resolvePublishingCredentials,
   syncOwnerPublishingChannels,
   testPublishingConnection,
@@ -94,8 +94,73 @@ export async function savePostizConnectionAction(formData: FormData): Promise<Re
   return { ok: true, message: "Postiz connection verified and saved." };
 }
 
-export async function savePostBridgeConnectionAction(_formData: FormData): Promise<Result> {
-  return { ok: false, error: POSTBRIDGE_PROVIDER_STUB_REASON };
+export async function savePostBridgeConnectionAction(formData: FormData): Promise<Result> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+  const parsed = PostBridgeSchema.safeParse({
+    api_key: formData.get("api_key") ?? undefined,
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? "Invalid input." };
+
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: existing } = await supabase
+    .from("postbridge_connections")
+    .select("api_key")
+    .eq("owner_id", user.id)
+    .maybeSingle();
+
+  const submittedKey =
+    parsed.data.api_key && parsed.data.api_key !== "**********" ? parsed.data.api_key : undefined;
+  let plainKey = submittedKey;
+  if (!plainKey && existing?.api_key) {
+    try {
+      plainKey = decryptSecret(existing.api_key);
+    } catch {
+      return { ok: false, error: "The existing Post Bridge key could not be decrypted. Enter it again." };
+    }
+  }
+
+  if (!plainKey) {
+    return { ok: false, error: "Post Bridge API key is required." };
+  }
+
+  if (!plainKey.startsWith("pb_live_")) {
+    return { ok: false, error: "Post Bridge API keys should start with pb_live_." };
+  }
+
+  const connectionTest = await testPostBridgeConnection({ apiKey: plainKey });
+  if (!connectionTest.ok) {
+    return { ok: false, error: connectionTest.error ?? "Post Bridge rejected the credentials." };
+  }
+
+  let storedKey: string;
+  try {
+    storedKey = encryptSecret(plainKey);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not encrypt the Post Bridge key.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("postbridge_connections")
+    .upsert(
+      {
+        owner_id: user.id,
+        api_key: storedKey,
+        status: "connected",
+      },
+      { onConflict: "owner_id" }
+    );
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/settings/postiz");
+  return { ok: true, message: "Post Bridge connection verified and saved." };
 }
 
 export async function testPostizConnectionAction(): Promise<Result> {

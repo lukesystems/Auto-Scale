@@ -84,7 +84,7 @@ export async function aggregateGrowthResults(projectId: string): Promise<GrowthR
       nextAction: r.next_action,
     }));
   const losers = results
-    .filter((r) => r.classification === "loser")
+    .filter((r) => r.classification === "kill")
     .map((r) => ({
       videoId: r.video_id,
       diagnosis: r.diagnosis ?? "",

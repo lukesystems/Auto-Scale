@@ -4,8 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, createSupabaseServerClient, requireUser } from "@/lib/supabase/server";
+import {
+  buildManualMetricsSnapshot,
+  persistMetricsSnapshot,
+} from "@/services/metrics-ingestion/persist";
 import { startGrowthRun } from "@/services/growth-run/orchestrator";
 import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
 import { runCompound } from "@/services/compound/classify";
@@ -233,22 +236,37 @@ export async function recordMetricsAction(formData: FormData) {
   await requireUser();
   const parsed = MetricSchema.parse(Object.fromEntries(formData.entries()));
   const supabase = createSupabaseServerClient();
-  const { error } = await supabase.from("video_run_metrics").insert({
-    project_id: parsed.projectId,
-    growth_run_id: parsed.growthRunId,
-    schedule_item_id: parsed.scheduleItemId,
-    video_id: parsed.videoId,
-    source: "manual",
-    views: parsed.views ?? null,
-    likes: parsed.likes ?? null,
-    comments: parsed.comments ?? null,
-    shares: parsed.shares ?? null,
-    saves: parsed.saves ?? null,
-    completion_rate: parsed.completionRate ?? null,
-    link_clicks: parsed.linkClicks ?? null,
-    signups: parsed.signups ?? null,
+
+  const { data: scheduleItem } = await supabase
+    .from("schedule_items")
+    .select("platform")
+    .eq("id", parsed.scheduleItemId)
+    .maybeSingle();
+
+  const snapshot = buildManualMetricsSnapshot({
+    views: parsed.views,
+    likes: parsed.likes,
+    comments: parsed.comments,
+    shares: parsed.shares,
+    saves: parsed.saves,
+    completionRate: parsed.completionRate,
+    linkClicks: parsed.linkClicks,
+    signups: parsed.signups,
   });
-  if (error) throw new Error(`metrics insert: ${error.message}`);
+
+  const admin = createSupabaseAdminClient();
+  await persistMetricsSnapshot(admin, {
+    projectId: parsed.projectId,
+    scheduleItemId: parsed.scheduleItemId,
+    videoId: parsed.videoId,
+    growthRunId: parsed.growthRunId,
+    platform: scheduleItem?.platform ?? "tiktok",
+    snapshot,
+    linkClicks: parsed.linkClicks ?? null,
+    signups: parsed.signups ?? null,
+    completionRate: parsed.completionRate ?? null,
+  });
+
   revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
 }
 

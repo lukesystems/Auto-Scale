@@ -202,15 +202,7 @@ export type Storyboard = z.infer<typeof StoryboardSchema>;
 // ------------------------------------------------------------------
 
 export const ExperimentClassificationSchema = z.object({
-  classification: z.enum([
-    "winner",
-    "weak_hook",
-    "weak_cta",
-    "wrong_audience",
-    "message_mismatch",
-    "loser",
-    "inconclusive",
-  ]),
+  classification: z.enum(["winner", "promising", "flat", "kill"]),
   diagnosis: z.string(),
   next_action: z.enum([
     "variant",

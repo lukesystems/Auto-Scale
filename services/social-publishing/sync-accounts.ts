@@ -36,7 +36,9 @@ export function getPublishingNotConfiguredMessage(
   }
 
   if (providerId === "postbridge") {
-    return "Post Bridge is not enabled yet. Switch to Postiz or export-only until the Post Bridge adapter is confirmed.";
+    return isManagedMode(providerMode)
+      ? "Post Bridge is not connected. Add POST_BRIDGE_API_KEY (managed) or connect Post Bridge in Settings (BYOK)."
+      : "Post Bridge is not connected. Connect Post Bridge in Settings (BYOK).";
   }
 
   return isManagedMode(providerMode)
@@ -51,9 +53,6 @@ export async function fetchPublishingAccounts(
   const providerId = getPublishingProviderId();
   if (providerId === "export_only") {
     throw new Error("Export-only mode does not sync remote publishing accounts.");
-  }
-  if (providerId === "postbridge") {
-    throw new Error(getPublishingNotConfiguredMessage(providerMode, providerId));
   }
 
   const credentials = await resolvePublishingCredentials(userId, providerMode);

@@ -50,9 +50,12 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
     publishingProvider === "export_only"
       ? true
       : publishingProvider === "postbridge"
-        ? false
+        ? postBridgeConfigured
         : postizConfigured;
-  const remoteEnabled = publishingProvider === "postiz" && postizConfigured;
+  const remoteEnabled =
+    publishingProvider === "postbridge"
+      ? postBridgeConfigured
+      : publishingProvider === "postiz" && postizConfigured;
 
   if (mode === "managed") {
     if (!config.openrouter.configured) {
@@ -65,9 +68,9 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
         "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
       );
     }
-    if (publishingProvider === "postbridge") {
+    if (publishingProvider === "postbridge" && !postBridgeConfigured) {
       warnings.push(
-        "Post Bridge adapter is stubbed. Scheduling queues locally until the Post Bridge integration is confirmed."
+        "Managed Post Bridge is not configured. Scheduling will queue locally until POST_BRIDGE_API_KEY is set."
       );
     }
   }
@@ -90,7 +93,7 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
     },
     postbridge: {
       configured: postBridgeConfigured,
-      enabled: false,
+      enabled: publishingProvider === "postbridge" && postBridgeConfigured,
     },
     fal: {
       configured: config.fal.configured,

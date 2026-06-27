@@ -1,11 +1,26 @@
-const CHAIN = [
-  "Product URL",
-  "Trend evidence",
-  "Video strategy",
-  "Video creation",
-  "Posting",
-  "Tracking",
-  "Winner variants",
+import { Globe2, TrendingUp, Video, Trophy } from "lucide-react";
+
+const STEPS = [
+  {
+    icon: Globe2,
+    title: "Paste your URL",
+    desc: "AutoScale's LLM crawl reads your site, features, audience, and pricing — then writes your product brief. No 30-question onboarding form.",
+  },
+  {
+    icon: TrendingUp,
+    title: "Trend hop on demand",
+    desc: "TrendWatch surfaces what's going viral on TikTok, Reels, and YouTube Shorts right now and proposes how to ride each trend with a video about your product. Run on click or on a 3 / 7 / 14-day schedule.",
+  },
+  {
+    icon: Video,
+    title: "Run your first batch",
+    desc: "Growth Run ships 5–10 short videos as an exploration batch. Schedules them, posts through Postiz, tracks performance from day one.",
+  },
+  {
+    icon: Trophy,
+    title: "Compound the winners",
+    desc: "Top performers are auto-classified and turned into variant batches. AutoScale keeps making more of what works, kills what doesn't, and learns your audience batch by batch.",
+  },
 ] as const;
 
 export function How() {
@@ -14,41 +29,39 @@ export function How() {
       <div className="container">
         <div className="grid items-start gap-12 lg:grid-cols-[1fr_1.35fr]">
           <div className="lg:sticky lg:top-32">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">The core mechanism</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">How it works</p>
             <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-balance md:text-5xl">
-              Most tools help you make videos. AutoScale helps you find what deserves to be made.
+              From your product URL to a compounding video pipeline — in four steps.
             </h2>
             <p className="mt-5 text-base leading-relaxed text-muted-foreground text-balance md:text-lg">
-              Generic AI video tools start with a prompt. AutoScale starts with your product URL and market evidence.
+              Most AI video tools start with a blank prompt. AutoScale starts with your product and today&apos;s trends —
+              and never loses the thread between evidence, video, and result.
             </p>
           </div>
 
-          <div className="space-y-6">
-            <ol className="overflow-hidden rounded-2xl border border-border bg-card">
-              {CHAIN.map((step, index) => (
-                <li key={step} className="flex items-center gap-4 border-b border-border px-5 py-4 last:border-b-0">
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-mono text-[10px] font-semibold text-primary">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-sm font-medium">{step}</span>
-                  {index < CHAIN.length - 1 ? <span className="ml-auto text-primary">→</span> : null}
-                </li>
-              ))}
-            </ol>
-
-            <div className="rounded-2xl border border-primary/30 bg-primary/[0.05] p-6 md:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">The psychological promise</p>
-              <p className="mt-4 text-sm text-muted-foreground">You will stop asking:</p>
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight">“What should I post?”</p>
-              <p className="mt-6 text-sm text-muted-foreground">And start seeing:</p>
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-primary">
-                “This format brings users. Make 10 more.”
-              </p>
-              <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-                That is the difference between generating videos and cracking distribution.
-              </p>
-            </div>
-          </div>
+          <ol className="space-y-4">
+            {STEPS.map((step, i) => (
+              <li
+                key={step.title}
+                className="group relative rounded-2xl border border-border bg-card p-6 transition-all hover:border-primary/40 md:p-7"
+              >
+                <div className="flex items-start gap-5">
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <step.icon className="h-4 w-4" />
+                    </span>
+                    <span className="font-mono text-[10px] font-semibold text-muted-foreground">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold tracking-tight">{step.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.desc}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </section>

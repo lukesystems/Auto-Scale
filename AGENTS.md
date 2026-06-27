@@ -25,6 +25,24 @@ Product URL
 → winner variants + learnings
 ```
 
+## Pivot note (current)
+
+The legacy text-loop (ideas → posts → approval → schedule → experiments → winners) is
+deprecated. **Growth Run is the sole loop.** Routes for ideas / content /
+approval / exports / schedule / experiments / legacy-winners now redirect to
+`/projects/[id]/growth`.
+
+**TrendWatch is now trend-hop, not text-insight.** The new TrendWatch surface
+(`/projects/[id]/trendwatch`) scans trending TikTok / YouTube Shorts /
+Instagram Reels content and proposes organic video concepts that hop on each
+trend to promote the product. It is **not** part of the autonomous Growth Run
+— it is on-demand + schedulable (3 / 7 / 14 days). See `services/trendhop/`
+and migration `0021_trendhop.sql`.
+
+The legacy `services/trendwatch/` text-insight pipeline still exists at the
+service level (it is referenced by deep discovery and pattern mining), but is
+no longer surfaced in the UI.
+
 ## Active build direction
 
 The current focus is the **Scraping Engine**.
@@ -54,7 +72,7 @@ Do not treat this as a generic scraper. It is a growth intelligence engine.
 - AI runtime with task-based model routing
 - Zod schema validation for every AI output
 - JSZip for export packs
-- Postiz integration for scheduling
+- Postiz / Post Bridge integration for scheduling
 - Safe source ingestion, classification, and confidence scoring
 
 ## Core Rule
@@ -68,8 +86,8 @@ source candidate
 → signal score
 → insight
 → hook
-→ content idea
-→ generated post
+→ concept
+→ generated post / video
 → scheduled/exported post
 → experiment
 → metric
@@ -85,12 +103,12 @@ Never generate disconnected content and never state competitor intelligence as f
 
 - AutoBrief / Product Brief Engine (`services/autobrief/`)
 - Scraping Engine / source discovery (`docs/SCRAPING_ENGINE.md`; implementation next)
-- TrendWatch (`services/trendwatch/`)
+- TrendWatch trend-hop (`services/trendhop/`)
 - Signal Scoring Engine (`services/trendwatch/scoring.ts`)
 - Source ingestion and classification (`services/trendwatch/ingestion.ts`, `services/trendwatch/classify-source.ts`)
 - Content Conveyor (`services/content-conveyor/`)
 - Quality Gate (`services/quality-gate/`)
-- Postiz client (`services/postiz/`)
+- Postiz / Post Bridge client (`services/postiz/`, `services/postbridge/`)
 - Export pack builder (`services/export/`)
 - Compound Engine (`services/compound/`)
 - AI runtime (`services/ai/`)
@@ -98,36 +116,36 @@ Never generate disconnected content and never state competitor intelligence as f
 ## What is built today
 
 1. Auth (sign up / in / out, protected routes, RLS)
-2. Project CRUD
-3. AutoBrief onboarding from a product URL
-4. Safe website fetch for AutoBrief
+2. Project CRUD with `/projects?new=1` modal (From URL + Manual)
+3. AutoBrief onboarding from a product URL, with skippable onboarding and "Re-fetch from URL"
+4. **LLM-driven product site crawl** wired into the live path (`services/intelligence/product-crawl/llm-extract.ts` → `run-crawl.ts` → `generate.ts`), with `user_settings.crawl_mode` (`llm` default | `heuristic`) and Settings UI toggle
 5. Product brief persistence as project source of truth
-6. Manual competitor/source input
-7. TrendWatch run over provided/enriched sources
-8. Source safe fetch, classification, confidence scoring, and distortion risk
-9. Hook generation + content idea generation
-10. Post draft generation
-11. Quality Gate before approval
-12. Approval queue
-13. Export pack
-14. Basic Postiz scheduling with manual export fallback
-15. Manual experiment tracker
-16. Winner marking → diagnosis + variants + learnings
-17. AI run debugger
-18. Settings shell with provider visibility
+6. Manual competitor/source input + discovery candidates
+7. Source safe fetch, classification, confidence scoring, and distortion risk
+8. Video Intelligence references + pattern mining
+9. Growth Run loop (Hub → Daily Pack → Graph → Winners) with pre-flight checklist; `growth_runs.batch_kind` (`exploration` | `exploitation`) set automatically from winner history
+10. **Compound classifier** taxonomy: winner / promising / flat / kill, driven by `metrics_snapshots` + per-project thresholds in `project_growth_settings`
+11. Exploitation runs seed concepts from `growth_experiment_results` winners; TrendHop promotions queue real `video_concepts` rows
+12. Standalone **TrendWatch trend-hop**: on-demand + schedulable, Send to Growth Run creates queued concepts
+13. Postiz / Post Bridge scheduling with manual export fallback and `ScheduleStatusBadge` (Posted / Queued / Exported)
+14. Sidebar navigation + **Run Center** (`/projects/[id]/runs`) with header status pill
+15. Evidence chain drawer on video evidence, TrendHop, and growth video cards
+16. `getNextMove` banner on Brief, Sources, Video Intelligence, Growth hub, Winners
+17. Metrics ingestion via Post Bridge API (`services/metrics-ingestion/`): cron at `/api/cron/metrics-ingestion` + `metrics_snapshots`; auto-creates `growth_experiment_results` on schedule
+18. TrendHop cron at `/api/cron/trendhop` (Vercel + Supabase pg_cron guide in `docs/SUPABASE_CRON_SETUP.md`)
+19. AI run debugger + provider visibility settings shell
 
 ## What is not built yet
 
 Do not falsely claim these exist until code exists:
 
-- autonomous web-wide competitor discovery
-- TikTok/X/LinkedIn/YouTube/Reddit adapter-backed source search
-- automatic social metric ingestion
-- browser automation
-- revenue attribution
-- website pixel
-- payment webhooks
-- full autonomous growth operator
+- direct TikTok / Meta / YouTube analytics APIs (stubs return unsupported; use Post Bridge)
+- adapter-backed TokAudit / Tokboard / Exolyt trend trackers (Exa-only today)
+- autonomous web-wide competitor discovery (partial adapters only)
+- automatic revenue attribution, website pixel, payment webhooks (pixel/signup/payment APIs exist but not full attribution loop)
+- full autonomous growth operator (autopilot can schedule; cannot auto-start runs without user session)
+- winner variant render worker (concepts queued; service-role render path incomplete)
+- lazy-loaded evidence chain drawer (v1 passes pre-resolved chains from server)
 
 ## Scraping Engine rules
 

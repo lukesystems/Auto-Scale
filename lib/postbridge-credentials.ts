@@ -9,6 +9,7 @@ import { decryptSecret } from "@/lib/secret-crypto";
 
 export interface PostBridgeCredentials {
   apiKey: string;
+  apiUrl?: string;
   source: "managed" | "byok";
 }
 

@@ -2,9 +2,21 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { startGrowthRunAction, syncPostizAccountsAction, importReferenceVideoAction } from "./actions";
+import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
+import {
+  GrowthPreflightChecklist,
+  preflightAllGreen,
+  type PreflightItem,
+} from "@/components/growth-preflight-checklist";
+import { isBriefComplete } from "@/lib/brief-completeness";
+import { ProviderReadinessChip } from "@/components/growth/provider-readiness-chip";
+import { NextMoveBanner } from "@/components/app/next-move-banner";
+import { getNextMove } from "@/lib/next-move";
+import { getProjectStats } from "../queries";
+import { loadGrowthRunFormDefaults } from "@/lib/growth-run-defaults";
 
 interface GrowthIndexProps {
   params: { id: string };
@@ -28,7 +40,8 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   }
 
   const supabase = createSupabaseServerClient();
-  const [runs, accounts, project] = await Promise.all([
+  const [runs, accounts, project, brief, sources, videoEvidence, stats, formDefaults] =
+    await Promise.all([
     supabase
       .from("growth_runs")
       .select("id, status, phase, trigger, created_at, started_at, completed_at, error")
@@ -37,10 +50,60 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       .limit(20),
     supabase.from("connected_accounts").select("id, platform, handle, status").eq("project_id", projectId),
     supabase.from("projects").select("name, product_url").eq("id", projectId).single(),
+    supabase.from("product_briefs").select("*").eq("project_id", projectId).maybeSingle(),
+    supabase.from("trendwatch_sources").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+    supabase.from("video_evidence").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+    getProjectStats(projectId),
+    loadGrowthRunFormDefaults(projectId),
   ]);
 
   const accountCount = accounts.data?.length ?? 0;
   const publishingLabel = getPublishingProviderLabel();
+  const ffmpegHealth = checkFfmpegHealth();
+
+  const briefOk = isBriefComplete(brief.data ?? null);
+  const sourceCount = sources.count ?? 0;
+  const videoEvidenceCount = videoEvidence.count ?? 0;
+
+  const preflight: PreflightItem[] = [
+    {
+      ok: briefOk,
+      label: "Product brief complete",
+      detail: briefOk ? null : "Brief needs ICP, primary pain, offer, and CTA.",
+      remediation: briefOk ? null : { label: "Open Brief", href: `/projects/${projectId}/brief` },
+    },
+    {
+      ok: sourceCount >= 3,
+      label: `Sources ≥ 3 (${sourceCount} saved)`,
+      detail: sourceCount >= 3 ? null : "Growth Run reasons over public source evidence.",
+      remediation: sourceCount >= 3 ? null : { label: "Add sources", href: `/projects/${projectId}/sources` },
+    },
+    {
+      ok: videoEvidenceCount >= 3,
+      label: `Video Intelligence references ≥ 3 (${videoEvidenceCount} saved)`,
+      detail: videoEvidenceCount >= 3 ? null : "Import reference videos so the loop has format evidence.",
+      remediation:
+        videoEvidenceCount >= 3
+          ? null
+          : { label: "Import references", href: `/projects/${projectId}/video-intelligence` },
+    },
+    {
+      ok: ffmpegHealth.available,
+      label: "FFmpeg available for rendering",
+      detail: ffmpegHealth.available ? null : ffmpegHealth.message ?? ffmpegHealth.fixHint ?? null,
+      remediation: ffmpegHealth.available
+        ? null
+        : { label: "Provider setup", href: `/settings/providers` },
+    },
+  ];
+
+  const allGreen = preflightAllGreen(preflight);
+  const briefComplete = isBriefComplete(brief.data ?? null);
+  const nextMove = getNextMove({
+    projectId,
+    briefComplete,
+    stats,
+  });
   const byPlatform = (accounts.data ?? []).reduce<Record<string, number>>((acc, a) => {
     acc[a.platform] = (acc[a.platform] ?? 0) + 1;
     return acc;
@@ -51,12 +114,15 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">Growth Runs</h1>
-          <Link
-            href={`/projects/${projectId}/growth/settings`}
-            className="text-xs rounded-md border px-3 py-1.5 hover:bg-muted"
-          >
-            Growth settings
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <ProviderReadinessChip projectId={projectId} />
+            <Link
+              href={`/projects/${projectId}/growth/settings`}
+              className="text-xs rounded-md border px-3 py-1.5 hover:bg-muted"
+            >
+              Growth settings
+            </Link>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Find the formats worth scaling for {project.data?.name ?? "this project"}, turn them into short-form video
@@ -84,6 +150,8 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           )}
         </div>
       </header>
+
+      <NextMoveBanner move={nextMove} />
 
       <GrowthLoop className="rounded-xl border bg-card/60 p-4" compact />
 
@@ -143,6 +211,9 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             AutoScale uses your saved product URL to find the formats worth testing and build a production plan.
           </p>
         </div>
+
+        <GrowthPreflightChecklist projectId={projectId} items={preflight} />
+
         <form action={startGrowthRunAction} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="projectId" value={projectId} />
 
@@ -163,7 +234,12 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             <div className="flex flex-wrap gap-2">
               {(["tiktok", "instagram", "youtube"] as const).map((p) => (
                 <label key={p} className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
-                  <input type="checkbox" name="targetPlatforms" value={p} defaultChecked />
+                  <input
+                    type="checkbox"
+                    name="targetPlatforms"
+                    value={p}
+                    defaultChecked={formDefaults.targetPlatforms.includes(p)}
+                  />
                   {p}
                 </label>
               ))}
@@ -176,7 +252,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </span>
             <select
               name="approvalMode"
-              defaultValue="manual"
+              defaultValue={formDefaults.approvalMode}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="manual">Manual (review each video)</option>
@@ -191,7 +267,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </span>
             <select
               name="postingAggressiveness"
-              defaultValue="balanced"
+              defaultValue={formDefaults.postingAggressiveness}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="conservative">Conservative (1/day per account)</option>
@@ -209,7 +285,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
               name="durationDays"
               min={1}
               max={60}
-              defaultValue={7}
+              defaultValue={formDefaults.durationDays}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
           </label>
@@ -223,7 +299,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
               name="formatHypothesisCount"
               min={1}
               max={2}
-              defaultValue={2}
+              defaultValue={formDefaults.formatHypothesisCount}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
             <span className="block text-[11px] text-muted-foreground">
@@ -235,7 +311,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           </details>
 
           <div className="sm:col-span-2">
-            <StartRunSubmit />
+            <StartRunSubmit disabled={!allGreen} />
             <p className="mt-2 text-xs text-muted-foreground">
               First runs stay in manual approval. AutoScale generates the trend report, strategy, concepts, scripts,
               storyboards, video assets, and captions before anything is scheduled.

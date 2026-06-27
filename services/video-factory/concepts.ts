@@ -36,7 +36,7 @@ export async function generateVideoConcepts(opts: {
   options: GrowthRunOptions;
 }): Promise<{ conceptIds: string[]; formatFingerprintIds: string[] }> {
   const supabase = createSupabaseServerClient();
-  const [brief, patterns, reportRow] = await Promise.all([
+  const [brief, patterns, reportRow, growthRun] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadVideoPatterns(opts.projectId),
     supabase
@@ -44,7 +44,54 @@ export async function generateVideoConcepts(opts: {
       .select("evidence_video_ids")
       .eq("growth_run_id", opts.growthRunId)
       .maybeSingle(),
+    supabase.from("growth_runs").select("batch_kind").eq("id", opts.growthRunId).single(),
   ]);
+
+  const batchKind = growthRun.data?.batch_kind ?? "exploration";
+  let winnerSeeds: Array<{ hook: string; platform: string; cta: string | null; video_type: string }> = [];
+
+  if (batchKind === "exploitation") {
+    const { data: winnerRows } = await supabase
+      .from("growth_experiment_results")
+      .select("video_id, classification, metric_summary")
+      .eq("project_id", opts.projectId)
+      .eq("classification", "winner")
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    const videoIds = (winnerRows ?? []).map((r) => r.video_id);
+    if (videoIds.length) {
+      const { data: winnerVideos } = await supabase
+        .from("videos")
+        .select("id, concept_id")
+        .in("id", videoIds);
+      const conceptIds = (winnerVideos ?? []).map((v) => v.concept_id).filter(Boolean) as string[];
+      if (conceptIds.length) {
+        const { data: concepts } = await supabase
+          .from("video_concepts")
+          .select("hook, platform, cta, video_type")
+          .in("id", conceptIds);
+        winnerSeeds = concepts ?? [];
+      }
+    }
+  }
+
+  // Adopt TrendHop / queued concepts for this run.
+  const { data: queued } = await supabase
+    .from("video_concepts")
+    .select("id")
+    .eq("project_id", opts.projectId)
+    .eq("queued_for_next_run", true)
+    .is("growth_run_id", null);
+  if (queued?.length) {
+    await supabase
+      .from("video_concepts")
+      .update({ growth_run_id: opts.growthRunId, queued_for_next_run: false })
+      .in(
+        "id",
+        queued.map((q) => q.id)
+      );
+  }
 
   const availableEvidenceIds = asStringArray(reportRow.data?.evidence_video_ids);
   const availablePatternIds = patterns.slice(0, 30).map((pattern) => pattern.id);
@@ -106,6 +153,14 @@ export async function generateVideoConcepts(opts: {
     "",
     "Strategy priority:",
     JSON.stringify({ platformPriority, typePriority }),
+    batchKind === "exploitation" && winnerSeeds.length
+      ? [
+          "",
+          "EXPLOITATION BATCH — seed from proven winners first:",
+          JSON.stringify(winnerSeeds),
+          "At least one format must remix a winning hook/format/CTA from the list above.",
+        ].join("\n")
+      : "",
     "",
     "The plan must include one audience pain, fixed body, fixed CTA, fixed audience, a 3-7 day evaluation window,",
     "and 1-2 format fingerprints with transferability, distortion risk, confidence, missing evidence, and three variants.",

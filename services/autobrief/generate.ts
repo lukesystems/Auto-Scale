@@ -30,11 +30,18 @@ export async function generateAutoBrief(input: AutoBriefGenerateInput): Promise<
 }> {
   const fetchBlock = input.siteFetch
     ? input.siteFetch.ok
-      ? `Website fetch: SUCCESS
+      ? `Website fetch: SUCCESS (${input.siteFetch.crawlMode ?? "llm"} crawl)
 Title: ${input.siteFetch.title ?? "(none)"}
 Description: ${input.siteFetch.description ?? "(none)"}
 Visible text snippet:
 ${input.siteFetch.textSnippet ?? "(none)"}
+
+${
+  input.siteFetch.llmFactsSummary
+    ? `LLM-extracted structured facts (aggregated across pages):
+${input.siteFetch.llmFactsSummary}`
+    : ""
+}
 
 Extracted pages:
 ${input.siteFetch.pages
