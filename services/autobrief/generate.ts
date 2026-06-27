@@ -69,22 +69,29 @@ Product URL: ${input.productUrl}
 ${fetchBlock}
 ${manualBlock}
 
-Produce:
+Produce a comprehensive founder intelligence brief — this powers the dashboard and first Growth Run.
+
+Required depth:
+- product_summary and what_it_does: 2-4 sentences each, concrete not generic
+- target_customer: specific ICP with role, stage, and context
+- user_pain_points: at least 4 distinct pains observed or inferred from site copy
+- key_features and key_benefits: at least 5 items each when evidence exists
+- suggested_competitors: at least 3 named competitors or alternatives with reason + confidence (never invent URLs)
+- suggested_sources: at least 3 public accounts, communities, or pages worth monitoring (platform + url when known + reason)
+- platform_recommendations: at least 3 platforms with specific reasons tied to this product
+- content_angles and content_pillars: at least 4 each, grounded in observed positioning
+- positioning_gaps: at least 2 gaps vs alternatives
+- extraction_notes: 4-8 bullet-style strings explaining your reasoning, what was observed vs inferred, and caveats
+- missing_information: honest gaps only
+
+Also include:
 - product_name, product_url, one_line_description, category, product_type
-- product_summary, what_it_does, target_customer, target_audience, primary_pain, user_pain_points, core_promise
-- key_features, key_benefits
-- offer, cta (nullable if unknown)
+- primary_pain, core_promise, offer, cta (nullable if unknown)
 - niche, alternative_solutions, market_category
-- positioning_angles (3-5), content_pillars (3-6), content_angles, brand_voice
-- platform_recommendations with platform + reason
-- cta_suggestions, founder_led_opportunities, positioning_gaps
+- positioning_angles, brand_voice, cta_suggestions, founder_led_opportunities
 - production_constraints booleans
-- suggested_competitors (name, optional url, reason, confidence 0-1)
-- suggested_sources (platform, url, reason, confidence)
 - confidence object with low/medium/high values
-- extraction_notes: explain what was easy/hard to infer from the website
-- confidence_score (0-1) reflecting how complete the inputs are
-- missing_information: list gaps the founder should fill`;
+- confidence_score (0-1) reflecting how complete the inputs are`;
 
   const result = await generateObject({
     system: SYSTEM,

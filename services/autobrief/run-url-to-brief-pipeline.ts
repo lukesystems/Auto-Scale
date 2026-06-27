@@ -6,6 +6,7 @@ import { generateAutoBrief } from "./generate";
 import { mapAutoBriefError, isAIError } from "./map-error";
 import { AutoBriefSchema, LOW_CONFIDENCE_THRESHOLD, type AutoBrief } from "./schema";
 import { logAIRun } from "@/services/ai/logger";
+import { updateAutobriefProgress } from "./crawl-progress";
 
 export type UrlToBriefProfile = "signup" | "project" | "refresh" | "preview";
 
@@ -29,6 +30,8 @@ export interface RunUrlToBriefPipelineInput {
   profile: UrlToBriefProfile;
   /** When set, crawl evidence is persisted and tied to this project. */
   projectId?: string;
+  /** Reuse a crawl row created by beginAutobriefRun for live progress polling. */
+  existingCrawlId?: string;
 }
 
 export type RunUrlToBriefPipelineResult =
@@ -94,6 +97,7 @@ export async function runUrlToBriefPipeline(
       url: normalizedUrl,
       projectId: input.projectId,
       maxPages,
+      existingCrawlId: input.existingCrawlId,
     });
     if (!siteFetch.ok) fetchFailed = true;
   } catch (err) {
@@ -121,6 +125,18 @@ export async function runUrlToBriefPipeline(
   }
 
   const fetchWarning = fetchFailed ? buildFetchWarning(siteFetch.error) : undefined;
+
+  if (input.existingCrawlId) {
+    await updateAutobriefProgress(input.existingCrawlId, {
+      phase: "brief",
+      currentMessage: "Building your product brief…",
+      event: {
+        kind: "phase",
+        message: "Building your product brief…",
+        status: "running",
+      },
+    });
+  }
 
   try {
     const generated = await generateAutoBrief({
@@ -155,6 +171,18 @@ export async function runUrlToBriefPipeline(
 
     const lowConfidence =
       briefParsed.data.confidence_score < LOW_CONFIDENCE_THRESHOLD || fetchFailed;
+
+    if (input.existingCrawlId) {
+      await updateAutobriefProgress(input.existingCrawlId, {
+        phase: "done",
+        currentMessage: "Product brief ready for review",
+        event: {
+          kind: "phase",
+          message: "Product brief ready for review",
+          status: "success",
+        },
+      });
+    }
 
     return {
       ok: true,
@@ -192,6 +220,18 @@ export async function runUrlToBriefPipeline(
         .from("projects")
         .update({ status: "brief_failed", description: errorMessage })
         .eq("id", input.projectId);
+    }
+
+    if (input.existingCrawlId) {
+      await updateAutobriefProgress(input.existingCrawlId, {
+        phase: "failed",
+        currentMessage: errorMessage,
+        event: {
+          kind: "error",
+          message: errorMessage,
+          status: "failed",
+        },
+      });
     }
 
     return { ok: false, error: errorMessage, projectId: input.projectId };

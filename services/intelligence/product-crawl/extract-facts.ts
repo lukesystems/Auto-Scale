@@ -112,6 +112,13 @@ export async function classifyAndExtractFactsAsync(
     crawlMode: CrawlMode;
     projectId?: string;
     ownerId?: string;
+    onPageExtracted?: (info: {
+      url: string;
+      pageType: ProductPageType;
+      factCount: number;
+      index: number;
+      total: number;
+    }) => void | Promise<void>;
   }
 ): Promise<
   Array<{
@@ -122,7 +129,19 @@ export async function classifyAndExtractFactsAsync(
   }>
 > {
   if (opts.crawlMode === "heuristic") {
-    return classifyAndExtractFacts(pages, homepageUrl);
+    const classified = classifyAndExtractFacts(pages, homepageUrl);
+    for (let index = 0; index < classified.length; index += 1) {
+      const item = classified[index];
+      if (item.page.fetchStatus !== "success") continue;
+      await opts.onPageExtracted?.({
+        url: item.page.finalUrl || item.page.url,
+        pageType: item.pageType,
+        factCount: item.facts.length,
+        index,
+        total: classified.length,
+      });
+    }
+    return classified;
   }
 
   const homepageNormalized = normalizeUrl(homepageUrl);
@@ -133,7 +152,8 @@ export async function classifyAndExtractFactsAsync(
     relevance?: number;
   }> = [];
 
-  for (const page of pages) {
+  for (let index = 0; index < pages.length; index += 1) {
+    const page = pages[index];
     if (page.fetchStatus !== "success") {
       results.push({ page, pageType: "other", facts: [] });
       continue;
@@ -174,6 +194,14 @@ export async function classifyAndExtractFactsAsync(
 
     const facts = dedupeFacts([...heuristicFacts, ...llmFacts]);
     results.push({ page, pageType, facts, relevance });
+
+    await opts.onPageExtracted?.({
+      url: sourceUrl,
+      pageType,
+      factCount: facts.length,
+      index,
+      total: pages.length,
+    });
   }
 
   return results;

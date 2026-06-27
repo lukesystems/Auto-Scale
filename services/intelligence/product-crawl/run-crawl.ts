@@ -1,7 +1,7 @@
 import type { Json } from "@/lib/supabase/types";
 import type { CrawlAdapterName, ProductCrawlResult, ProductPageType, ProductSiteFact } from "../types";
 import { discoverPages, prioritizePageUrls } from "./discover-pages";
-import { extractPage } from "./extract-page";
+import { extractPage, type ScrapeProfile } from "./extract-page";
 import { classifyAndExtractFactsAsync } from "./extract-facts";
 import { getCrawlModeForProject } from "./get-crawl-mode";
 import { summarizeLlmFacts } from "./llm-facts-mapper";
@@ -10,6 +10,12 @@ import { saveProductPage } from "../memory/save-product-page";
 import { saveProductFacts } from "../memory/save-product-facts";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import {
+  pageExtractMessage,
+  pageFetchMessage,
+  pathnameLabel,
+  updateAutobriefProgress,
+} from "@/services/autobrief/crawl-progress";
 
 const DEFAULT_MAX_PAGES = 25;
 const MIN_TOTAL_TEXT = 300;
@@ -21,6 +27,10 @@ export interface RunProductCrawlInput {
   url: string;
   maxPages?: number;
   persist?: boolean;
+  /** AutoBrief uses direct HTTP + Firecrawl fallback only. */
+  scrapeProfile?: ScrapeProfile;
+  /** When set, reuse an existing crawl row (for progress polling). */
+  existingCrawlId?: string;
 }
 
 export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<ProductCrawlResult> {
@@ -32,16 +42,54 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
   const adaptersUsed = new Set<CrawlAdapterName>();
 
   if (persist) {
-    crawlId = await saveProductCrawl({
-      projectId: input.projectId,
-      sourceUrl: normalizedUrl,
-      status: "running",
-      primaryAdapter: "crawl4ai",
-    });
+    crawlId =
+      input.existingCrawlId ??
+      (await saveProductCrawl({
+        projectId: input.projectId,
+        sourceUrl: normalizedUrl,
+        status: "running",
+        primaryAdapter: "crawl4ai",
+      }));
   }
 
-  const homepage = await extractPage({ url: normalizedUrl });
+  const progressCrawlId = persist ? crawlId : null;
+
+  await reportProgress(progressCrawlId, {
+    phase: "crawl",
+    currentMessage: pageFetchMessage(normalizedUrl, "crawl4ai", "running"),
+    event: {
+      kind: "page_fetch",
+      message: pageFetchMessage(normalizedUrl, "crawl4ai", "running"),
+      url: normalizedUrl,
+      pathname: pathnameLabel(normalizedUrl),
+      adapter: "crawl4ai",
+      status: "running",
+    },
+  });
+
+  const homepage = await extractPage({ url: normalizedUrl, scrapeProfile: input.scrapeProfile });
   adaptersUsed.add(homepage.adapterUsed);
+
+  await reportProgress(progressCrawlId, {
+    pagesCrawled: homepage.fetchStatus === "success" ? 1 : 0,
+    currentMessage: pageFetchMessage(
+      homepage.finalUrl || normalizedUrl,
+      homepage.adapterUsed,
+      homepage.fetchStatus === "success" ? "success" : "failed"
+    ),
+    event: {
+      kind: "page_fetch",
+      message: pageFetchMessage(
+        homepage.finalUrl || normalizedUrl,
+        homepage.adapterUsed,
+        homepage.fetchStatus === "success" ? "success" : "failed"
+      ),
+      url: homepage.finalUrl || normalizedUrl,
+      pathname: pathnameLabel(homepage.finalUrl || normalizedUrl),
+      adapter: homepage.adapterUsed,
+      status: homepage.fetchStatus === "success" ? "success" : "failed",
+    },
+  });
 
   if (homepage.fetchStatus === "failed") {
     const result: ProductCrawlResult = {
@@ -62,6 +110,15 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
     };
 
     if (persist && crawlId) {
+      await updateAutobriefProgress(crawlId, {
+        phase: "failed",
+        currentMessage: result.error ?? "Website could not be read.",
+        event: {
+          kind: "error",
+          message: result.error ?? "Website could not be read.",
+          status: "failed",
+        },
+      });
       await saveProductCrawl({
         crawlId,
         projectId: input.projectId,
@@ -86,8 +143,59 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
   const targetUrls = prioritizePageUrls(homepage.finalUrl, discovered, maxPages);
   const pagesDiscovered = targetUrls.length;
 
+  await reportProgress(progressCrawlId, {
+    pagesDiscovered,
+    currentMessage:
+      pagesDiscovered > 1
+        ? `Found ${pagesDiscovered} pages to scan…`
+        : "Scanning homepage…",
+    event: {
+      kind: "info",
+      message:
+        pagesDiscovered > 1
+          ? `Found ${pagesDiscovered} pages to scan…`
+          : "Scanning homepage…",
+      status: "running",
+    },
+  });
+
   const extraUrls = targetUrls.filter((url) => url !== normalizeUrl(homepage.finalUrl));
-  const extraPages = await mapWithConcurrency(extraUrls, CONCURRENCY, (url) => extractPage({ url }));
+  let pagesCrawledSoFar = homepage.fetchStatus === "success" ? 1 : 0;
+
+  const extraPages = await mapWithConcurrency(extraUrls, CONCURRENCY, async (url) => {
+    await reportProgress(progressCrawlId, {
+      currentMessage: pageFetchMessage(url, "crawl4ai", "running"),
+      event: {
+        kind: "page_fetch",
+        message: pageFetchMessage(url, "crawl4ai", "running"),
+        url,
+        pathname: pathnameLabel(url),
+        adapter: "crawl4ai",
+        status: "running",
+      },
+    });
+
+    const page = await extractPage({ url, scrapeProfile: input.scrapeProfile });
+
+    if (page.fetchStatus === "success") {
+      pagesCrawledSoFar += 1;
+    }
+
+    await reportProgress(progressCrawlId, {
+      pagesCrawled: pagesCrawledSoFar,
+      currentMessage: pageFetchMessage(url, page.adapterUsed, page.fetchStatus === "success" ? "success" : "failed"),
+      event: {
+        kind: "page_fetch",
+        message: pageFetchMessage(url, page.adapterUsed, page.fetchStatus === "success" ? "success" : "failed"),
+        url: page.finalUrl || url,
+        pathname: pathnameLabel(page.finalUrl || url),
+        adapter: page.adapterUsed,
+        status: page.fetchStatus === "success" ? "success" : "failed",
+      },
+    });
+
+    return page;
+  });
 
   const allPages = [homepage, ...extraPages];
   for (const page of allPages) adaptersUsed.add(page.adapterUsed);
@@ -104,10 +212,37 @@ export async function runProductSiteCrawl(input: RunProductCrawlInput): Promise<
     ownerId = project?.owner_id ?? undefined;
   }
 
+  await reportProgress(progressCrawlId, {
+    phase: "extract",
+    currentMessage: "Extracting product signals from pages…",
+    event: {
+      kind: "phase",
+      message: "Extracting product signals from pages…",
+      status: "running",
+    },
+  });
+
+  let factsFoundSoFar = 0;
   const classified = await classifyAndExtractFactsAsync(allPages, normalizedUrl, {
     crawlMode,
     projectId: input.projectId,
     ownerId,
+    onPageExtracted: async (info) => {
+      factsFoundSoFar += info.factCount;
+      await reportProgress(progressCrawlId, {
+        factsFound: factsFoundSoFar,
+        currentMessage: pageExtractMessage(info.pageType, info.factCount, info.url),
+        event: {
+          kind: "page_extract",
+          message: pageExtractMessage(info.pageType, info.factCount, info.url),
+          url: info.url,
+          pathname: pathnameLabel(info.url),
+          pageType: info.pageType,
+          factCount: info.factCount,
+          status: "success",
+        },
+      });
+    },
   });
   const facts = classified.flatMap((item) => item.facts);
   const pagesCrawled = allPages.filter((page) => page.fetchStatus === "success").length;
@@ -212,6 +347,14 @@ function buildTextSnippet(
     )
     .join("\n\n---\n\n")
     .slice(0, MAX_TOTAL_TEXT);
+}
+
+async function reportProgress(
+  crawlId: string | null,
+  input: Parameters<typeof updateAutobriefProgress>[1]
+): Promise<void> {
+  if (!crawlId) return;
+  await updateAutobriefProgress(crawlId, input);
 }
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {

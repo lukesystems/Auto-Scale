@@ -34,6 +34,8 @@ export interface StartGrowthRunInput {
   trigger?: "manual" | "autopilot" | "scheduled";
   /** Cron/autopilot — bypass RLS with service role. */
   trustedServiceRole?: boolean;
+  /** Reuse a row created by beginOnboardingGrowthRun for live progress polling. */
+  existingRunId?: string;
 }
 
 export interface StartGrowthRunResult {
@@ -62,19 +64,28 @@ export async function startGrowthRun(
     ? createSupabaseAdminClient()
     : createSupabaseServerClient();
 
-  const run = await createGrowthRun({
-    projectId: input.projectId,
-    options,
-    trigger: input.trigger ?? "manual",
-    approvalMode: options.approval_mode,
-    postingAggressiveness: options.posting_aggressiveness,
-    targetPlatforms: options.target_platforms,
-    brandConstraints: options.brand_constraints,
-    distributionMode: options.distribution_mode,
-    client: supabase,
-  });
+  const run = input.existingRunId
+    ? { id: input.existingRunId }
+    : await createGrowthRun({
+        projectId: input.projectId,
+        options,
+        trigger: input.trigger ?? "manual",
+        approvalMode: options.approval_mode,
+        postingAggressiveness: options.posting_aggressiveness,
+        targetPlatforms: options.target_platforms,
+        brandConstraints: options.brand_constraints,
+        distributionMode: options.distribution_mode,
+        client: supabase,
+      });
 
   const runId = run.id;
+
+  if (input.existingRunId) {
+    await supabase
+      .from("growth_runs")
+      .update({ status: "running", started_at: new Date().toISOString() })
+      .eq("id", runId);
+  }
   try {
     await setPhase(supabase, runId, "brief", { status: "running" });
     await markPhaseStatus(supabase, runId, "brief", "succeeded");

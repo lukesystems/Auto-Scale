@@ -30,7 +30,7 @@ export default async function OnboardingPage() {
   }
 
   return (
-    <div className="container py-10 max-w-2xl animate-fade-in">
+    <div className="container py-10 max-w-6xl animate-fade-in">
       <PageHeader
         title="Paste your product URL. Start cracking distribution."
         description="AutoScale will understand your product, find the video formats worth testing, and prepare your first Growth Run."

@@ -13,7 +13,7 @@ export { safeFetchUrl, type SafeFetchResult } from "@/services/trendwatch/ingest
 export const URL_TO_BRIEF_DEFAULT_MAX_PAGES = 8;
 
 export async function fetchSiteForAutoBrief(
-  input: SiteFetchInput & { projectId?: string; maxPages?: number }
+  input: SiteFetchInput & { projectId?: string; maxPages?: number; existingCrawlId?: string }
 ): Promise<SiteFetchOutput> {
   const maxPages = input.maxPages ?? URL_TO_BRIEF_DEFAULT_MAX_PAGES;
   if (input.projectId) {
@@ -22,6 +22,8 @@ export async function fetchSiteForAutoBrief(
       url: input.url,
       maxPages,
       persist: true,
+      scrapeProfile: "autobrief",
+      existingCrawlId: input.existingCrawlId,
     });
 
     return {
@@ -47,6 +49,7 @@ export async function fetchSiteForAutoBrief(
     url: input.url,
     maxPages: input.maxPages ?? 5,
     persist: false,
+    scrapeProfile: "autobrief",
   });
 
   return {
