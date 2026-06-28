@@ -2,7 +2,6 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
-import { bridgeVideoEvidenceToSources } from "../video/bridge-video-evidence-to-sources";
 
 export type TrendWatchSourceRow = Database["public"]["Tables"]["trendwatch_sources"]["Row"];
 
@@ -42,18 +41,17 @@ const SOURCE_SELECT =
 
 export function sourceHasMineableSignals(source: MineableSourceRow): boolean {
   return Boolean(
-    source.source_url ||
-      source.fetched_text ||
-      source.hook ||
-      source.angle ||
-      source.format ||
-      source.cta_pattern ||
-      source.visual_pattern ||
-      source.audience_pain ||
-      source.why_it_worked ||
-      source.how_to_adapt ||
-      source.notes ||
-      source.caption
+    source.fetched_text?.trim() ||
+      source.hook?.trim() ||
+      source.angle?.trim() ||
+      source.format?.trim() ||
+      source.cta_pattern?.trim() ||
+      source.visual_pattern?.trim() ||
+      source.audience_pain?.trim() ||
+      source.why_it_worked?.trim() ||
+      source.how_to_adapt?.trim() ||
+      source.notes?.trim() ||
+      source.caption?.trim()
   );
 }
 
@@ -82,11 +80,7 @@ export async function loadPatternMiningContext(projectId: string): Promise<Patte
     facts = data ?? [];
   }
 
-  let sources = await loadMineableTrendWatchSources(supabase, projectId);
-  if (!sources.length) {
-    await bridgeVideoEvidenceToSources({ projectId, client: supabase });
-    sources = await loadMineableTrendWatchSources(supabase, projectId);
-  }
+  const sources = await loadMineableTrendWatchSources(supabase, projectId);
 
   return {
     projectId,
@@ -110,7 +104,7 @@ async function loadMineableTrendWatchSources(
 
 export async function countMineableSources(projectId: string): Promise<number> {
   const supabase = createSupabaseServerClient();
-  const context = await loadPatternMiningContext(projectId);
+  const sources = await loadMineableTrendWatchSources(supabase, projectId);
 
   const { count } = await supabase
     .from("video_evidence")
@@ -121,5 +115,5 @@ export async function countMineableSources(projectId: string): Promise<number> {
     );
 
   const videoEvidenceCount = count ?? 0;
-  return Math.max(context.sources.length, videoEvidenceCount);
+  return Math.max(sources.length, videoEvidenceCount);
 }

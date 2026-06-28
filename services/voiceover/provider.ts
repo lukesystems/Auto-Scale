@@ -12,6 +12,13 @@ export interface VoiceoverResult {
   provider: VoiceProviderId;
   isSilent: boolean;
   qualityPenalty: number;
+  /** Providers tried in order; failures include error messages for UI/debug. */
+  attemptLog: Array<{ provider: VoiceProviderId; ok: boolean; error?: string }>;
+}
+
+/** Non-secret voice id hint for UI (ElevenLabs default when env unset). */
+export function getDefaultVoiceIdHint(): string {
+  return process.env.DEFAULT_VOICE_ID?.trim() || "21m00Tcm4TlvDq8ikWAM";
 }
 
 function configuredProvider(): VoiceProviderId {
@@ -34,36 +41,55 @@ export async function synthesizeWithProvider(opts: {
   order.push("silent_dev_fallback");
 
   const tried = new Set<VoiceProviderId>();
+  const attemptLog: VoiceoverResult["attemptLog"] = [];
   for (const provider of order) {
     if (tried.has(provider)) continue;
     tried.add(provider);
     try {
       if (provider === "elevenlabs" && process.env.ELEVENLABS_API_KEY && text) {
         const buffer = await elevenLabsTts(text);
-        return { buffer, provider, isSilent: false, qualityPenalty: 0 };
+        attemptLog.push({ provider, ok: true });
+        return { buffer, provider, isSilent: false, qualityPenalty: 0, attemptLog };
       }
       if (provider === "openai" && process.env.OPENAI_API_KEY && text) {
         const buffer = await openAiTts(text);
-        return { buffer, provider, isSilent: false, qualityPenalty: 0 };
+        attemptLog.push({ provider, ok: true });
+        return { buffer, provider, isSilent: false, qualityPenalty: 0, attemptLog };
       }
       if (provider === "silent_dev_fallback") {
         const buffer = await silentAudio(opts.durationSeconds);
-        return { buffer, provider, isSilent: true, qualityPenalty: 0.25 };
+        attemptLog.push({ provider, ok: true });
+        return { buffer, provider, isSilent: true, qualityPenalty: 0.25, attemptLog };
       }
-    } catch {
-      continue;
+      if (provider === "elevenlabs" && !process.env.ELEVENLABS_API_KEY) {
+        attemptLog.push({ provider, ok: false, error: "ELEVENLABS_API_KEY missing" });
+      } else if (provider === "openai" && !process.env.OPENAI_API_KEY) {
+        attemptLog.push({ provider, ok: false, error: "OPENAI_API_KEY missing" });
+      } else if (!text) {
+        attemptLog.push({ provider, ok: false, error: "Empty script text" });
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      attemptLog.push({ provider, ok: false, error });
+      console.warn("[voiceover] provider failed, trying next", { provider, error });
     }
   }
 
   const buffer = await silentAudio(opts.durationSeconds);
-  return { buffer, provider: "silent_dev_fallback", isSilent: true, qualityPenalty: 0.25 };
+  attemptLog.push({ provider: "silent_dev_fallback", ok: true });
+  return {
+    buffer,
+    provider: "silent_dev_fallback",
+    isSilent: true,
+    qualityPenalty: 0.25,
+    attemptLog,
+  };
 }
 
 async function elevenLabsTts(text: string): Promise<Buffer> {
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY missing");
-  const voiceId =
-    process.env.DEFAULT_VOICE_ID?.trim() || "21m00Tcm4TlvDq8ikWAM";
+  const voiceId = getDefaultVoiceIdHint();
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
     {
@@ -80,7 +106,12 @@ async function elevenLabsTts(text: string): Promise<Buffer> {
       signal: AbortSignal.timeout(120_000),
     }
   );
-  if (!res.ok) throw new Error(`ElevenLabs TTS failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `ElevenLabs TTS failed: HTTP ${res.status}${body ? ` — ${body.slice(0, 200)}` : ""}`
+    );
+  }
   return Buffer.from(await res.arrayBuffer());
 }
 

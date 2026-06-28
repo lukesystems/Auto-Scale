@@ -27,7 +27,7 @@ export interface RunPatternMiningResult {
 
 export async function runPatternMining(input: RunPatternMiningInput): Promise<RunPatternMiningResult> {
   await bridgeVideoEvidenceToSources({ projectId: input.projectId });
-  let context = await loadPatternMiningContext(input.projectId);
+  const context = await loadPatternMiningContext(input.projectId);
 
   if (!context.sources.length) {
     return {
@@ -42,12 +42,7 @@ export async function runPatternMining(input: RunPatternMiningInput): Promise<Ru
     };
   }
 
-  let buckets = extractSignalsFromSources(context.sources);
-  if (!buckets.length) {
-    await bridgeVideoEvidenceToSources({ projectId: input.projectId });
-    context = await loadPatternMiningContext(input.projectId);
-    buckets = extractSignalsFromSources(context.sources);
-  }
+  const buckets = extractSignalsFromSources(context.sources);
 
   if (!buckets.length) {
     return {

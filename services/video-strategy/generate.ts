@@ -45,6 +45,9 @@ export async function generateVideoStrategy(opts: {
   ownerId: string;
   trendReport: VideoTrendReport;
   options: GrowthRunOptions;
+  lowConfidenceEvidence?: boolean;
+  evidenceCount?: number;
+  patternCount?: number;
 }): Promise<{
   strategy: VideoStrategy;
   loadout: PostingLoadout;
@@ -86,9 +89,16 @@ export async function generateVideoStrategy(opts: {
     max_per_day: a.max_posts_per_day,
   }));
 
+  const thinEvidence =
+    opts.lowConfidenceEvidence === true || opts.trendReport.confidence < 0.35;
+  const effectiveAggressiveness = thinEvidence ? "conservative" : opts.options.posting_aggressiveness;
+
   const prompt = [
     "You are AutoScale's Video Strategy Agent.",
     "Pick the right short-form video mix for this SaaS founder.",
+    thinEvidence
+      ? "IMPORTANT: Discovery evidence is thin or VideoTrend confidence is low. Prefer conservative volume, fewer hypotheses, and formats with the strongest direct evidence. Do not recommend aggressive posting cadence."
+      : "",
     "",
     "Product brief:",
     JSON.stringify(briefPacket),
@@ -101,6 +111,16 @@ export async function generateVideoStrategy(opts: {
       platform_patterns: opts.trendReport.platform_patterns,
       recommended_experiments: opts.trendReport.recommended_experiments,
       competitor_gaps: opts.trendReport.competitor_gaps,
+      confidence: opts.trendReport.confidence,
+    }),
+    "",
+    "Evidence quality signals:",
+    JSON.stringify({
+      discovery_low_confidence: opts.lowConfidenceEvidence ?? false,
+      evidence_count: opts.evidenceCount ?? null,
+      pattern_count: opts.patternCount ?? null,
+      videotrend_confidence: opts.trendReport.confidence,
+      thin_evidence: thinEvidence,
     }),
     "",
     "Prior project learning (must influence this run):",
@@ -121,10 +141,12 @@ export async function generateVideoStrategy(opts: {
     "User options:",
     JSON.stringify({
       target_platforms: opts.options.target_platforms,
-      aggressiveness: opts.options.posting_aggressiveness,
+      aggressiveness: effectiveAggressiveness,
+      requested_aggressiveness: opts.options.posting_aggressiveness,
       duration_days: opts.options.duration_days,
       connected_accounts: accountPacket,
       concept_target_count: opts.options.concept_target_count,
+      thin_evidence: thinEvidence,
     }),
     "",
     "Return a strict JSON object matching VideoStrategy:",
@@ -174,7 +196,8 @@ export async function generateVideoStrategy(opts: {
     latencyMs: strategyRes.latencyMs,
     retryCount: strategyRes.retries,
     input: {
-      aggressiveness: opts.options.posting_aggressiveness,
+      aggressiveness: effectiveAggressiveness,
+      thinEvidence,
       learningRows: learningMemory.length,
       killDecisions: killDecisions.length,
     },
@@ -184,7 +207,7 @@ export async function generateVideoStrategy(opts: {
   const strategy = strategyRes.object;
 
   // Derive the loadout deterministically — we don't need an LLM for math.
-  const perDay = AGGRESSIVENESS_VIDEOS_PER_ACCOUNT_PER_DAY[opts.options.posting_aggressiveness];
+  const perDay = AGGRESSIVENESS_VIDEOS_PER_ACCOUNT_PER_DAY[effectiveAggressiveness];
   const perAccountPlan = accounts.map((a) => ({
     connected_account_id: a.id,
     platform: a.platform,
@@ -192,14 +215,25 @@ export async function generateVideoStrategy(opts: {
     videos_per_day: Math.min(perDay, a.max_posts_per_day),
     video_type_focus: pickFocusForPlatform(a.platform, strategy),
   }));
-  const totalPlanned = perAccountPlan.reduce(
+  const accountCapacity = perAccountPlan.reduce(
     (sum, p) => sum + p.videos_per_day * opts.options.duration_days,
     0
   );
+  let totalPlanned = perAccountPlan.reduce(
+    (sum, p) => sum + p.videos_per_day * opts.options.duration_days,
+    0
+  );
+  totalPlanned = Math.max(totalPlanned, opts.options.concept_target_count);
+  if (accountCapacity > 0) {
+    totalPlanned = Math.min(totalPlanned, accountCapacity);
+  }
+  if (thinEvidence) {
+    totalPlanned = Math.min(totalPlanned, 3);
+  }
 
   const loadout = PostingLoadoutSchema.parse({
     per_account_plan: perAccountPlan,
-    total_videos_planned: Math.max(totalPlanned, opts.options.concept_target_count),
+    total_videos_planned: Math.max(totalPlanned, 1),
     duration_days: opts.options.duration_days,
   });
 

@@ -16,10 +16,11 @@ import {
   reviseHook,
   reviseSceneText,
   regenerateSceneVisual,
-  regenerateVoiceover,
-  regenerateCaptions,
+  regenerateVoiceoverWithResult,
   rerenderVideo,
 } from "@/services/video-revision";
+import { validateSilentVoiceoverForSchedule } from "@/lib/schedule-guard";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { syncProjectConnectedAccounts } from "@/services/social-publishing";
@@ -29,6 +30,54 @@ import {
 } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { checkFfmpegHealth } from "@/services/ffmpeg/health";
+
+function parseGrowthRunOptions(raw: unknown) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return GrowthRunOptionsSchema.partial().parse(raw);
+  }
+  return {};
+}
+
+async function loadVoiceoverAssetForConcept(conceptId: string) {
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("generated_assets")
+    .select("metadata")
+    .eq("concept_id", conceptId)
+    .eq("kind", "voiceover")
+    .maybeSingle();
+  return data;
+}
+
+async function assertVoiceoverSchedulable(opts: {
+  growthRunId: string;
+  conceptId: string;
+  userConfirmedOverride?: boolean;
+}) {
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select("options")
+    .eq("id", opts.growthRunId)
+    .maybeSingle();
+  const runOptions = parseGrowthRunOptions(run?.options);
+  const voiceover = await loadVoiceoverAssetForConcept(opts.conceptId);
+  const guard = validateSilentVoiceoverForSchedule(
+    voiceover
+      ? {
+          metadata:
+            voiceover.metadata && typeof voiceover.metadata === "object" && !Array.isArray(voiceover.metadata)
+              ? (voiceover.metadata as Record<string, unknown>)
+              : null,
+        }
+      : null,
+    {
+      allowSilentVoiceover: runOptions.allow_silent_voiceover === true,
+      userConfirmedOverride: opts.userConfirmedOverride,
+    }
+  );
+  if (!guard.ok) throw new Error(guard.error);
+}
 
 const StartRunSchema = z.object({
   projectId: z.string().uuid(),
@@ -148,8 +197,25 @@ export async function scheduleRunAction(formData: FormData): Promise<void> {
     projectId: formData.get("projectId"),
     growthRunId: formData.get("growthRunId"),
   });
+  const confirmSilentOverride = formData.get("confirmSilentOverride") === "on";
 
   const supabase = createSupabaseServerClient();
+  const { data: approvedVideos } = await supabase
+    .from("videos")
+    .select("id, concept_id")
+    .eq("growth_run_id", parsed.growthRunId)
+    .in("approval_status", ["approved", "auto_approved"])
+    .eq("status", "ready");
+
+  for (const video of approvedVideos ?? []) {
+    if (!video.concept_id) continue;
+    await assertVoiceoverSchedulable({
+      growthRunId: parsed.growthRunId,
+      conceptId: video.concept_id,
+      userConfirmedOverride: confirmSilentOverride,
+    });
+  }
+
   const { data: project } = await supabase
     .from("projects")
     .select("product_url")
@@ -197,7 +263,24 @@ export async function decideVideoAction(formData: FormData) {
     videoId: formData.get("videoId"),
     decision: formData.get("decision"),
   });
+  const confirmSilentOverride = formData.get("confirmSilentOverride") === "on";
   const supabase = createSupabaseServerClient();
+
+  if (parsed.decision === "approve") {
+    const { data: video } = await supabase
+      .from("videos")
+      .select("concept_id")
+      .eq("id", parsed.videoId)
+      .maybeSingle();
+    if (video?.concept_id) {
+      await assertVoiceoverSchedulable({
+        growthRunId: parsed.growthRunId,
+        conceptId: video.concept_id,
+        userConfirmedOverride: confirmSilentOverride,
+      });
+    }
+  }
+
   const patch =
     parsed.decision === "approve"
       ? {
@@ -387,6 +470,49 @@ export async function rerenderVideoAction(formData: FormData) {
   });
   await rerenderVideo(parsed);
   revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+}
+
+const RegenerateVoiceoverSchema = z.object({
+  projectId: z.string().uuid(),
+  growthRunId: z.string().uuid(),
+  videoId: z.string().uuid().optional(),
+  conceptId: z.string().uuid().optional(),
+});
+
+export async function regenerateVoiceoverAction(formData: FormData) {
+  await requireUser();
+  const parsed = RegenerateVoiceoverSchema.parse({
+    projectId: formData.get("projectId"),
+    growthRunId: formData.get("growthRunId"),
+    videoId: formData.get("videoId") || undefined,
+    conceptId: formData.get("conceptId") || undefined,
+  });
+
+  const result = await regenerateVoiceoverWithResult({
+    projectId: parsed.projectId,
+    videoId: parsed.videoId,
+    conceptId: parsed.conceptId,
+  });
+
+  revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+
+  if (!result.ok) {
+    return { ok: false as const, error: result.error };
+  }
+
+  return {
+    ok: true as const,
+    provider: result.provider,
+    isSilent: result.isSilent,
+    publicUrl: result.publicUrl,
+    attemptLog: result.attemptLog,
+    reassembled: result.reassembled,
+  };
+}
+
+export async function regenerateVoiceoverFormAction(formData: FormData): Promise<void> {
+  const result = await regenerateVoiceoverAction(formData);
+  if (!result.ok) throw new Error(result.error);
 }
 
 const ReferenceUrlSchema = z.object({

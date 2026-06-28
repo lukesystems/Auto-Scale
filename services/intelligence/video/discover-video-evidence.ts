@@ -167,7 +167,7 @@ export function dedupeVideoCandidates<T extends { url: string }>(items: T[]): T[
 
     const info = inspectVideoUrl(item.url);
     if (info.sourceType !== "video" && info.accountHandle) {
-      const handleKey = info.accountHandle.toLowerCase();
+      const handleKey = `${info.platform}:${info.accountHandle.toLowerCase()}`;
       if (seenProfileHandles.has(handleKey)) return false;
       seenProfileHandles.add(handleKey);
     }
@@ -219,6 +219,9 @@ export function rankNadiaVideoCandidate(item: {
 
   if (distortion === "high" && evidence.accountType !== "official") return -Infinity;
 
+  const followers = evidence.followerCount;
+  if (followers != null && followers > 500_000) return -Infinity;
+
   let rank = score;
 
   if (evidence.accountType === "shadow") rank += 0.35;
@@ -228,7 +231,6 @@ export function rankNadiaVideoCandidate(item: {
   if (distortion === "medium") rank -= 0.1;
   if (distortion === "low") rank += 0.1;
 
-  const followers = evidence.followerCount;
   if (followers != null && followers >= 10_000 && followers <= 250_000) rank += 0.15;
 
   const meta = parseRecord(evidence.metadata);

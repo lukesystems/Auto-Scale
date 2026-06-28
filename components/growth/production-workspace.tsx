@@ -5,6 +5,7 @@ import {
   reviseHookAction,
   reviseSceneTextAction,
   regenerateSceneVisualAction,
+  regenerateVoiceoverFormAction,
 } from "@/app/(app)/projects/[id]/growth/actions";
 
 export interface ProductionWorkspaceVideo {
@@ -72,6 +73,8 @@ export interface ProductionWorkspaceVideo {
     publicUrl: string | null;
     sceneId: string | null;
     error: string | null;
+    provider: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
   captions: Array<{ id: string; platform: string; caption: string; handle: string | null }>;
 }
@@ -80,9 +83,10 @@ interface ProductionWorkspaceProps {
   projectId: string;
   runId: string;
   videos: ProductionWorkspaceVideo[];
+  voiceIdHint?: string;
 }
 
-export function ProductionWorkspace({ projectId, runId, videos }: ProductionWorkspaceProps) {
+export function ProductionWorkspace({ projectId, runId, videos, voiceIdHint }: ProductionWorkspaceProps) {
   if (!videos.length) {
     return (
       <section className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
@@ -129,7 +133,16 @@ export function ProductionWorkspace({ projectId, runId, videos }: ProductionWork
 
           <div className="px-4 pb-4 grid gap-4 lg:grid-cols-2">
             <SceneTimeline scenes={video.scenes} />
-            <AssetPipeline assets={video.assets} finalUrl={video.finalAssetUrl} captions={video.captions} />
+            <AssetPipeline
+              projectId={projectId}
+              runId={runId}
+              videoId={video.id}
+              conceptId={video.conceptId}
+              assets={video.assets}
+              finalUrl={video.finalAssetUrl}
+              captions={video.captions}
+              voiceIdHint={voiceIdHint}
+            />
           </div>
 
           {video.receipt ? <TrendReceiptDrawer receipt={video.receipt} /> : null}
@@ -248,22 +261,72 @@ function SceneTimeline({ scenes }: { scenes: ProductionWorkspaceVideo["scenes"] 
 }
 
 function AssetPipeline({
+  projectId,
+  runId,
+  videoId,
+  conceptId,
   assets,
   finalUrl,
   captions,
+  voiceIdHint,
 }: {
+  projectId: string;
+  runId: string;
+  videoId: string;
+  conceptId: string;
   assets: ProductionWorkspaceVideo["assets"];
   finalUrl: string | null;
   captions: ProductionWorkspaceVideo["captions"];
+  voiceIdHint?: string;
 }) {
   const voice = assets.find((a) => a.kind === "voiceover");
   const final = assets.find((a) => a.kind === "final_mp4");
   const slides = assets.filter((a) => a.kind === "slide_image");
+  const voiceSilent = voice?.metadata?.is_silent === true;
+  const voiceAttempts = Array.isArray(voice?.metadata?.attempt_log)
+    ? (voice.metadata.attempt_log as Array<{ provider: string; ok: boolean; error?: string }>)
+    : [];
+  const voiceFailedAttempts = voiceAttempts.filter((entry) => !entry.ok);
   return (
     <div className="rounded-lg border bg-background p-3 space-y-2 text-xs">
       <h3 className="font-semibold text-sm">Asset pipeline</h3>
       <PipelineRow label="Slide scenes" status={`${slides.filter((s) => s.status === "succeeded").length}/${slides.length}`} />
-      <PipelineRow label="Voiceover" status={voice?.status ?? "pending"} />
+      <PipelineRow
+        label="Voiceover"
+        status={
+          voice?.provider
+            ? `${voice.status} · ${voice.provider}${voiceSilent ? " (silent fallback)" : ""}`
+            : voice?.status ?? "pending"
+        }
+      />
+      {voice?.publicUrl ? (
+        <audio src={voice.publicUrl} controls className="w-full max-w-xs mt-1" preload="metadata" />
+      ) : null}
+      {voice?.error ? (
+        <p className="text-amber-700 dark:text-amber-300">{voice.error}</p>
+      ) : null}
+      {voiceFailedAttempts.length ? (
+        <p className="text-muted-foreground">
+          TTS attempts:{" "}
+          {voiceFailedAttempts
+            .map((entry) => `${entry.provider}${entry.error ? `: ${entry.error}` : ""}`)
+            .join(" · ")}
+        </p>
+      ) : null}
+      {voiceIdHint ? (
+        <p className="text-muted-foreground">Voice ID (DEFAULT_VOICE_ID): {voiceIdHint}</p>
+      ) : null}
+      {finalUrl ? (
+        <form action={regenerateVoiceoverFormAction} className="mt-1">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="growthRunId" value={runId} />
+          <input type="hidden" name="videoId" value={videoId} />
+          <input type="hidden" name="conceptId" value={conceptId} />
+          <button type="submit" className="rounded border px-2 py-1 text-xs hover:bg-muted">
+            Regenerate voiceover
+          </button>
+        </form>
+      ) : null}
       <PipelineRow label="Captions" status={captions.length ? `${captions.length} account(s)` : "none"} />
       <PipelineRow label="Final MP4" status={final?.status ?? (finalUrl ? "ready" : "missing")} />
       {finalUrl ? (
@@ -333,13 +396,21 @@ function ReviewActionsBar({
   video: ProductionWorkspaceVideo;
 }) {
   const hookScene = video.scenes.find((s) => s.purpose === "hook" || s.role === "hook");
+  const voice = video.assets.find((a) => a.kind === "voiceover");
+  const voiceSilent = voice?.metadata?.is_silent === true;
   return (
     <div className="border-t bg-muted/20 px-4 py-3 flex flex-wrap gap-2 items-end">
-      <form action={decideVideoAction} className="inline">
+      <form action={decideVideoAction} className="inline-flex flex-wrap items-center gap-2">
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="growthRunId" value={runId} />
         <input type="hidden" name="videoId" value={video.id} />
         <input type="hidden" name="decision" value="approve" />
+        {voiceSilent ? (
+          <label className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+            <input type="checkbox" name="confirmSilentOverride" />
+            Approve silent voiceover anyway
+          </label>
+        ) : null}
         <button type="submit" className="rounded border border-green-600/40 px-2 py-1 text-xs hover:bg-muted">
           Approve
         </button>

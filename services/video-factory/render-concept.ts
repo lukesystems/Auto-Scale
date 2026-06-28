@@ -246,6 +246,15 @@ export async function renderConceptVideo(opts: {
         status: "succeeded",
         storage_path: voiceStorage,
         public_url: voiceUrl,
+        provider: voiceResult.provider,
+        error: voiceResult.isSilent
+          ? `Silent fallback — ${formatVoiceoverAttemptSummary(voiceResult.attemptLog)}`
+          : null,
+        metadata: {
+          is_silent: voiceResult.isSilent,
+          quality_penalty: voiceResult.qualityPenalty,
+          attempt_log: voiceResult.attemptLog,
+        } as never,
       })
       .eq("concept_id", opts.conceptId)
       .eq("kind", "voiceover");
@@ -393,4 +402,12 @@ export async function renderConceptVideo(opts: {
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+function formatVoiceoverAttemptSummary(
+  attemptLog: Array<{ provider: string; ok: boolean; error?: string }>
+): string {
+  const failed = attemptLog.filter((entry) => !entry.ok);
+  if (!failed.length) return "no provider errors";
+  return failed.map((entry) => `${entry.provider}: ${entry.error ?? "failed"}`).join("; ");
 }

@@ -104,7 +104,7 @@ export async function startGrowthRun(
     // VideoTrend
     await setPhase(supabase, runId, "videotrend");
     await markPhaseStatus(supabase, runId, "videotrend", "running");
-    const { report } = await generateVideoTrendReport({
+    const { report, hookValidation } = await generateVideoTrendReport({
       projectId: input.projectId,
       growthRunId: runId,
       ownerId: input.ownerId,
@@ -114,9 +114,16 @@ export async function startGrowthRun(
     await markPhaseStatus(supabase, runId, "videotrend", "succeeded", {
       confidence: report.confidence,
       structures: report.winning_structures.length,
-      lowConfidence: discovery.lowConfidence,
+      lowConfidence: discovery.lowConfidence || report.confidence < 0.35,
       evidenceCount: discovery.evidenceCount,
+      hookValidation,
     });
+
+    const thinEvidence = discovery.lowConfidence || report.confidence < 0.35;
+    const strategyOptions =
+      thinEvidence && options.posting_aggressiveness !== "conservative"
+        ? { ...options, posting_aggressiveness: "conservative" as const }
+        : options;
 
     // Strategy + loadout
     await setPhase(supabase, runId, "strategy");
@@ -126,9 +133,15 @@ export async function startGrowthRun(
       growthRunId: runId,
       ownerId: input.ownerId,
       trendReport: report,
-      options,
+      options: strategyOptions,
+      lowConfidenceEvidence: discovery.lowConfidence,
+      evidenceCount: discovery.evidenceCount,
+      patternCount: discovery.patternsMined,
     });
-    await markPhaseStatus(supabase, runId, "strategy", "succeeded");
+    await markPhaseStatus(supabase, runId, "strategy", "succeeded", {
+      thinEvidence,
+      cappedAggressiveness: strategyOptions.posting_aggressiveness,
+    });
     await markPhaseStatus(supabase, runId, "loadout", "succeeded", {
       total: loadout.total_videos_planned,
     });

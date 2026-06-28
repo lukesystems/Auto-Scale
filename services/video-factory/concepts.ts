@@ -9,6 +9,11 @@ import {
 } from "@/services/growth-run/repository";
 import { resolveProductionMode } from "./production-modes";
 import {
+  enforceFormatEvidence,
+  normalizeFormatEvidence,
+  rankEvidenceRows,
+} from "./enforce-format-evidence";
+import {
   WinningFormatPlanSchema,
   type FormatHypothesis,
 } from "@/services/winning-format/schema";
@@ -97,6 +102,14 @@ export async function generateVideoConcepts(opts: {
   const availablePatternIds = patterns.slice(0, 30).map((pattern) => pattern.id);
   const allowedEvidence = new Set(availableEvidenceIds);
   const allowedPatterns = new Set(availablePatternIds);
+
+  const { data: evidenceRows } = availableEvidenceIds.length
+    ? await supabase
+        .from("video_evidence")
+        .select("id, platform, view_count, source_confidence")
+        .in("id", availableEvidenceIds)
+    : { data: [] as Array<{ id: string; platform: string; view_count: number | null; source_confidence: number | null }> };
+  const rankedEvidence = rankEvidenceRows(evidenceRows ?? []);
   const formatCount = opts.options.concept_target_count >= 6 ? 2 : 1;
   const brandCta =
     (opts.options.brand_constraints?.primary_cta_label as string | undefined) ??
@@ -246,7 +259,11 @@ export async function generateVideoConcepts(opts: {
   const formatFingerprintIds: string[] = [];
 
   for (const format of response.object.formats) {
-    const normalized = normalizeEvidence(format, allowedEvidence, allowedPatterns);
+    const normalized = enforceFormatEvidence(
+      normalizeFormatEvidence(format, allowedEvidence, allowedPatterns),
+      availableEvidenceIds,
+      rankedEvidence
+    );
     const fingerprintKey = createFingerprintKey(normalized);
     const { data: fingerprint, error: fingerprintError } = await supabase
       .from("format_fingerprints")
@@ -378,18 +395,6 @@ export async function generateVideoConcepts(opts: {
   }
 
   return { conceptIds, formatFingerprintIds };
-}
-
-function normalizeEvidence(
-  format: FormatHypothesis,
-  allowedEvidence: Set<string>,
-  allowedPatterns: Set<string>
-): FormatHypothesis {
-  return {
-    ...format,
-    evidence_video_ids: format.evidence_video_ids.filter((id) => allowedEvidence.has(id)),
-    source_pattern_ids: format.source_pattern_ids.filter((id) => allowedPatterns.has(id)),
-  };
 }
 
 export function createFingerprintKey(format: Pick<FormatHypothesis, "video_type" | "platform" | "format_name">) {

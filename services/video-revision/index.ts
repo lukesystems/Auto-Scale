@@ -3,7 +3,6 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { renderConceptVideo } from "@/services/video-factory/render-concept";
 import { generateCaptionsForVideo } from "@/services/video-factory/captions";
-import { synthesizeVoiceover } from "@/services/video-factory/voiceover";
 import { uploadGrowthMedia } from "@/services/video-factory/storage";
 import { renderSlidePng, sceneToSlideInput } from "@/services/video-factory/slide-renderer";
 import { roleToPurpose } from "@/services/video-factory/scene-contract";
@@ -14,6 +13,7 @@ import type {
   ReviseHookInput,
   ReviseSceneTextInput,
 } from "./schema";
+export { regenerateVoiceoverWithResult, type RegenerateVoiceoverResult } from "./regenerate-voiceover";
 
 export async function reviseHook(input: ReviseHookInput): Promise<void> {
   const supabase = createSupabaseServerClient();
@@ -125,29 +125,12 @@ export async function regenerateVoiceover(opts: {
   conceptId: string;
   durationSeconds: number;
 }): Promise<void> {
-  const supabase = createSupabaseServerClient();
-  const { data: script } = await supabase
-    .from("video_scripts")
-    .select("voiceover_full")
-    .eq("concept_id", opts.conceptId)
-    .maybeSingle();
-  const voiceBuf = await synthesizeVoiceover({
-    scriptText: script?.voiceover_full ?? "",
-    durationSeconds: opts.durationSeconds,
-  });
-  const { storagePath, publicUrl } = await uploadGrowthMedia({
+  const { regenerateVoiceoverWithResult } = await import("./regenerate-voiceover");
+  const result = await regenerateVoiceoverWithResult({
     projectId: opts.projectId,
-    growthRunId: opts.growthRunId,
     conceptId: opts.conceptId,
-    filename: "voiceover-rev.m4a",
-    body: voiceBuf,
-    contentType: "audio/mp4",
   });
-  await supabase
-    .from("generated_assets")
-    .update({ status: "succeeded", storage_path: storagePath, public_url: publicUrl } as never)
-    .eq("concept_id", opts.conceptId)
-    .eq("kind", "voiceover");
+  if (!result.ok) throw new Error(result.error);
 }
 
 export async function regenerateCaptions(opts: {

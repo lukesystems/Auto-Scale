@@ -9,6 +9,7 @@ import {
   loadProductBrief,
 } from "@/services/growth-run/repository";
 import { VideoTrendReportSchema, type VideoTrendReport } from "@/services/growth-run/schema";
+import { validateHookPatterns } from "./validate-hook-patterns";
 
 /**
  * VideoTrend Agent.
@@ -29,7 +30,12 @@ export async function generateVideoTrendReport(opts: {
   ownerId: string;
   lowConfidenceEvidence?: boolean;
   evidenceCount?: number;
-}): Promise<{ report: VideoTrendReport; evidenceVideoIds: string[]; recordId: string }> {
+}): Promise<{
+  report: VideoTrendReport;
+  evidenceVideoIds: string[];
+  recordId: string;
+  hookValidation?: ReturnType<typeof validateHookPatterns>["validation"];
+}> {
   const [brief, evidence, patterns] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadVideoEvidence(opts.projectId, 80),
@@ -103,6 +109,7 @@ export async function generateVideoTrendReport(opts: {
 
   let result: VideoTrendReport;
   let raw = "";
+  let hookValidation: ReturnType<typeof validateHookPatterns>["validation"] | undefined;
   try {
     const res = await generateObject({
       schema: VideoTrendReportSchema,
@@ -127,7 +134,13 @@ export async function generateVideoTrendReport(opts: {
       temperature: 0.4,
       maxTokens: 5000,
     });
-    result = res.object;
+    const validated = validateHookPatterns(res.object, evidencePackets);
+    hookValidation = validated.validation;
+    result = {
+      ...res.object,
+      hook_patterns: validated.hook_patterns,
+      confidence: validated.confidence,
+    };
     raw = res.raw;
     await logAIRun({
       ownerId: opts.ownerId,
@@ -184,11 +197,12 @@ export async function generateVideoTrendReport(opts: {
         text: raw,
         low_confidence_evidence: opts.lowConfidenceEvidence ?? false,
         evidence_count: opts.evidenceCount ?? evidencePackets.length,
+        hook_validation: hookValidation ?? null,
       } as never,
     })
     .select("id")
     .single();
   if (error) throw new Error(`video_trend_reports insert failed: ${error.message}`);
 
-  return { report: result, evidenceVideoIds, recordId: data!.id };
+  return { report: result, evidenceVideoIds, recordId: data!.id, hookValidation };
 }

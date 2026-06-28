@@ -24,6 +24,8 @@ import { loadProjectGrowthSettings } from "@/services/project-growth-settings/lo
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
+import { getDefaultVoiceIdHint } from "@/services/voiceover/provider";
+import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -139,7 +141,7 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     supabase
       .from("generated_assets")
-      .select("id, concept_id, scene_id, kind, status, public_url, error")
+      .select("id, concept_id, scene_id, kind, status, public_url, error, provider, metadata")
       .eq("growth_run_id", runId),
     videoIds.length
       ? supabase
@@ -308,6 +310,11 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         publicUrl: (a.public_url as string | null) ?? null,
         sceneId: (a.scene_id as string | null) ?? null,
         error: (a.error as string | null) ?? null,
+        provider: (a.provider as string | null) ?? null,
+        metadata:
+          a.metadata && typeof a.metadata === "object" && !Array.isArray(a.metadata)
+            ? (a.metadata as Record<string, unknown>)
+            : null,
       })),
       captions: captionsByVideo.get(v.id) ?? [],
     };
@@ -322,6 +329,13 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     videosWithConcept.every(
       (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
     );
+
+  const voiceIdHint = getDefaultVoiceIdHint();
+  const hasSilentVoiceover = (assetsRes.data ?? []).some(
+    (a) =>
+      a.kind === "voiceover" &&
+      isSilentVoiceoverAsset({ metadata: (a.metadata as Record<string, unknown> | null) ?? null })
+  );
 
   let schedulePreview = null;
   if (allApproved && run.status === "awaiting_approval") {
@@ -348,6 +362,15 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       previewOnly: true,
     });
   }
+
+  const runOptions =
+    run.options && typeof run.options === "object" && !Array.isArray(run.options)
+      ? (run.options as Record<string, unknown>)
+      : {};
+  const discoveryLowConfidence = runOptions.discovery_low_confidence === true;
+  const videotrendLowConfidence =
+    typeof trendReport.data?.confidence === "number" && trendReport.data.confidence < 0.35;
+  const showLowConfidenceBanner = discoveryLowConfidence || videotrendLowConfidence;
 
   return (
     <div className="space-y-8 p-6">
@@ -382,6 +405,25 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         ) : null}
       </header>
 
+      {showLowConfidenceBanner ? (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100"
+        >
+          <p className="font-medium">Thin evidence — conservative run</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+            {discoveryLowConfidence
+              ? "Discovery found fewer than 3 video evidence items. "
+              : ""}
+            {videotrendLowConfidence
+              ? `VideoTrend confidence is ${((trendReport.data?.confidence ?? 0) * 100).toFixed(0)}%. `
+              : ""}
+            Posting aggressiveness was capped and planned volume reduced. Add Sources or run Video
+            Intelligence discovery for stronger patterns before the next run.
+          </p>
+        </div>
+      ) : null}
+
       <PhaseStrip phase={run.phase} status={(run.phase_status ?? {}) as Record<string, unknown>} />
 
       {trendReport.data ? <TrendReportPanel report={trendReport.data} /> : null}
@@ -395,7 +437,12 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
-      <ProductionWorkspace projectId={projectId} runId={runId} videos={workspaceVideos} />
+      <ProductionWorkspace
+        projectId={projectId}
+        runId={runId}
+        videos={workspaceVideos}
+        voiceIdHint={voiceIdHint}
+      />
 
       {schedulePreview ? (
         <SchedulePreviewPanel
@@ -404,14 +451,21 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           growthRunId={runId}
           scheduleAction={scheduleRunAction}
           providerLabel={publishingProviderLabel}
+          hasSilentVoiceover={hasSilentVoiceover}
         />
       ) : allApproved && run.status === "awaiting_approval" ? (
-        <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm">
+        <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm space-y-3">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="growthRunId" value={runId} />
-          <p className="mb-3">
+          <p>
             All videos approved. Push to {publishingProviderLabel} across connected accounts:
           </p>
+          {hasSilentVoiceover ? (
+            <label className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <input type="checkbox" name="confirmSilentOverride" />
+              Schedule silent voiceover anyway
+            </label>
+          ) : null}
           <button
             type="submit"
             className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"

@@ -10,6 +10,7 @@ interface SchedulePreviewPanelProps {
   growthRunId: string;
   scheduleAction: (formData: FormData) => Promise<void>;
   providerLabel?: PublishingProviderLabel;
+  hasSilentVoiceover?: boolean;
 }
 
 export function SchedulePreviewPanel({
@@ -18,6 +19,7 @@ export function SchedulePreviewPanel({
   growthRunId,
   scheduleAction,
   providerLabel = "Postiz",
+  hasSilentVoiceover = false,
 }: SchedulePreviewPanelProps) {
   if (!preview.preview.length) {
     return (
@@ -67,9 +69,15 @@ export function SchedulePreviewPanel({
           </li>
         ))}
       </ul>
-      <form action={scheduleAction} className="flex gap-2">
+      <form action={scheduleAction} className="flex flex-wrap gap-2 items-center">
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="growthRunId" value={growthRunId} />
+        {hasSilentVoiceover ? (
+          <label className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 mr-2">
+            <input type="checkbox" name="confirmSilentOverride" />
+            Schedule silent voiceover anyway
+          </label>
+        ) : null}
         <button
           type="submit"
           className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"

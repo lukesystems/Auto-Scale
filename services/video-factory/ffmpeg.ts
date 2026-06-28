@@ -7,9 +7,9 @@ import ffmpegPath from "ffmpeg-static";
 const execFileAsync = promisify(execFile);
 
 export function getFfmpegPath(): string {
-  const path = ffmpegPath ?? process.env.FFMPEG_PATH;
+  const path = process.env.FFMPEG_PATH?.trim() || ffmpegPath;
   if (!path) {
-    throw new Error("ffmpeg not found. Install ffmpeg-static or set FFMPEG_PATH.");
+    throw new Error("ffmpeg not found. Set FFMPEG_PATH or install ffmpeg-static.");
   }
   return path;
 }
@@ -21,16 +21,18 @@ export async function runFfmpeg(args: string[]): Promise<void> {
       maxBuffer: 20 * 1024 * 1024,
     });
   } catch (err) {
-    const message =
+    const stderr =
       err && typeof err === "object" && "stderr" in err
-        ? String((err as { stderr: string }).stderr)
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    throw new Error(`ffmpeg failed: ${message}`);
+        ? String((err as { stderr: string }).stderr).trim()
+        : "";
+    const message = err instanceof Error ? err.message : String(err);
+    const detail = stderr || message;
+    throw new Error(
+      `ffmpeg failed (${bin}): ${detail.slice(0, 1200)}${detail.length > 1200 ? "…" : ""}`
+    );
   }
 }
 
 export function isFfmpegAvailable(): boolean {
-  return Boolean(ffmpegPath ?? process.env.FFMPEG_PATH);
+  return Boolean(process.env.FFMPEG_PATH?.trim() || ffmpegPath);
 }

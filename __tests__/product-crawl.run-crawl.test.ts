@@ -1,4 +1,13 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+
+vi.mock("@/services/autobrief/crawl-progress", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/autobrief/crawl-progress")>();
+  return {
+    ...actual,
+    updateAutobriefProgress: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 import { runProductSiteCrawl } from "@/services/intelligence/product-crawl/run-crawl";
 import * as extractPageModule from "@/services/intelligence/product-crawl/extract-page";
 import * as saveCrawlModule from "@/services/intelligence/memory/save-product-crawl";
