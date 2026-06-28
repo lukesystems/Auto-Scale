@@ -10,6 +10,7 @@ import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/ser
 import { classifySource } from "@/services/trendwatch/classify-source";
 import { discoverTrendCandidates } from "@/services/trendhop/discover";
 import { generateTrendHops } from "@/services/trendhop/generate";
+import { bridgeVideoEvidenceToSources } from "@/services/intelligence/video/bridge-video-evidence-to-sources";
 import type { SourcePlatform } from "@/lib/supabase/types";
 
 type SupabaseClientType = SupabaseClient<Database>;
@@ -34,6 +35,7 @@ export interface RunDiscoveryPhaseResult {
   evidenceCount: number;
   sourcesEnriched: number;
   candidatesPromoted: number;
+  sourcesBridged: number;
   patternsMined: number;
   deepCandidatesSaved: number;
   videoEvidenceSaved: number;
@@ -48,6 +50,7 @@ export async function runDiscoveryPhase(
   let videoEvidenceSaved = 0;
   let sourcesEnriched = 0;
   let candidatesPromoted = 0;
+  let sourcesBridged = 0;
   let patternsMined = 0;
   let trendhopCandidates = 0;
 
@@ -84,12 +87,18 @@ export async function runDiscoveryPhase(
   try {
     const video = await discoverVideoEvidence(input.projectId);
     videoEvidenceSaved = video.saved;
-    sourcesEnriched += await enrichPendingTrendWatchSources(input.client, input.projectId);
     candidatesPromoted += await autoPromotePendingCandidates(input.client, input.projectId);
+    sourcesEnriched += await enrichPendingTrendWatchSources(input.client, input.projectId);
+    const bridge = await bridgeVideoEvidenceToSources({
+      projectId: input.projectId,
+      client: input.client,
+    });
+    sourcesBridged = bridge.bridged + bridge.patched;
     await input.onSubPhase?.("video_discovery", "succeeded", {
       videoSaved: video.saved,
       sourcesEnriched,
       candidatesPromoted,
+      sourcesBridged,
       ok: video.ok,
     });
   } catch (err) {
@@ -132,6 +141,7 @@ export async function runDiscoveryPhase(
     evidenceCount,
     sourcesEnriched,
     candidatesPromoted,
+    sourcesBridged,
     patternsMined,
     deepCandidatesSaved,
     videoEvidenceSaved,

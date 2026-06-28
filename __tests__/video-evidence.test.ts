@@ -8,6 +8,7 @@ import {
 } from "@/services/intelligence/video/video-url";
 import {
   detectCTA,
+  extractEngagementFromText,
   extractHashtags,
   extractHook,
   extractLinkedUrls,
@@ -23,6 +24,11 @@ import {
   rankNadiaVideoCandidate,
 } from "@/services/intelligence/video/discover-video-evidence";
 import { toVideoEvidenceRow } from "@/services/intelligence/video/save-video-evidence";
+import {
+  videoEvidenceHasMineableSignals,
+  videoEvidenceToSourcePatch,
+} from "@/services/intelligence/video/bridge-video-evidence-to-sources";
+import { extractSignalsFromVideoEvidence } from "@/services/intelligence/patterns/extract-source-signals";
 import { VideoEvidenceSchema } from "@/services/intelligence/video/schema";
 
 describe("video URL normalization", () => {
@@ -75,6 +81,11 @@ describe("deterministic visible evidence extraction", () => {
     expect(extractVisibleMetric("No public count", "views")).toBeNull();
     expect(extractVisibleFollowerCount("Creator with 125K followers on TikTok")).toBe(125_000);
     expect(extractVisibleFollowerCount("No follower count")).toBeNull();
+    expect(extractEngagementFromText("42K views · 1.2K saves · 800 likes")).toMatchObject({
+      views: 42_000,
+      saves: 1_200,
+      likes: 800,
+    });
   });
 });
 
@@ -84,14 +95,19 @@ describe("video search discovery", () => {
       category: "developer tools",
       primaryPain: "slow deployments",
       competitors: ["Acme"],
+      synthesisHandles: ["acme_fan"],
+      marketPatterns: ["founder teardown format"],
     });
-    expect(queries.length).toBeLessThanOrEqual(9);
+    expect(queries.length).toBeLessThanOrEqual(12);
+    expect(queries.some((item) => item.query.includes("site:tiktok.com/@acme_fan"))).toBe(true);
     expect(queries.some((item) => item.query.includes("site:tiktok.com"))).toBe(true);
-    expect(queries.some((item) => item.query.includes("site:instagram.com/reel"))).toBe(true);
+    expect(queries.some((item) => item.query.includes("instagram.com") && item.query.includes("reel"))).toBe(true);
     expect(queries.some((item) => item.query.includes("site:youtube.com/shorts"))).toBe(true);
     expect(queries.some((item) => item.query.includes('"Acme" "TikTok"'))).toBe(true);
     expect(queries.some((item) => item.query.includes("10k followers"))).toBe(true);
     expect(queries.some((item) => item.query.includes("shadow account"))).toBe(true);
+    expect(queries.some((item) => item.query.includes("founder teardown format"))).toBe(true);
+    expect(queries[0]?.query).toContain("@acme_fan");
   });
 
   it("infers shadow accounts and ranks Nadia candidates", () => {
@@ -133,12 +149,14 @@ describe("video search discovery", () => {
     expect(megaRank).toBe(-Infinity);
   });
 
-  it("deduplicates by canonical URL", () => {
+  it("deduplicates by canonical URL and profile handle", () => {
     const deduped = dedupeVideoCandidates([
       { url: "https://youtube.com/shorts/abc?si=one", title: "first" },
       { url: "https://www.youtube.com/shorts/abc?utm_source=two", title: "second" },
+      { url: "https://tiktok.com/@creator", title: "profile" },
+      { url: "https://www.tiktok.com/@creator/", title: "profile duplicate" },
     ]);
-    expect(deduped).toHaveLength(1);
+    expect(deduped).toHaveLength(2);
     expect(deduped[0]?.title).toBe("first");
   });
 });
@@ -182,5 +200,94 @@ describe("video persistence shape", () => {
       follower_count: 120_000,
       account_type: "shadow",
     });
+  });
+});
+
+describe("video evidence bridge to trendwatch sources", () => {
+  it("detects mineable signals from extracted video evidence fields", () => {
+    const row = {
+      id: "ev-1",
+      project_id: "project-1",
+      competitor_id: null,
+      source_candidate_id: null,
+      platform: "tiktok" as const,
+      video_url: "https://tiktok.com/@creator/video/1",
+      canonical_url: "https://tiktok.com/@creator/video/1",
+      account_handle: "creator",
+      account_url: null,
+      caption: "Stop guessing distribution",
+      title: null,
+      hashtags: [],
+      sound: null,
+      duration_seconds: null,
+      view_count: 12_000,
+      like_count: null,
+      comment_count: null,
+      share_count: null,
+      posted_at: null,
+      linked_urls: [],
+      detected_hook: "Stop guessing distribution",
+      detected_cta: "Follow for more",
+      format_guess: "tutorial",
+      topic_guess: "founder distribution",
+      source_confidence: 0.72,
+      fetch_status: "success" as const,
+      fetch_method: "safe_public_html",
+      raw_source_type: "video" as const,
+      metadata: { follower_count: 85_000, account_type: "shadow" },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    expect(videoEvidenceHasMineableSignals(row)).toBe(true);
+    expect(videoEvidenceToSourcePatch(row)).toMatchObject({
+      hook: "Stop guessing distribution",
+      format: "tutorial",
+      cta_pattern: "Follow for more",
+      account_type: "shadow",
+      follower_count: 85_000,
+      fetch_status: "success",
+    });
+  });
+
+  it("extracts pattern signals directly from video evidence rows", () => {
+    const row = {
+      id: "ev-2",
+      project_id: "project-1",
+      competitor_id: null,
+      source_candidate_id: null,
+      platform: "tiktok" as const,
+      video_url: "https://tiktok.com/@creator/video/2",
+      canonical_url: "https://tiktok.com/@creator/video/2",
+      account_handle: "creator",
+      account_url: null,
+      caption: "Three hooks that actually convert",
+      title: null,
+      hashtags: [],
+      sound: null,
+      duration_seconds: null,
+      view_count: 50_000,
+      like_count: 2_000,
+      comment_count: null,
+      share_count: null,
+      posted_at: null,
+      linked_urls: [],
+      detected_hook: "Three hooks that actually convert",
+      detected_cta: null,
+      format_guess: "listicle",
+      topic_guess: null,
+      source_confidence: 0.7,
+      fetch_status: "success" as const,
+      fetch_method: "safe_public_html",
+      raw_source_type: "video" as const,
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const buckets = extractSignalsFromVideoEvidence([row]);
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0]?.signals.hook.length).toBeGreaterThan(0);
+    expect(buckets[0]?.signals.format.length).toBeGreaterThan(0);
   });
 });

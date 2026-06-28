@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
+import { bridgeVideoEvidenceToSources } from "../video/bridge-video-evidence-to-sources";
 
 export type TrendWatchSourceRow = Database["public"]["Tables"]["trendwatch_sources"]["Row"];
 
@@ -59,7 +60,7 @@ export function sourceHasMineableSignals(source: MineableSourceRow): boolean {
 export async function loadPatternMiningContext(projectId: string): Promise<PatternMiningContext> {
   const supabase = createSupabaseServerClient();
 
-  const [{ data: brief }, { data: latestCrawl }, { data: sources }] = await Promise.all([
+  const [{ data: brief }, { data: latestCrawl }] = await Promise.all([
     supabase.from("product_briefs").select("*").eq("project_id", projectId).maybeSingle(),
     supabase
       .from("product_site_crawls")
@@ -68,7 +69,6 @@ export async function loadPatternMiningContext(projectId: string): Promise<Patte
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase.from("trendwatch_sources").select(SOURCE_SELECT).eq("project_id", projectId),
   ]);
 
   let facts: ProductSiteFactRow[] = [];
@@ -82,17 +82,44 @@ export async function loadPatternMiningContext(projectId: string): Promise<Patte
     facts = data ?? [];
   }
 
-  const mineableSources = ((sources ?? []) as MineableSourceRow[]).filter(sourceHasMineableSignals);
+  let sources = await loadMineableTrendWatchSources(supabase, projectId);
+  if (!sources.length) {
+    await bridgeVideoEvidenceToSources({ projectId, client: supabase });
+    sources = await loadMineableTrendWatchSources(supabase, projectId);
+  }
 
   return {
     projectId,
     brief: brief ?? null,
     facts,
-    sources: mineableSources,
+    sources,
   };
 }
 
+async function loadMineableTrendWatchSources(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  projectId: string
+): Promise<MineableSourceRow[]> {
+  const { data: sources } = await supabase
+    .from("trendwatch_sources")
+    .select(SOURCE_SELECT)
+    .eq("project_id", projectId);
+
+  return ((sources ?? []) as MineableSourceRow[]).filter(sourceHasMineableSignals);
+}
+
 export async function countMineableSources(projectId: string): Promise<number> {
+  const supabase = createSupabaseServerClient();
   const context = await loadPatternMiningContext(projectId);
-  return context.sources.length;
+
+  const { count } = await supabase
+    .from("video_evidence")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .or(
+      "detected_hook.not.is.null,caption.not.is.null,title.not.is.null,detected_cta.not.is.null,topic_guess.not.is.null"
+    );
+
+  const videoEvidenceCount = count ?? 0;
+  return Math.max(context.sources.length, videoEvidenceCount);
 }

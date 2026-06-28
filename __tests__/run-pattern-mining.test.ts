@@ -10,6 +10,10 @@ vi.mock("@/services/intelligence/patterns/save-patterns", () => ({
   savePatterns: vi.fn(async () => ["pattern-1"]),
 }));
 
+vi.mock("@/services/intelligence/video/bridge-video-evidence-to-sources", () => ({
+  bridgeVideoEvidenceToSources: vi.fn(async () => ({ bridged: 0, patched: 0 })),
+}));
+
 vi.mock("@/services/intelligence/patterns/load-pattern-context", () => ({
   loadPatternMiningContext: vi.fn(async () => ({
     projectId: "project-1",
@@ -83,6 +87,6 @@ describe("run-pattern-mining", () => {
     const result = await runPatternMining({ projectId: "project-1" });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("No accepted TrendWatch sources");
+    expect(result.error).toContain("No mineable signals");
   });
 });

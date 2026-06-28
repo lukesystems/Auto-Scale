@@ -94,7 +94,9 @@ export function parseMetric(value: string): number | null {
   return Math.round(number * multiplier);
 }
 
-export function extractVisibleMetric(text: string, label: "views" | "likes" | "comments" | "shares"): number | null {
+export type EngagementMetricLabel = "views" | "likes" | "comments" | "shares" | "saves";
+
+export function extractVisibleMetric(text: string, label: EngagementMetricLabel): number | null {
   const escaped = label.replace(/s$/, "s?");
   const patterns = [
     new RegExp(`(?:^|[^\\w])([0-9]+(?:[.,][0-9]+)?\\s*[KMB]?)\\s+${escaped}(?:[^\\w]|$)`, "i"),
@@ -105,6 +107,24 @@ export function extractVisibleMetric(text: string, label: "views" | "likes" | "c
     if (match?.[1]) return parseMetric(match[1].replace(/\s+/g, ""));
   }
   return null;
+}
+
+export interface EngagementProxies {
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+}
+
+export function extractEngagementFromText(text: string): EngagementProxies {
+  return {
+    views: extractVisibleMetric(text, "views"),
+    likes: extractVisibleMetric(text, "likes"),
+    comments: extractVisibleMetric(text, "comments"),
+    shares: extractVisibleMetric(text, "shares"),
+    saves: extractVisibleMetric(text, "saves"),
+  };
 }
 
 export function extractVisibleFollowerCount(text: string): number | null {

@@ -8,6 +8,7 @@ import { searchWithCoverage } from "../discovery/search-coverage";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import {
   detectCTA,
+  extractEngagementFromText,
   extractHashtags,
   extractHook,
   extractVideoEvidence,
@@ -18,10 +19,10 @@ import { saveVideoEvidence } from "./save-video-evidence";
 import { VideoEvidenceSchema, type VideoAccountType, type VideoEvidence } from "./schema";
 import { canonicalizeVideoUrl, inspectVideoUrl, isSupportedPublicVideoUrl } from "./video-url";
 
-const MAX_QUERIES = 9;
-const RESULTS_PER_QUERY = 4;
-const MAX_EVIDENCE = 18;
-const EXTRACTION_CAP = 24;
+const MAX_QUERIES = 12;
+const RESULTS_PER_QUERY = 5;
+const MAX_EVIDENCE = 20;
+const EXTRACTION_CAP = 30;
 
 /** Nadia sweet-spot band for format signal (10k–250k followers). */
 const FOLLOWER_BAND_HINT = '("10k followers" OR "50k followers" OR "100k followers" OR "250k followers")';
@@ -34,11 +35,14 @@ export interface VideoDiscoveryContext {
   competitors?: string[];
   /** Handles surfaced by deep_discovery synthesis (seed video queries). */
   synthesisHandles?: string[];
+  /** Market patterns from deep_discovery synthesis (seed format/hook queries). */
+  marketPatterns?: string[];
 }
 
 export interface VideoDiscoveryQuery {
   query: string;
   reason: string;
+  priority?: number;
 }
 
 type SearchHit = {
@@ -65,23 +69,65 @@ export function buildVideoDiscoveryQueries(context: VideoDiscoveryContext): Vide
   const topics = unique([category, pain, audience, positioning].filter((value): value is string => Boolean(value))).slice(0, 2);
   const queries: VideoDiscoveryQuery[] = [];
 
-  for (const competitor of unique(context.competitors ?? []).slice(0, 2)) {
+  for (const handle of unique(context.synthesisHandles ?? []).slice(0, 5)) {
+    const clean = handle.replace(/^@/, "");
+    queries.push(
+      {
+        query: `site:tiktok.com/@${clean}`,
+        reason: `Deep discovery surfaced @${clean} — hunt their TikTok content.`,
+        priority: 100,
+      },
+      {
+        query: `site:instagram.com/${clean} reel`,
+        reason: `Deep discovery surfaced @${clean} — hunt their Reels.`,
+        priority: 98,
+      },
+      {
+        query: `site:youtube.com/@${clean} shorts`,
+        reason: `Deep discovery surfaced @${clean} — hunt their Shorts.`,
+        priority: 96,
+      },
+    );
+  }
+
+  for (const competitor of unique(context.competitors ?? []).slice(0, 3)) {
     queries.push(
       {
         query: `"${competitor}" unofficial TikTok OR shadow account`,
         reason: `Hunt unofficial/shadow accounts covering ${competitor}.`,
+        priority: 90,
       },
       {
         query: `"${competitor}" "TikTok" ${FOLLOWER_BAND_HINT}`,
         reason: `Mid-tier TikTok creators discussing ${competitor} (10k–250k band).`,
+        priority: 88,
       },
       {
         query: `"${competitor}" "YouTube Shorts" creator`,
         reason: `Creator-run Shorts about ${competitor}.`,
+        priority: 86,
       },
       {
         query: `"${competitor}" "Instagram Reels"`,
         reason: `Public Reels presence for ${competitor}.`,
+        priority: 84,
+      },
+    );
+  }
+
+  for (const pattern of unique(context.marketPatterns ?? []).slice(0, 3)) {
+    const trimmed = pattern.trim().slice(0, 80);
+    if (trimmed.length < 8) continue;
+    queries.push(
+      {
+        query: `site:tiktok.com "${trimmed}" ${FOLLOWER_BAND_HINT}`,
+        reason: `Deep discovery market pattern: ${trimmed.slice(0, 60)}.`,
+        priority: 78,
+      },
+      {
+        query: `site:youtube.com/shorts "${trimmed}"`,
+        reason: `Shorts matching market pattern: ${trimmed.slice(0, 60)}.`,
+        priority: 76,
       },
     );
   }
@@ -91,41 +137,42 @@ export function buildVideoDiscoveryQueries(context: VideoDiscoveryContext): Vide
       {
         query: `site:tiktok.com "${topic}" ${FOLLOWER_BAND_HINT}`,
         reason: `Mid-tier TikTok creators in ${topic} (10k–250k band).`,
+        priority: 60,
       },
       {
         query: `site:youtube.com/shorts "${topic}" creator`,
         reason: `Creator YouTube Shorts on ${topic}.`,
+        priority: 58,
       },
       {
         query: `site:instagram.com/reel "${topic}"`,
         reason: `Public Instagram Reels on ${topic}.`,
+        priority: 56,
       },
     );
   }
 
-  for (const handle of unique(context.synthesisHandles ?? []).slice(0, 4)) {
-    const clean = handle.replace(/^@/, "");
-    queries.push(
-      {
-        query: `site:tiktok.com/@${clean}`,
-        reason: `Deep discovery surfaced @${clean} — hunt their TikTok content.`,
-      },
-      {
-        query: `site:instagram.com/${clean} reel`,
-        reason: `Deep discovery surfaced @${clean} — hunt their Reels.`,
-      },
-    );
-  }
-
-  return dedupeQueries(queries).slice(0, MAX_QUERIES);
+  return dedupeQueries(queries)
+    .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0))
+    .slice(0, MAX_QUERIES);
 }
 
 export function dedupeVideoCandidates<T extends { url: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenProfileHandles = new Set<string>();
+
   return items.filter((item) => {
     const canonical = canonicalizeVideoUrl(item.url);
-    if (seen.has(canonical)) return false;
-    seen.add(canonical);
+    if (seenUrls.has(canonical)) return false;
+
+    const info = inspectVideoUrl(item.url);
+    if (info.sourceType !== "video" && info.accountHandle) {
+      const handleKey = info.accountHandle.toLowerCase();
+      if (seenProfileHandles.has(handleKey)) return false;
+      seenProfileHandles.add(handleKey);
+    }
+
+    seenUrls.add(canonical);
     return true;
   });
 }
@@ -161,8 +208,10 @@ export function inferVideoAccountType(opts: {
 export function rankNadiaVideoCandidate(item: {
   evidence: VideoEvidence;
   score: number;
+  competitorNames?: string[];
+  snippet?: string | null;
 }): number {
-  const { evidence, score } = item;
+  const { evidence, score, competitorNames = [], snippet } = item;
   const distortion = estimateDistortionRisk({
     followerCount: evidence.followerCount,
     accountType: evidence.accountType,
@@ -181,6 +230,31 @@ export function rankNadiaVideoCandidate(item: {
 
   const followers = evidence.followerCount;
   if (followers != null && followers >= 10_000 && followers <= 250_000) rank += 0.15;
+
+  const meta = parseRecord(evidence.metadata);
+  const proxies = parseRecord(meta.engagement_proxies);
+  const views = evidence.viewCount ?? asNumber(proxies.views);
+  const saves = asNumber(proxies.saves);
+  const likes = evidence.likeCount ?? asNumber(proxies.likes);
+
+  if (views != null) {
+    if (views >= 10_000 && views <= 250_000) rank += 0.12;
+    else if (views >= 1_000 && views < 10_000) rank += 0.06;
+  }
+  if (saves != null && saves >= 50) rank += 0.1;
+  else if (likes != null && likes >= 100) rank += 0.05;
+
+  if (evidence.postedAt) {
+    const ageMs = Date.now() - new Date(evidence.postedAt).getTime();
+    if (ageMs < 30 * 86_400_000) rank += 0.08;
+    else if (ageMs < 90 * 86_400_000) rank += 0.04;
+  } else if (snippet && /\b(today|yesterday|this week|\d+\s+(?:hours?|days?)\s+ago)\b/i.test(snippet)) {
+    rank += 0.05;
+  }
+
+  const text = [evidence.title, evidence.caption, snippet].filter(Boolean).join(" ").toLowerCase();
+  const competitorHits = competitorNames.filter((name) => text.includes(name.toLowerCase())).length;
+  if (competitorHits > 0) rank += 0.05 * Math.min(competitorHits, 3);
 
   return rank;
 }
@@ -213,6 +287,9 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
     positioning: jsonStrings(brief.positioning_angles),
     competitors: competitorNames,
     synthesisHandles: deepCtx.handles,
+    marketPatterns: (deepCtx.synthesis?.market_patterns ?? [])
+      .filter((item) => item.transferability >= 0.4)
+      .map((item) => item.pattern),
   });
 
   const { data: run, error: runError } = await supabase.from("source_discovery_runs").insert({
@@ -323,7 +400,12 @@ async function rankExtractedCandidates(
   for (const hit of hits) {
     const extracted = await extractVideoEvidence(hit.url);
     const evidence = enrichNadiaEvidence(extracted, hit, competitorNames);
-    const rank = rankNadiaVideoCandidate({ evidence, score: hit.score });
+    const rank = rankNadiaVideoCandidate({
+      evidence,
+      score: hit.score,
+      competitorNames,
+      snippet: hit.snippet,
+    });
     if (rank === -Infinity) continue;
     ranked.push({ hit, evidence, rank });
   }
@@ -364,17 +446,37 @@ function enrichNadiaEvidence(
 function mergeSearchEvidence(evidence: VideoEvidence, title: string | null, snippet: string | null): VideoEvidence {
   const mergedTitle = evidence.title ?? title;
   const caption = evidence.caption ?? snippet;
-  const text = [mergedTitle, caption].filter(Boolean).join(" ");
+  const text = [mergedTitle, caption, snippet].filter(Boolean).join(" ");
+  const engagement = extractEngagementFromText(text);
+  const hookSource = caption ?? mergedTitle ?? snippet ?? "";
+
   return VideoEvidenceSchema.parse({
     ...evidence,
     title: mergedTitle,
     caption,
     hashtags: evidence.hashtags.length ? evidence.hashtags : extractHashtags(text),
-    detectedHook: evidence.detectedHook ?? extractHook(caption ?? mergedTitle ?? ""),
+    viewCount: evidence.viewCount ?? engagement.views,
+    likeCount: evidence.likeCount ?? engagement.likes,
+    commentCount: evidence.commentCount ?? engagement.comments,
+    shareCount: evidence.shareCount ?? engagement.shares,
+    detectedHook: evidence.detectedHook ?? extractHook(hookSource),
     detectedCTA: evidence.detectedCTA ?? detectCTA(text),
     formatGuess: evidence.formatGuess !== "unknown" ? evidence.formatGuess : guessVideoFormat(text),
-    metadata: { ...evidence.metadata, search_index_fallback: evidence.fetchStatus !== "success" },
+    metadata: {
+      ...evidence.metadata,
+      search_index_fallback: evidence.fetchStatus !== "success",
+      engagement_proxies: engagement,
+    },
   });
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function jsonStrings(value: unknown): string[] {
