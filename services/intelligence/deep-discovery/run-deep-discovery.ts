@@ -23,8 +23,8 @@ import { refreshBriefCompetitorsFromSynthesis } from "../memory/refresh-brief-co
 import type { MarketSynthesis } from "./schema";
 
 const MAX_ROUNDS = 4;
-const MAX_RESULTS_PER_QUERY = 6;
-const MAX_TOTAL_CANDIDATES = 50;
+const MAX_RESULTS_PER_QUERY = 10;
+const MAX_TOTAL_CANDIDATES = 60;
 const MAX_DIGEST_LINES = 40;
 
 export interface RunDeepDiscoveryInput {
@@ -96,7 +96,7 @@ export async function runDeepDiscovery(
       projectId: input.projectId,
       status: "running",
       queries: [],
-      primaryAdapter: "exa",
+      primaryAdapter: "firecrawl",
     });
   } catch (error) {
     return {
@@ -457,8 +457,8 @@ async function finishRun(
     projectId,
     status,
     queries: meta.allQueryObjects as unknown as Json,
-    primaryAdapter: "exa",
-    fallbackAdapters: [...meta.adaptersUsed].filter((name) => name !== "exa"),
+    primaryAdapter: "firecrawl",
+    fallbackAdapters: [...meta.adaptersUsed].filter((name) => name !== "firecrawl"),
     candidatesFound: meta.candidatesFound,
     error: meta.error,
     completed: true,

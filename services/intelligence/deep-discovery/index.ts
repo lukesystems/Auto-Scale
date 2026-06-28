@@ -1,4 +1,5 @@
 export { runDeepDiscovery } from "./run-deep-discovery";
+export { loadLatestDeepDiscoverySynthesis } from "./load-latest-synthesis";
 export type {
   RunDeepDiscoveryInput,
   RunDeepDiscoveryResult,

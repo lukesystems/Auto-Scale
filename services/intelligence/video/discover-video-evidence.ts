@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
 import { estimateDistortionRisk } from "@/services/trendwatch/scoring";
+import { loadLatestDeepDiscoverySynthesis } from "../deep-discovery/load-latest-synthesis";
 import { searchWithCoverage } from "../discovery/search-coverage";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import {
@@ -31,6 +32,8 @@ export interface VideoDiscoveryContext {
   targetAudience?: string | string[] | null;
   positioning?: string | string[] | null;
   competitors?: string[];
+  /** Handles surfaced by deep_discovery synthesis (seed video queries). */
+  synthesisHandles?: string[];
 }
 
 export interface VideoDiscoveryQuery {
@@ -96,6 +99,20 @@ export function buildVideoDiscoveryQueries(context: VideoDiscoveryContext): Vide
       {
         query: `site:instagram.com/reel "${topic}"`,
         reason: `Public Instagram Reels on ${topic}.`,
+      },
+    );
+  }
+
+  for (const handle of unique(context.synthesisHandles ?? []).slice(0, 4)) {
+    const clean = handle.replace(/^@/, "");
+    queries.push(
+      {
+        query: `site:tiktok.com/@${clean}`,
+        reason: `Deep discovery surfaced @${clean} — hunt their TikTok content.`,
+      },
+      {
+        query: `site:instagram.com/${clean} reel`,
+        reason: `Deep discovery surfaced @${clean} — hunt their Reels.`,
       },
     );
   }
@@ -183,9 +200,11 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
   ]);
   if (!brief) return { ok: false, discovered: 0, saved: 0, queries: [], adaptersUsed: [], error: "Save a Product Brief before discovering video evidence." };
 
+  const deepCtx = await loadLatestDeepDiscoverySynthesis(projectId);
   const competitorNames = unique([
     ...(competitors ?? []).map((item) => item.name),
     ...jsonStrings(brief.competitors),
+    ...deepCtx.competitorNames,
   ]);
   const queries = buildVideoDiscoveryQueries({
     category: brief.market_category ?? brief.category,
@@ -193,6 +212,7 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
     targetAudience: firstText(brief.target_customer) ?? jsonStrings(brief.target_audience),
     positioning: jsonStrings(brief.positioning_angles),
     competitors: competitorNames,
+    synthesisHandles: deepCtx.handles,
   });
 
   const { data: run, error: runError } = await supabase.from("source_discovery_runs").insert({

@@ -13,12 +13,12 @@ import {
 const LOOP = [
   { icon: Globe2, title: "Product URL", desc: "Drop a link to your site." },
   { icon: FileSearch, title: "LLM crawl + Brief", desc: "The AI reads your product and writes the brief." },
-  { icon: TrendingUp, title: "TrendWatch", desc: "Latest viral video trends on the platforms that matter." },
-  { icon: Video, title: "Growth Run", desc: "Exploration batch of 5–10 short-form video experiments." },
-  { icon: CalendarClock, title: "Schedule + post", desc: "Through Postiz, or manual export fallback." },
-  { icon: BarChart3, title: "Measure", desc: "Pull analytics back from every video." },
-  { icon: Sparkles, title: "Classify", desc: "Winner · promising · flat · kill." },
-  { icon: Trophy, title: "Compound winners", desc: "Top performers spawn variant batches." },
+  { icon: TrendingUp, title: "Deep discovery", desc: "Hunt competitors, shadow accounts, and niche patterns from public evidence." },
+  { icon: Video, title: "Video evidence + Growth Run", desc: "Reverse-engineer TikTok/Reels/Shorts hooks, then ship experiments." },
+  { icon: CalendarClock, title: "Schedule + post", desc: "Gap-aware scheduling through Post Bridge." },
+  { icon: BarChart3, title: "Measure", desc: "Save rate, views, and signups from every post." },
+  { icon: Sparkles, title: "Classify", desc: "Winner · promising · flat · kill (save-rate aware)." },
+  { icon: Trophy, title: "Compound winners", desc: "Proven hooks spawn variant batches." },
   { icon: Repeat2, title: "Repeat", desc: "Distribution that compounds, not resets." },
 ] as const;
 

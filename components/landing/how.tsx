@@ -4,22 +4,22 @@ const STEPS = [
   {
     icon: Globe2,
     title: "Paste your URL",
-    desc: "AutoScale's LLM crawl reads your site, features, audience, and pricing — then writes your product brief. No 30-question onboarding form.",
+    desc: "AutoScale crawls your site and saves a product brief — ICP, pain, competitors, and positioning. No 30-question onboarding form.",
   },
   {
     icon: TrendingUp,
-    title: "Trend hop on demand",
-    desc: "TrendWatch surfaces what's going viral on TikTok, Reels, and YouTube Shorts right now and proposes how to ride each trend with a video about your product. Run on click or on a 3 / 7 / 14-day schedule.",
+    title: "Deep discovery on your niche",
+    desc: "Before generating anything, the engine hunts competitors, shadow accounts, Reddit threads, and mid-tier TikTok/Reels/Shorts creators — then mines patterns with cited evidence.",
   },
   {
     icon: Video,
-    title: "Run your first batch",
-    desc: "Growth Run ships 5–10 short videos as an exploration batch. Schedules them, posts through Postiz, tracks performance from day one.",
+    title: "Run your first Growth Run",
+    desc: "VideoTrend reverse-engineers hooks from real reference URLs. Growth Run ships 5–10 short videos (and carousels when enabled), schedules via Post Bridge, and tracks save rate from day one.",
   },
   {
     icon: Trophy,
     title: "Compound the winners",
-    desc: "Top performers are auto-classified and turned into variant batches. AutoScale keeps making more of what works, kills what doesn't, and learns your audience batch by batch.",
+    desc: "Top performers are classified by save rate and signups. AutoScale spins hook variants from proven formats, kills flat posts, and learns your audience batch by batch.",
   },
 ] as const;
 

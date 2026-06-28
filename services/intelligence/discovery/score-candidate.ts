@@ -109,6 +109,8 @@ function scoreCompetitorLikelihood(candidate: NormalizedCandidate, intent: Disco
   if (intent === "competitor" || intent === "indirect_competitor" || intent === "alternative") {
     score += 0.15;
   }
+  if (intent === "shadow_account") score += 0.2;
+  if (intent === "distribution") score += 0.1;
   if (intent === "comparison") score += 0.1;
 
   const lower = candidate.url.toLowerCase();
@@ -171,6 +173,12 @@ function scorePlatformValue(candidate: NormalizedCandidate, intent: DiscoveryInt
   if (intent === "comparison" && candidate.sourceType === "comparison") score += 0.25;
   if (intent === "competitor" && COMPETITOR_SOURCE_TYPES.has(candidate.sourceType)) score += 0.25;
   if (intent === "pain" && candidate.sourceType === "community_pain") score += 0.3;
+  if (intent === "shadow_account" && (platform === "tiktok" || platform === "instagram" || platform === "x")) {
+    score += 0.35;
+  }
+  if (intent === "distribution" && (platform === "tiktok" || platform === "youtube" || platform === "instagram")) {
+    score += 0.3;
+  }
   if (platform !== "other") score += 0.1;
 
   return clamp(score);

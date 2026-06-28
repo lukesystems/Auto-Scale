@@ -126,6 +126,46 @@ export function ProjectDiscoveryPanel({
         )}
       </Section>
 
+      {growthProgress && (() => {
+        const deep = growthProgress.phaseStatus.deep_discovery as {
+          status?: string;
+          synthesisSummary?: string | null;
+          competitors?: Array<{ name: string; confidence?: string; patterns?: string[]; handles?: string[] }>;
+          marketPatterns?: Array<{ pattern: string; transferability?: number; confidence?: string }>;
+          whiteSpace?: string[];
+        } | undefined;
+        if (deep?.status !== "succeeded" || !deep.synthesisSummary) return null;
+        return (
+          <Section title="Niche intelligence (deep discovery)">
+            <p className="text-xs text-muted-foreground">{deep.synthesisSummary}</p>
+            {deep.competitors && deep.competitors.length > 0 && (
+              <ul className="space-y-2 text-xs mt-2">
+                {deep.competitors.map((c) => (
+                  <li key={c.name} className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+                    <p className="font-medium">{c.name}</p>
+                    {c.handles && c.handles.length > 0 && (
+                      <p className="text-muted-foreground mt-0.5">@{c.handles.join(", @")}</p>
+                    )}
+                    {c.patterns && c.patterns.length > 0 && (
+                      <p className="text-muted-foreground mt-0.5">{c.patterns.join(" · ")}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {deep.marketPatterns && deep.marketPatterns.length > 0 && (
+              <List
+                title="Patterns that repeat"
+                items={deep.marketPatterns.map((p) => p.pattern)}
+              />
+            )}
+            {deep.whiteSpace && deep.whiteSpace.length > 0 && (
+              <List title="White space" items={deep.whiteSpace} />
+            )}
+          </Section>
+        );
+      })()}
+
       {growthProgress && growthProgress.status === "running" && (
         <Section title="Growth Run">
           <p className="text-xs">{growthProgress.currentMessage}</p>

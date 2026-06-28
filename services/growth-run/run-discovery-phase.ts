@@ -53,12 +53,26 @@ export async function runDiscoveryPhase(
 
   await input.onSubPhase?.("deep_discovery", "running");
   try {
-    const deep = await runDeepDiscovery({ projectId: input.projectId, maxRounds: 3 });
+    const deep = await runDeepDiscovery({ projectId: input.projectId, maxRounds: 4 });
     deepCandidatesSaved = deep.candidatesSaved;
     await input.onSubPhase?.("deep_discovery", "succeeded", {
       candidatesSaved: deep.candidatesSaved,
       candidatesFound: deep.candidatesFound,
       ok: deep.ok,
+      synthesisSummary: deep.synthesis?.summary ?? null,
+      competitors: (deep.synthesis?.competitors ?? []).slice(0, 6).map((c) => ({
+        name: c.name,
+        kind: c.kind,
+        confidence: c.confidence,
+        patterns: c.working_patterns.slice(0, 3),
+        handles: c.handles.slice(0, 3),
+      })),
+      marketPatterns: (deep.synthesis?.market_patterns ?? []).slice(0, 5).map((p) => ({
+        pattern: p.pattern,
+        transferability: p.transferability,
+        confidence: p.confidence,
+      })),
+      whiteSpace: (deep.synthesis?.white_space ?? []).slice(0, 4),
     });
   } catch (err) {
     await input.onSubPhase?.("deep_discovery", "failed", {

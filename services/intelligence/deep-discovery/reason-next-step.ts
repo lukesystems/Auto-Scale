@@ -4,21 +4,31 @@ import { formatDiscoveryContextForPrompt } from "../discovery/load-context";
 import { buildFallbackDiscoveryPlan } from "../discovery/plan-discovery";
 import { DeepDiscoveryActionSchema, type DeepDiscoveryAction } from "./schema";
 
-const SYSTEM = `You are AutoScale's Competitor Intelligence Researcher running an iterative deep-research loop.
+const SYSTEM = `You are AutoScale's Distribution Intelligence Researcher running an iterative deep-research loop.
 
-You do NOT plan everything up front. Each round you look at the evidence gathered so far and decide the single best next set of searches to deepen understanding of competitor distribution strategy.
+Your job is NOT generic competitor research — it is to reverse-engineer what is already working for distribution in this niche so a SaaS founder can copy proven formats, not invent hooks from scratch.
 
-Your job across rounds:
-- Identify the founder's real direct and indirect competitors, plus audience magnets and creators in the niche.
-- Find what is actually working for distribution (hooks, formats, angles, cadence, platforms) — from public evidence only.
-- React to what you just found: chase promising leads, fill gaps, and confirm patterns across multiple accounts.
+Each round you look at evidence gathered so far and decide the best next searches to deepen understanding of:
+- Direct and indirect competitors AND their unofficial/shadow/creator accounts (often outperform official pages)
+- Where the target audience actually hangs out (Reddit, X, TikTok, YouTube, LinkedIn, review sites)
+- What distribution patterns repeat (hooks, formats, angles, CTAs, cadence) — from public evidence only
+- Comparison/review pages and "best alternatives" lists that reveal category winners
+
+Query tactics (use explicitly when relevant):
+- "${'{competitor}'}" unofficial TikTok account OR shadow account
+- "${'{competitor}'}" shadow account Instagram
+- site:reddit.com "${'{pain}'}" tool recommendation
+- "${'{category}'}" vs comparison 2025
+- site:tiktok.com "${'{category}'}" ("10k followers" OR "100k followers")
+- site:g2.com OR site:capterra.com "${'{category}'}"
+- "${'{competitor}'}" affiliate creator OR partner account
 
 Rules:
 - Output 2-5 focused next_queries per round (fewer as evidence saturates).
-- Do NOT repeat queries already run. Build on what the evidence revealed (specific competitor names, handles, formats, communities surfaced so far).
+- Do NOT repeat queries already run. Build on specific names, handles, formats, and communities surfaced in evidence.
 - Prefer queries that confirm a pattern across multiple sources over chasing single viral posts.
-- Mix platform-specific queries (site:x.com, site:reddit.com, site:youtube.com, site:linkedin.com, site:tiktok.com) with category, pain, alternative, and comparison queries.
-- Never invent competitor names; only use names that appear in the brief, facts, or gathered evidence.
+- Use intents: shadow_account for unofficial/alt accounts; distribution for format/hook/cadence hunting; creator for individual creators; community for Reddit/Discord threads; comparison for G2/Capterra/vs pages.
+- Never invent competitor names; only use names from the brief, facts, or gathered evidence.
 - Set should_continue=false when later rounds would yield diminishing returns or you have strong multi-source coverage.
 - Record honest reasoning in "thought" and concrete working "hypotheses".
 - Return JSON matching the schema.`;
@@ -56,7 +66,7 @@ ${ranList}
 EVIDENCE GATHERED SO FAR:
 ${input.evidenceDigest || "(no sources gathered yet — this is the opening round)"}
 
-Decide the next searches. If this is round 1, cast a focused but broad net to find competitors and where the audience lives. In later rounds, drill into the strongest leads and confirm patterns across multiple accounts.`;
+Decide the next searches. Round 1: cast a focused net for competitors, shadow accounts, review/comparison pages, and where the audience discusses the pain. Later rounds: drill into strongest distribution leads and confirm patterns across multiple accounts.`;
 
   try {
     const result = await generateObject({
@@ -88,8 +98,6 @@ Decide the next searches. If this is round 1, cast a focused but broad net to fi
 }
 
 function buildFallbackAction(input: ReasonNextStepInput): DeepDiscoveryAction {
-  // Round 1 falls back to the deterministic plan; later rounds stop, since a
-  // non-AI fallback cannot meaningfully react to gathered evidence.
   if (input.round > 1) {
     return {
       thought: "AI reasoner unavailable; stopping the loop after the deterministic opening round.",
@@ -104,13 +112,13 @@ function buildFallbackAction(input: ReasonNextStepInput): DeepDiscoveryAction {
   const seen = new Set(input.alreadyRunQueries.map((q) => q.toLowerCase()));
   const next = plan.queries
     .filter((q) => !seen.has(q.query.toLowerCase()))
-    .slice(0, 5);
+    .slice(0, 8);
 
   return {
     thought: "Deterministic opening plan derived from the product brief (AI reasoner unavailable).",
     hypotheses: [],
     next_queries: next,
-    should_continue: false,
+    should_continue: next.length >= 5,
     stop_reason: next.length ? null : "no_queries",
   };
 }

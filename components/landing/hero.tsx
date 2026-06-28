@@ -27,9 +27,9 @@ export function Hero() {
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            Paste your product URL. AutoScale reads your site, scans today&apos;s viral trends on TikTok, Reels, and Shorts,
-            ships an exploration batch of short-form video experiments, measures what works, and compounds the winners
-            into variants.
+            Paste your product URL. AutoScale reverse-engineers what&apos;s already working in your niche — competitor shadow
+            accounts, mid-tier creators, and proven short-form formats — then ships video experiments, measures save rate and
+            signups, and compounds the winners through Post Bridge.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -45,8 +45,8 @@ export function Hero() {
           </div>
 
           <p className="mt-6 text-sm font-medium text-foreground/75">
-            Trend hop <span className="mx-1.5 text-primary">→</span> Exploration batch{" "}
-            <span className="mx-1.5 text-primary">→</span> Measure{" "}
+            Deep discovery <span className="mx-1.5 text-primary">→</span> Video evidence{" "}
+            <span className="mx-1.5 text-primary">→</span> Generate &amp; post{" "}
             <span className="mx-1.5 text-primary">→</span> Compound winners
           </p>
           <p className="mt-3 text-xs text-muted-foreground">

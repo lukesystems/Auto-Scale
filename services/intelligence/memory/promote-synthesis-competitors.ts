@@ -27,7 +27,9 @@ export interface PromoteSynthesisCompetitorsResult {
 export async function promoteSynthesisCompetitors(
   input: PromoteSynthesisCompetitorsInput
 ): Promise<PromoteSynthesisCompetitorsResult> {
-  const profiles = input.synthesis.competitors ?? [];
+  const profiles = (input.synthesis.competitors ?? []).filter(
+    (p) => (p.evidence_urls?.length ?? 0) >= 2
+  );
   if (!profiles.length) {
     return { competitorsUpserted: 0, accountsUpserted: 0, competitorIds: [] };
   }
