@@ -112,8 +112,8 @@ export async function maybeAutoStartGrowthRun(opts: {
         approval_mode: approvalMode,
         connected_account_ids: accountIds,
         distribution_mode: distributionMode,
-        posting_aggressiveness: "balanced",
-        concept_target_count: 6,
+        posting_aggressiveness: "conservative",
+        concept_target_count: 3,
       },
     });
 

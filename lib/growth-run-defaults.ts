@@ -11,11 +11,11 @@ export interface GrowthRunFormDefaults {
 }
 
 const FALLBACK: GrowthRunFormDefaults = {
-  targetPlatforms: ["tiktok", "instagram", "youtube"],
+  targetPlatforms: ["tiktok"],
   approvalMode: "manual",
-  postingAggressiveness: "balanced",
-  durationDays: 7,
-  formatHypothesisCount: 2,
+  postingAggressiveness: "conservative",
+  durationDays: 1,
+  formatHypothesisCount: 1,
 };
 
 export async function loadGrowthRunFormDefaults(

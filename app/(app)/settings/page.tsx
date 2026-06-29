@@ -35,7 +35,7 @@ export default async function SettingsPage() {
 
   let mode = "managed" as "managed" | "byok";
   let crawlMode: "llm" | "heuristic" = "llm";
-  let approvalPolicy: ApprovalPolicy = "ask_at_critical";
+  let approvalPolicy: ApprovalPolicy = "auto_approve_all";
 
 
 

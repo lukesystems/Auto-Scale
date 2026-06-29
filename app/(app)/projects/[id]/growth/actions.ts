@@ -85,13 +85,13 @@ const StartRunSchema = z.object({
   targetPlatforms: z
     .array(z.enum(["tiktok", "instagram", "youtube"]))
     .min(1)
-    .default(["tiktok", "instagram", "youtube"]),
+    .default(["tiktok"]),
   approvalMode: z.enum(["manual", "per_format", "autopilot"]).optional(),
   postingAggressiveness: z
     .enum(["conservative", "balanced", "aggressive"])
-    .default("balanced"),
-  durationDays: z.coerce.number().int().min(1).max(60).default(7),
-  formatHypothesisCount: z.coerce.number().int().min(1).max(2).default(2),
+    .default("conservative"),
+  durationDays: z.coerce.number().int().min(1).max(60).default(1),
+  formatHypothesisCount: z.coerce.number().int().min(1).max(2).default(1),
   distributionPreference: z
     .enum(["all_accounts", "selected", "export_only"])
     .optional(),

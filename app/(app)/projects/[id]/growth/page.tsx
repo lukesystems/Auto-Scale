@@ -185,6 +185,9 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
 
           <details className="sm:col-span-2 rounded-lg border bg-background/60 p-4">
             <summary className="cursor-pointer text-sm font-medium">Advanced Growth Run settings</summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Defaults are tuned for a fast first run — expand to add platforms, formats, or duration.
+            </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <fieldset className="space-y-2 sm:col-span-2">
             <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

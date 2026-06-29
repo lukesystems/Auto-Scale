@@ -89,11 +89,11 @@ async function buildOnboardingGrowthOptions(projectId: string) {
         : "manual";
 
   return {
-    target_platforms: ["tiktok", "instagram", "youtube"] as Array<"tiktok" | "instagram" | "youtube">,
+    target_platforms: ["tiktok"] as Array<"tiktok" | "instagram" | "youtube">,
     approval_mode: approvalMode,
-    posting_aggressiveness: "balanced" as const,
-    duration_days: 7,
-    concept_target_count: 6,
+    posting_aggressiveness: "conservative" as const,
+    duration_days: 1,
+    concept_target_count: 3,
     connected_account_ids: accountIds,
     distribution_mode: distributionMode,
     brand_constraints: {

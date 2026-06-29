@@ -334,14 +334,14 @@ export type ExperimentClassification = z.infer<typeof ExperimentClassificationSc
 // ------------------------------------------------------------------
 
 export const GrowthRunOptionsSchema = z.object({
-  target_platforms: z.array(z.enum(PLATFORMS)).default(["tiktok", "instagram", "youtube"]),
+  target_platforms: z.array(z.enum(PLATFORMS)).default(["tiktok"]),
   approval_mode: z.enum(["manual", "per_format", "autopilot"]).default("manual"),
-  posting_aggressiveness: z.enum(["conservative", "balanced", "aggressive"]).default("balanced"),
-  duration_days: z.number().int().min(1).max(60).default(7),
+  posting_aggressiveness: z.enum(["conservative", "balanced", "aggressive"]).default("conservative"),
+  duration_days: z.number().int().min(1).max(60).default(1),
   brand_constraints: z.record(z.unknown()).default({}),
   connected_account_ids: z.array(z.string().uuid()).default([]),
   distribution_mode: z.enum(["postiz", "export_only"]).default("postiz"),
-  concept_target_count: z.number().int().min(1).max(40).default(12),
+  concept_target_count: z.number().int().min(1).max(40).default(3),
   /** Dev / emergency: allow scheduling videos with silent TTS fallback */
   allow_silent_voiceover: z.boolean().default(false),
 });
