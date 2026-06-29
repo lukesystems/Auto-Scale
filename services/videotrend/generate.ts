@@ -36,6 +36,33 @@ export async function generateVideoTrendReport(opts: {
   recordId: string;
   hookValidation?: ReturnType<typeof validateHookPatterns>["validation"];
 }> {
+  const supabase = createSupabaseServerClient();
+  const { data: existingRow } = await supabase
+    .from("video_trend_reports")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+
+  if (existingRow) {
+    const report: VideoTrendReport = {
+      winning_structures: existingRow.winning_structures as never,
+      hook_patterns: existingRow.hook_patterns as never,
+      opening_frames: existingRow.opening_frames as never,
+      cta_patterns: existingRow.cta_patterns as never,
+      audience_language: existingRow.audience_language as never,
+      platform_patterns: existingRow.platform_patterns as never,
+      recommended_experiments: existingRow.recommended_experiments as never,
+      competitor_gaps: existingRow.competitor_gaps as never,
+      repurposable_formats: existingRow.repurposable_formats as never,
+      confidence: existingRow.confidence ?? 0.5,
+    };
+    return {
+      report,
+      evidenceVideoIds: (existingRow.evidence_video_ids as string[]) ?? [],
+      recordId: existingRow.id,
+    };
+  }
+
   const [brief, evidence, patterns] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadVideoEvidence(opts.projectId, 80),
@@ -175,7 +202,6 @@ export async function generateVideoTrendReport(opts: {
     };
   }
 
-  const supabase = createSupabaseServerClient();
   const evidenceVideoIds = evidence.slice(0, 40).map((e) => e.id);
   const { data, error } = await supabase
     .from("video_trend_reports")

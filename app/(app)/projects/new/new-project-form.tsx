@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Globe, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
   beginUnifiedRunAction,
-  executeUnifiedRunAction,
 } from "@/app/(app)/unified-run/actions";
 import {
   OnboardingPipelineShell,
@@ -24,15 +23,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const UNIFIED_RUN_TIMEOUT_MS = 900_000;
-
 export function NewProjectForm({
   onSuccess,
 }: {
   onSuccess?: () => void;
 } = {}) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [productUrl, setProductUrl] = useState("");
   const [aiModel, setAiModel] = useState<ModelPickerValue>(getDefaultModelPickerValue);
@@ -93,40 +89,12 @@ export function NewProjectForm({
         setStage("growth");
       });
 
-      startTransition(async () => {
-        try {
-          const result = await withTimeout(
-            executeUnifiedRunAction({
-              projectId: begin.projectId,
-              growthRunId: begin.growthRunId,
-              productUrl: begin.normalizedUrl,
-              crawlId: begin.crawlId,
-              profile: "project",
-            }),
-            UNIFIED_RUN_TIMEOUT_MS
-          );
-
-          if (!result.ok) {
-            setError(result.error);
-            toast.error(result.error);
-            onSuccess?.();
-            router.push(`/projects/${begin.projectId}/growth/${begin.growthRunId}`);
-            return;
-          }
-
-          if (result.status === "awaiting_user_input") {
-            toast.info("AutoScale paused for your review — continue on the run page.");
-          } else {
-            toast.success("Project created — AutoScale run ready for review.");
-          }
-
-          onSuccess?.();
-          router.push(`/projects/${begin.projectId}/growth/${result.growthRunId}`);
-          router.refresh();
-        } finally {
-          setIsBootstrapping(false);
-        }
-      });
+      toast.success("Project created — starting AutoScale run…");
+      onSuccess?.();
+      router.push(
+        `/projects/${begin.projectId}/growth/${begin.growthRunId}?autoExecute=1`
+      );
+      setIsBootstrapping(false);
     })();
   }
 
@@ -158,12 +126,12 @@ export function NewProjectForm({
             onChange={(e) => setProductUrl(e.target.value)}
             placeholder="https://yourproduct.com"
             className="pl-9"
-            disabled={pending || isBootstrapping}
+            disabled={isBootstrapping}
           />
         </div>
       </div>
 
-      <ModelPicker value={aiModel} onChange={setAiModel} disabled={pending} />
+      <ModelPicker value={aiModel} onChange={setAiModel} disabled={isBootstrapping} />
 
       {error && (
         <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
@@ -176,35 +144,20 @@ export function NewProjectForm({
           type="button"
           variant="outline"
           onClick={() => (onSuccess ? onSuccess() : router.back())}
-          disabled={pending}
+          disabled={isBootstrapping}
         >
           Cancel
         </Button>
         <Button
           type="submit"
-          disabled={pending || !productUrl.trim()}
+          disabled={isBootstrapping || !productUrl.trim()}
           size="lg"
           variant="glow"
         >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {isBootstrapping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Start AutoScale
         </Button>
       </div>
     </form>
   );
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`Operation timed out after ${Math.round(timeoutMs / 1000)} seconds.`));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

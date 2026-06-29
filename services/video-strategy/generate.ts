@@ -54,6 +54,38 @@ export async function generateVideoStrategy(opts: {
   strategyId: string;
   loadoutId: string;
 }> {
+  const supabase = createSupabaseServerClient();
+  const { data: existingStrategyRow } = await supabase
+    .from("video_strategies")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+  const { data: existingLoadoutRow } = await supabase
+    .from("posting_loadouts")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+
+  if (existingStrategyRow && existingLoadoutRow) {
+    const strategy: VideoStrategy = {
+      platform_mix: existingStrategyRow.platform_mix as never,
+      video_type_mix: existingStrategyRow.video_type_mix as never,
+      campaign_hypotheses: existingStrategyRow.campaign_hypotheses as never,
+      rationale: existingStrategyRow.rationale ?? "",
+    };
+    const loadout = PostingLoadoutSchema.parse({
+      per_account_plan: existingLoadoutRow.per_account_plan,
+      total_videos_planned: existingLoadoutRow.total_videos_planned,
+      duration_days: existingLoadoutRow.duration_days,
+    });
+    return {
+      strategy,
+      loadout,
+      strategyId: existingStrategyRow.id,
+      loadoutId: existingLoadoutRow.id,
+    };
+  }
+
   const [brief, accounts, learningMemory, killDecisions] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadConnectedAccounts(
@@ -237,7 +269,6 @@ export async function generateVideoStrategy(opts: {
     duration_days: opts.options.duration_days,
   });
 
-  const supabase = createSupabaseServerClient();
   const { data: strategyRow, error: strategyError } = await supabase
     .from("video_strategies")
     .insert({

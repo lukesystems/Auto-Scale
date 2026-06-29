@@ -1,6 +1,7 @@
 import type { AIProvider, AITaskType } from "./types";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { getProjectModelFromContext } from "./project-context";
+import { resolveOpenRouterModelSlug } from "./model-aliases";
 
 export const STRUCTURED_JSON_TASK_TYPES: readonly AITaskType[] = [
   "autobrief",
@@ -25,6 +26,7 @@ const UNSTABLE_STRUCTURED_JSON_MODEL_MARKERS = [
   // casing on the Growth Run schemas. Keep it for prose; route structured
   // calls through the stable JSON model instead.
   "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-chat",
 ] as const;
 
 export function isStructuredJsonTask(taskType: AITaskType): boolean {
@@ -67,20 +69,6 @@ export function resolveSafeStructuredModel(
     requestedModel: model,
     fallbackModel: fallback,
   });
-  // #region agent log
-  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-    body: JSON.stringify({
-      sessionId: "845232",
-      hypothesisId: "H2",
-      location: "model-router.ts:resolveSafeStructuredModel",
-      message: "unstable model replaced",
-      data: { taskType, requestedModel: model, fallbackModel: fallback, provider },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   return fallback;
 }
 
@@ -100,12 +88,12 @@ const TASK_ENV_MAP: Record<AITaskType, keyof ReturnType<typeof getManagedProvide
 export function resolveModelForTask(taskType: AITaskType = "default"): string | undefined {
   const projectModel = getProjectModelFromContext();
   if (projectModel?.trim()) {
-    return projectModel.trim();
+    return resolveOpenRouterModelSlug(projectModel.trim()) ?? projectModel.trim();
   }
 
   const config = getManagedProviderConfig();
   const taskModel = config.models[TASK_ENV_MAP[taskType]];
-  if (taskModel) return taskModel;
+  if (taskModel) return resolveOpenRouterModelSlug(taskModel) ?? taskModel;
 
   // Deep-reasoning falls back to the trendwatch model before the global default,
   // so the loop still routes to a capable model when no dedicated one is set.
@@ -129,7 +117,7 @@ export function resolveModelForTask(taskType: AITaskType = "default"): string | 
   if (fallback) return fallback;
 
   if (process.env.AUTOSCALE_DEFAULT_MODEL) {
-    return process.env.AUTOSCALE_DEFAULT_MODEL;
+    return resolveOpenRouterModelSlug(process.env.AUTOSCALE_DEFAULT_MODEL) ?? process.env.AUTOSCALE_DEFAULT_MODEL;
   }
 
   return undefined;

@@ -11,13 +11,14 @@ import { classifySource } from "@/services/trendwatch/classify-source";
 import { discoverTrendCandidates } from "@/services/trendhop/discover";
 import { generateTrendHops } from "@/services/trendhop/generate";
 import { bridgeVideoEvidenceToSources } from "@/services/intelligence/video/bridge-video-evidence-to-sources";
+import { TRENDWATCH_SOURCE_ENRICH_SELECT } from "@/lib/trendwatch/source-select";
 import type { SourcePlatform } from "@/lib/supabase/types";
 
 type SupabaseClientType = SupabaseClient<Database>;
 type DiscoverySubPhase = "deep_discovery" | "video_discovery" | "pattern_mining";
 
 const MIN_EVIDENCE_COUNT = 3;
-const MAX_AUTO_PROMOTE = 12;
+const MAX_AUTO_PROMOTE = 6;
 const MAX_ENRICH_PENDING = 15;
 
 export interface RunDiscoveryPhaseInput {
@@ -175,9 +176,7 @@ async function enrichPendingTrendWatchSources(
 ): Promise<number> {
   const { data: pending } = await client
     .from("trendwatch_sources")
-    .select(
-      "id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes"
-    )
+    .select(TRENDWATCH_SOURCE_ENRICH_SELECT)
     .eq("project_id", projectId)
     .eq("fetch_status", "pending")
     .not("source_url", "is", null)
@@ -239,16 +238,26 @@ async function autoPromotePendingCandidates(
     .limit(MAX_AUTO_PROMOTE);
 
   let promoted = 0;
+  let schemaBlocked = false;
   for (const candidate of candidates ?? []) {
+    if (schemaBlocked) break;
     try {
       await promoteCandidateToSource({
         projectId,
         candidateId: candidate.id,
         client,
+        deferEnrichment: true,
       });
       promoted += 1;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn("[growth-run:discovery] auto-promote failed", candidate.id, err);
+      if (/schema cache|column .* does not exist/i.test(message)) {
+        schemaBlocked = true;
+        console.warn(
+          "[growth-run:discovery] auto-promote halted — apply Supabase migrations (0029_trendwatch_sources_repair.sql)"
+        );
+      }
     }
   }
   return promoted;

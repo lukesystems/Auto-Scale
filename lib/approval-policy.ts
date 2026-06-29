@@ -43,7 +43,7 @@ export const APPROVAL_POLICY_DESCRIPTIONS: Record<ApprovalPolicy, string> = {
   auto_approve_all:
     "AutoScale runs end to end without stopping. Videos are auto-approved and scheduled when publishing is connected.",
   ask_at_critical:
-    "Pause after the product brief, rendered videos, and before anything is posted.",
+    "Pause after the product brief is ready (before discovery), after videos are rendered, and before posting.",
   ask_at_every_stage:
     "Pause after brief, discovery, patterns, trend hops, concepts, videos, and before posting.",
 };

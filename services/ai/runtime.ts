@@ -164,28 +164,10 @@ export async function generateText(params: GenerateTextParams): Promise<Generate
   const taskType = params.taskType ?? "default";
 
   let model = params.model ?? defaultModel(provider, taskType);
-  const requestedModel = model;
 
   if (params.responseMode === "json") {
     model = resolveSafeStructuredModel(model, provider, taskType);
   }
-
-  // #region agent log
-  if (taskType === "autobrief") {
-    fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-      body: JSON.stringify({
-        sessionId: "845232",
-        hypothesisId: "H1-H3",
-        location: "runtime.ts:generateText",
-        message: "autobrief model resolution",
-        data: { requestedModel, resolvedModel: model, provider, taskType, jsonMode: params.responseMode === "json" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
 
   const adapter = ADAPTERS[provider];
 
@@ -326,37 +308,6 @@ export async function generateObject<T extends ZodTypeAny>(
         retryCount: retries,
         parseError: lastError.message,
       });
-
-      // #region agent log
-      if (taskType === "autobrief") {
-        let competitorSample: unknown = null;
-        try {
-          const parsed = JSON.parse(stripMarkdownFences(result.text)) as {
-            suggested_competitors?: unknown;
-          };
-          competitorSample = parsed.suggested_competitors;
-        } catch {
-          competitorSample = "unparseable";
-        }
-        fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-          body: JSON.stringify({
-            sessionId: "845232",
-            hypothesisId: "H4-H5",
-            location: "runtime.ts:generateObject",
-            message: "autobrief parse failed",
-            data: {
-              model: result.model,
-              retryCount: retries,
-              parseErrorPreview: lastError.message.slice(0, 400),
-              competitorSample,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
 
       retries++;
 

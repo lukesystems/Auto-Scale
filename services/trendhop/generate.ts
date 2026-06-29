@@ -66,21 +66,32 @@ Produce up to 8 trend hops. Each must include:
 - recency_score (0-1)
 - confidence (0-1)`;
 
-  const result = await generateObject({
-    system: SYSTEM,
-    prompt,
-    schema: TrendHopListSchema,
-    schemaName: "TrendHopList",
-    taskType: "default",
-    temperature: 0.6,
-    maxTokens: 4500,
-  });
+  try {
+    const result = await generateObject({
+      system: SYSTEM,
+      prompt,
+      schema: TrendHopListSchema,
+      schemaName: "TrendHopList",
+      taskType: "trendwatch",
+      temperature: 0.6,
+      maxTokens: 4500,
+    });
 
-  return {
-    hops: result.object.hops,
-    raw: result.raw,
-    provider: result.provider,
-    model: result.model,
-    latencyMs: result.latencyMs,
-  };
+    return {
+      hops: result.object.hops,
+      raw: result.raw,
+      provider: result.provider,
+      model: result.model,
+      latencyMs: result.latencyMs,
+    };
+  } catch (err) {
+    console.warn("[trendhop] generate failed, returning empty hops", err);
+    return {
+      hops: [],
+      raw: "",
+      provider: "none",
+      model: "none",
+      latencyMs: 0,
+    };
+  }
 }

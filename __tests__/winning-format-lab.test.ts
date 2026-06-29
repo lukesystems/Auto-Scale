@@ -47,7 +47,7 @@ describe("Winning Format Lab contracts", () => {
     expect(new Set(plan.formats[0]?.variants.map((variant) => variant.hook)).size).toBe(3);
   });
 
-  it("rejects uncontrolled batches with more than three variants", () => {
+  it("trims uncontrolled batches with more than three variants down to three", () => {
     const result = WinningFormatPlanSchema.safeParse({
       audience_pain: "The workflow takes too long",
       fixed_body: "Keep the body fixed",
@@ -58,7 +58,10 @@ describe("Winning Format Lab contracts", () => {
       formats: [{ ...FORMAT, variants: [...FORMAT.variants, FORMAT.variants[0]] }],
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.formats[0]?.variants).toHaveLength(3);
+    }
   });
 
   it("creates a stable format fingerprint key", () => {

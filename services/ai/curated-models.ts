@@ -52,11 +52,11 @@ export const CURATED_MODELS: CuratedModel[] = [
   },
   {
     id: "gemini-flash",
-    slug: "google/gemini-2.0-flash-001",
-    label: "Gemini 2.0 Flash",
+    slug: "google/gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
     provider: "Google",
     tier: "fast",
-    description: "Low-latency option for high-volume concept generation.",
+    description: "Low-latency Google model for high-volume structured generation.",
     jsonCapable: true,
   },
   {

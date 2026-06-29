@@ -26,12 +26,16 @@ import { getManagedProviderConfig } from "@/services/providers/config";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { getDefaultVoiceIdHint } from "@/services/voiceover/provider";
 import { RunApprovalCard } from "@/components/growth/run-approval-card";
-import { RunPhaseTimeline } from "@/components/growth/run-phase-timeline";
+import { RunRetryCard } from "@/components/growth/run-retry-card";
+import { RunPhaseTimeline, RunPageLiveUpdater } from "@/components/growth/run-phase-timeline";
+import { RunPageAutoExecutor } from "@/components/growth/run-page-auto-executor";
 import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
+import { RunBriefPanel } from "@/components/growth/run-brief-panel";
 import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
 
 interface RunPageProps {
   params: { id: string; runId: string };
+  searchParams?: { autoExecute?: string };
 }
 
 const PHASES = [
@@ -52,7 +56,7 @@ const PHASES = [
   "done",
 ] as const;
 
-export default async function GrowthRunPage({ params }: RunPageProps) {
+export default async function GrowthRunPage({ params, searchParams }: RunPageProps) {
   if (!isSupabaseConfigured()) return notFound();
   const supabase = createSupabaseServerClient();
   const projectId = params.id;
@@ -124,7 +128,7 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         .from("trend_receipts")
         .select("id, concept_id, format_fingerprint_id, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, expected_signal, reasoning, confidence, missing_evidence")
         .eq("growth_run_id", runId),
-      supabase.from("product_briefs").select("product_name, product_summary, target_customer, primary_pain, offer, cta, category").eq("project_id", projectId).maybeSingle(),
+      supabase.from("product_briefs").select("product_name, one_line_description, product_summary, what_it_does, target_customer, primary_pain, core_promise, offer, cta, category, key_features, positioning_angles").eq("project_id", projectId).maybeSingle(),
       supabase.from("trendwatch_sources").select("id, source_url, platform, fetch_status, confidence_score").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
       supabase.from("video_evidence").select("id, video_url, platform, title, source_confidence").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
       supabase.from("video_patterns").select("id, pattern_type, label, confidence").eq("project_id", projectId).order("confidence", { ascending: false }).limit(12),
@@ -418,11 +422,32 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         ) : null}
       </header>
 
+      <RunPageAutoExecutor
+        projectId={projectId}
+        growthRunId={runId}
+        initialStatus={run.status}
+        autoExecute={searchParams?.autoExecute === "1"}
+      />
+
+      <RunPageLiveUpdater
+        projectId={projectId}
+        growthRunId={runId}
+        runStatus={run.status}
+      />
+
       {run.status === "awaiting_user_input" ? (
         <RunApprovalCard
           projectId={projectId}
           growthRunId={runId}
           pausedAtPhase={run.paused_at_phase}
+        />
+      ) : null}
+
+      {run.status === "failed" ? (
+        <RunRetryCard
+          projectId={projectId}
+          growthRunId={runId}
+          failedPhase={run.phase}
         />
       ) : null}
 
@@ -432,29 +457,22 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           <RunPhaseTimeline
             currentPhase={run.phase}
             phaseStatus={(run.phase_status ?? {}) as Record<string, unknown>}
+            runStatus={run.status}
+            pausedAtPhase={run.paused_at_phase}
           />
         </div>
         <RunEvidenceTabs
           briefContent={
-            <div className="space-y-2 text-sm">
-              {briefRes.data ? (
-                <>
-                  <p className="font-medium">{briefRes.data.product_name ?? "Product"}</p>
-                  <p className="text-muted-foreground">{briefRes.data.product_summary}</p>
-                  <dl className="grid gap-1 text-xs">
-                    <div><dt className="inline font-medium">ICP: </dt><dd className="inline">{briefRes.data.target_customer}</dd></div>
-                    <div><dt className="inline font-medium">Pain: </dt><dd className="inline">{briefRes.data.primary_pain}</dd></div>
-                    <div><dt className="inline font-medium">Offer: </dt><dd className="inline">{briefRes.data.offer}</dd></div>
-                    <div><dt className="inline font-medium">CTA: </dt><dd className="inline">{briefRes.data.cta}</dd></div>
-                  </dl>
-                </>
-              ) : (
-                <p className="text-muted-foreground">Brief generates during the autobrief phase.</p>
-              )}
-              {projectRes.data?.ai_model_slug ? (
-                <p className="text-xs text-muted-foreground pt-2">Model: {projectRes.data.ai_model_slug}</p>
-              ) : null}
-            </div>
+            briefRes.data ? (
+              <RunBriefPanel
+                brief={briefRes.data}
+                modelSlug={projectRes.data?.ai_model_slug}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Brief generates during the autobrief phase.
+              </p>
+            )
           }
           sourcesContent={
             <ul className="space-y-2 text-sm">

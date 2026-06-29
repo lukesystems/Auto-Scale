@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import type { ProviderMode } from "@/lib/provider-mode";
 import {
   beginUnifiedRunAction,
-  executeUnifiedRunAction,
 } from "@/app/(app)/unified-run/actions";
 import {
   OnboardingPipelineShell,
@@ -24,8 +23,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const UNIFIED_RUN_TIMEOUT_MS = 900_000;
 
 export function OnboardingWizard({
   initialProviderMode: _initialProviderMode,
@@ -95,44 +92,10 @@ export function OnboardingWizard({
         setStage("growth");
       });
 
-      startTransition(async () => {
-        try {
-          const result = await withTimeout(
-            executeUnifiedRunAction({
-              projectId: begin.projectId,
-              growthRunId: begin.growthRunId,
-              productUrl: begin.normalizedUrl,
-              crawlId: begin.crawlId,
-              profile: "signup",
-            }),
-            UNIFIED_RUN_TIMEOUT_MS
-          );
-
-          if (runIdRef.current !== runId) return;
-
-          if (!result.ok) {
-            setErrorMessage(result.error);
-            setStage("failed");
-            setStep("error");
-            setIsRunning(false);
-            if (result.growthRunId) {
-              router.push(`/projects/${begin.projectId}/growth/${result.growthRunId}`);
-            }
-            return;
-          }
-
-          setStage("done");
-          setIsRunning(false);
-          router.push(`/projects/${begin.projectId}/growth/${result.growthRunId}`);
-          router.refresh();
-        } catch (err) {
-          if (runIdRef.current !== runId) return;
-          setErrorMessage(err instanceof Error ? err.message : "AutoScale timed out.");
-          setStage("failed");
-          setStep("error");
-          setIsRunning(false);
-        }
-      });
+      setIsRunning(false);
+      router.push(
+        `/projects/${begin.projectId}/growth/${begin.growthRunId}?autoExecute=1`
+      );
     })();
   }
 
@@ -202,19 +165,4 @@ export function OnboardingWizard({
       brief={null}
     />
   );
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`Operation timed out after ${Math.round(timeoutMs / 1000)} seconds.`));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }

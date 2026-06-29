@@ -90,6 +90,38 @@ function shouldRunPhase(phase: UnifiedRunPhase, resumeAfterPhase: string | null)
   return phaseIndex(phase) > phaseIndex(resumeAfterPhase);
 }
 
+function previousUnifiedPhase(phase: string): string | null {
+  const idx = phaseIndex(phase);
+  if (idx <= 0) return null;
+  return UNIFIED_RUN_PHASES[idx - 1] ?? null;
+}
+
+function mapStrategyRow(row: {
+  platform_mix: unknown;
+  video_type_mix: unknown;
+  campaign_hypotheses: unknown;
+  rationale: string | null;
+}) {
+  return {
+    platform_mix: row.platform_mix as never,
+    video_type_mix: row.video_type_mix as never,
+    campaign_hypotheses: row.campaign_hypotheses as never,
+    rationale: row.rationale ?? "",
+  };
+}
+
+function mapLoadoutRow(row: {
+  per_account_plan: unknown;
+  total_videos_planned: number;
+  duration_days: number;
+}) {
+  return {
+    per_account_plan: row.per_account_plan as never,
+    total_videos_planned: row.total_videos_planned,
+    duration_days: row.duration_days,
+  };
+}
+
 async function gate(
   input: {
     client: ReturnType<typeof createSupabaseServerClient>;
@@ -141,6 +173,7 @@ export async function startGrowthRun(
       .update({
         status: "running",
         paused_at_phase: null,
+        error: null,
         started_at: new Date().toISOString(),
       })
       .eq("id", runId);
@@ -279,20 +312,29 @@ export async function startGrowthRun(
         }
         const { data: existingStrategy } = await supabase
           .from("video_strategies")
-          .select("*, posting_loadouts(*)")
+          .select("*")
+          .eq("growth_run_id", runId)
+          .maybeSingle();
+        const { data: existingLoadout } = await supabase
+          .from("posting_loadouts")
+          .select("*")
           .eq("growth_run_id", runId)
           .maybeSingle();
         if (existingStrategy) {
-          strategy = existingStrategy as never;
-          const loadoutRow = (existingStrategy as { posting_loadouts?: unknown }).posting_loadouts;
-          if (loadoutRow && typeof loadoutRow === "object") {
-            loadout = loadoutRow as never;
-          }
+          strategy = mapStrategyRow(existingStrategy);
+        }
+        if (existingLoadout) {
+          loadout = mapLoadoutRow(existingLoadout);
         }
       }
 
       // --- videotrend ---
       if (shouldRunPhase("videotrend", resumeAfter)) {
+        if (discovery.evidenceCount === 0 && discovery.patternsMined === 0) {
+          throw new Error(
+            "Discovery did not produce video evidence or patterns. Add competitor sources on the Library page or retry the run after discovery completes."
+          );
+        }
         await setPhase(supabase, runId, "videotrend");
         await markPhaseStatus(supabase, runId, "videotrend", "running");
         const vt = await generateVideoTrendReport({
@@ -357,9 +399,8 @@ export async function startGrowthRun(
           loadout,
           options: runOptions,
         });
-        conceptIds = concepts.conceptIds;
         await markPhaseStatus(supabase, runId, "concepts", "succeeded", {
-          count: conceptIds.length,
+          count: concepts.conceptIds.length,
         });
         await gate({
           client: supabase,
@@ -368,13 +409,13 @@ export async function startGrowthRun(
           phase: "concepts",
           policy: approvalPolicy,
         });
-      } else if (!shouldRunPhase("concepts", resumeAfter) && resumeAfter) {
-        const { data: existing } = await supabase
-          .from("video_concepts")
-          .select("id")
-          .eq("growth_run_id", runId);
-        conceptIds = (existing ?? []).map((r) => r.id);
       }
+
+      const { data: runConcepts } = await supabase
+        .from("video_concepts")
+        .select("id")
+        .eq("growth_run_id", runId);
+      conceptIds = (runConcepts ?? []).map((row) => row.id);
 
       // --- render pipeline ---
       if (shouldRunPhase("videos", resumeAfter) && conceptIds.length > 0) {
@@ -496,23 +537,26 @@ export async function resumeGrowthRun(input: {
   const supabase = createSupabaseServerClient();
   const { data: run } = await supabase
     .from("growth_runs")
-    .select("id, project_id, paused_at_phase, options, status")
+    .select("id, project_id, paused_at_phase, phase, options, status")
     .eq("id", input.growthRunId)
     .single();
 
   if (!run) throw new Error("Growth run not found.");
-  if (run.status !== "awaiting_user_input") {
-    throw new Error("Run is not waiting for user input.");
+  if (run.status !== "awaiting_user_input" && run.status !== "failed") {
+    throw new Error("Run is not waiting for user input or retry.");
   }
 
   const opts = parseGrowthRunOptions(run.options);
   const stored = (run.options ?? {}) as Record<string, unknown>;
 
+  const resumeAfterPhase =
+    run.status === "failed" ? previousUnifiedPhase(run.phase ?? "autobrief") : run.paused_at_phase;
+
   return startGrowthRun({
     projectId: run.project_id,
     ownerId: input.ownerId,
     existingRunId: run.id,
-    resumeAfterPhase: run.paused_at_phase,
+    resumeAfterPhase,
     unified: stored.unified === true,
     productUrl: typeof stored.product_url === "string" ? stored.product_url : undefined,
     crawlId: typeof stored.crawl_id === "string" ? stored.crawl_id : undefined,

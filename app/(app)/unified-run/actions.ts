@@ -110,6 +110,7 @@ export async function beginUnifiedRunAction(
         unified: true,
         product_url: begun.normalizedUrl,
         crawl_id: begun.crawlId,
+        unified_profile: parsed.data.profile,
       } as Record<string, unknown>,
       trigger: "manual",
       approvalMode: options.approval_mode,

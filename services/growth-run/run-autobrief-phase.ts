@@ -29,20 +29,6 @@ export async function runAutobriefPhase(input: RunAutobriefPhaseInput) {
   });
 
   if (!pipeline.ok) {
-    // #region agent log
-    fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-      body: JSON.stringify({
-        sessionId: "845232",
-        hypothesisId: "H4",
-        location: "run-autobrief-phase.ts",
-        message: "autobrief pipeline failed",
-        data: { projectId: input.projectId, errorPreview: pipeline.error.slice(0, 500) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new Error(pipeline.error);
   }
 

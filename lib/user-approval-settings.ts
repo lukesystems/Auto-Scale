@@ -5,7 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { ApprovalPolicy } from "@/lib/approval-policy";
 
 export async function getUserApprovalPolicy(userId: string): Promise<ApprovalPolicy> {
-  if (!isSupabaseConfigured()) return "ask_at_critical";
+  if (!isSupabaseConfigured()) return "auto_approve_all";
 
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
@@ -22,5 +22,5 @@ export async function getUserApprovalPolicy(userId: string): Promise<ApprovalPol
   ) {
     return policy;
   }
-  return "ask_at_critical";
+  return "auto_approve_all";
 }

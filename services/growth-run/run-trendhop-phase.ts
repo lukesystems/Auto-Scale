@@ -20,7 +20,7 @@ export async function runTrendhopPhase(input: {
   growthRunId: string;
   ownerId: string;
   client: Client;
-}): Promise<{ itemCount: number; conceptsQueued: number }> {
+}): Promise<{ itemCount: number; conceptsQueued: number; conceptIds: string[] }> {
   const { data: project } = await input.client
     .from("projects")
     .select("id, niche, product_url")
@@ -79,6 +79,7 @@ export async function runTrendhopPhase(input: {
   });
 
   let conceptsQueued = 0;
+  const conceptIds: string[] = [];
 
   if (generated.hops.length > 0) {
     const rows = generated.hops.map((h) => ({
@@ -126,6 +127,7 @@ export async function runTrendhopPhase(input: {
 
       if (!conceptErr && concept) {
         conceptsQueued++;
+        conceptIds.push(concept.id);
         await input.client
           .from("trendhop_items")
           .update({ promoted_video_concept_id: concept.id })
@@ -143,5 +145,5 @@ export async function runTrendhopPhase(input: {
     })
     .eq("id", runRow.id);
 
-  return { itemCount: generated.hops.length, conceptsQueued };
+  return { itemCount: generated.hops.length, conceptsQueued, conceptIds };
 }

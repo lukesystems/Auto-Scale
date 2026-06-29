@@ -10,6 +10,7 @@ import {
   persistMetricsSnapshot,
 } from "@/services/metrics-ingestion/persist";
 import { startGrowthRun } from "@/services/growth-run/orchestrator";
+import { createGrowthRun } from "@/services/growth-run/repository";
 import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
 import { runCompound } from "@/services/compound/classify";
 import {
@@ -97,6 +98,66 @@ const StartRunSchema = z.object({
   selectedAccountIds: z.array(z.string().uuid()).optional(),
 });
 
+async function buildGrowthRunStartContext(
+  projectId: string,
+  parsed: z.infer<typeof StartRunSchema>
+) {
+  const supabase = createSupabaseServerClient();
+  const settings = await loadProjectGrowthSettings(projectId);
+  const { data: project } = await supabase
+    .from("projects")
+    .select("product_url")
+    .eq("id", projectId)
+    .single();
+  const cta = resolveProjectCta(settings, project?.product_url ?? null);
+
+  const distPref =
+    parsed.distributionPreference ?? settings.distribution_preference;
+  const accountSettings = {
+    ...settings,
+    distribution_preference: distPref,
+    selected_account_ids:
+      parsed.selectedAccountIds ?? settings.selected_account_ids,
+  };
+  const { accountIds, distributionMode } = await resolveConnectedAccountIds(
+    projectId,
+    accountSettings
+  );
+
+  const approvalMode =
+    parsed.approvalMode ??
+    (settings.operation_mode === "managed"
+      ? "autopilot"
+      : settings.operation_mode === "assisted"
+        ? "per_format"
+        : "manual");
+
+  const growthOptions = {
+    target_platforms: parsed.targetPlatforms,
+    approval_mode: approvalMode,
+    posting_aggressiveness: parsed.postingAggressiveness,
+    duration_days: parsed.durationDays,
+    concept_target_count: parsed.formatHypothesisCount * 3,
+    connected_account_ids: accountIds,
+    distribution_mode: distributionMode,
+    brand_constraints: {
+      primary_cta_label: cta.label,
+      primary_cta_url: cta.url,
+      cta_intent: cta.intentType,
+      booking_warning: cta.setupWarning,
+    },
+  };
+
+  return {
+    growthOptions,
+    approvalMode,
+    postingAggressiveness: parsed.postingAggressiveness,
+    targetPlatforms: parsed.targetPlatforms,
+    brandConstraints: growthOptions.brand_constraints,
+    distributionMode,
+  };
+}
+
 export async function startGrowthRunAction(formData: FormData) {
   const user = await requireUser();
   const parsed = StartRunSchema.safeParse({
@@ -116,74 +177,158 @@ export async function startGrowthRunAction(formData: FormData) {
     throw new Error(`${ffmpeg.message}${ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""}`);
   }
 
-  const supabase = createSupabaseServerClient();
-  const settings = await loadProjectGrowthSettings(parsed.data.projectId);
-  const { data: project } = await supabase
-    .from("projects")
-    .select("product_url")
-    .eq("id", parsed.data.projectId)
-    .single();
-  const cta = resolveProjectCta(settings, project?.product_url ?? null);
-
-  const distPref =
-    parsed.data.distributionPreference ?? settings.distribution_preference;
-  const accountSettings = {
-    ...settings,
-    distribution_preference: distPref,
-    selected_account_ids:
-      parsed.data.selectedAccountIds ?? settings.selected_account_ids,
-  };
-  const { accountIds, distributionMode } = await resolveConnectedAccountIds(
-    parsed.data.projectId,
-    accountSettings
-  );
-
-  const approvalMode =
-    parsed.data.approvalMode ??
-    (settings.operation_mode === "managed"
-      ? "autopilot"
-      : settings.operation_mode === "assisted"
-        ? "per_format"
-        : "manual");
-
-  let growthRunId: string;
-  try {
-    const result = await startGrowthRun({
-      projectId: parsed.data.projectId,
-      ownerId: user.id,
-      options: {
-        target_platforms: parsed.data.targetPlatforms,
-        approval_mode: approvalMode,
-        posting_aggressiveness: parsed.data.postingAggressiveness,
-        duration_days: parsed.data.durationDays,
-        concept_target_count: parsed.data.formatHypothesisCount * 3,
-        connected_account_ids: accountIds,
-        distribution_mode: distributionMode,
-        brand_constraints: {
-          primary_cta_label: cta.label,
-          primary_cta_url: cta.url,
-          cta_intent: cta.intentType,
-          booking_warning: cta.setupWarning,
-        },
-      },
-    });
-    growthRunId = result.growthRunId;
-  } catch (error) {
-    if (
-      !error ||
-      typeof error !== "object" ||
-      (error as { name?: unknown }).name !== "GrowthRunExecutionError" ||
-      typeof (error as { growthRunId?: unknown }).growthRunId !== "string"
-    ) {
-      throw error;
-    }
-    // The run is persisted with its failed phase and error. Send the founder
-    // there instead of leaking a framework overlay and losing the evidence.
-    growthRunId = (error as { growthRunId: string }).growthRunId;
-  }
+  const ctx = await buildGrowthRunStartContext(parsed.data.projectId, parsed.data);
+  const run = await createGrowthRun({
+    projectId: parsed.data.projectId,
+    options: ctx.growthOptions as Record<string, unknown>,
+    trigger: "manual",
+    approvalMode: ctx.approvalMode,
+    postingAggressiveness: ctx.postingAggressiveness,
+    targetPlatforms: ctx.targetPlatforms,
+    brandConstraints: ctx.brandConstraints as Record<string, unknown>,
+    distributionMode: ctx.distributionMode,
+  });
 
   revalidatePath(`/projects/${parsed.data.projectId}/growth`);
-  redirect(`/projects/${parsed.data.projectId}/growth/${growthRunId}`);
+  redirect(`/projects/${parsed.data.projectId}/growth/${run.id}?autoExecute=1`);
+}
+
+const ExecuteRunSchema = z.object({
+  projectId: z.string().uuid(),
+  growthRunId: z.string().uuid(),
+});
+
+export type ExecuteGrowthRunResult =
+  | {
+      ok: true;
+      growthRunId: string;
+      status: string;
+      pausedAtPhase?: string;
+      skipped?: boolean;
+    }
+  | { ok: false; growthRunId?: string; error: string };
+
+export async function executeGrowthRunAction(
+  input: z.infer<typeof ExecuteRunSchema>
+): Promise<ExecuteGrowthRunResult> {
+  const user = await requireUser();
+  const parsed = ExecuteRunSchema.parse(input);
+  const startedAt = Date.now();
+
+  // #region agent log
+  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
+    body: JSON.stringify({
+      sessionId: "845232",
+      hypothesisId: "H-slow-sync",
+      location: "growth/actions.ts:executeGrowthRunAction:start",
+      message: "executeGrowthRunAction started",
+      data: { growthRunId: parsed.growthRunId },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select("options, status")
+    .eq("id", parsed.growthRunId)
+    .eq("project_id", parsed.projectId)
+    .maybeSingle();
+
+  if (!run) {
+    return { ok: false, error: "Growth run not found." };
+  }
+
+  if (run.status !== "pending") {
+    return {
+      ok: true,
+      growthRunId: parsed.growthRunId,
+      status: run.status,
+      skipped: true,
+    };
+  }
+
+  const rawOptions =
+    run.options && typeof run.options === "object" && !Array.isArray(run.options)
+      ? (run.options as Record<string, unknown>)
+      : {};
+  const stored = parseGrowthRunOptions(run.options);
+  const unified = rawOptions.unified === true;
+  const productUrl =
+    typeof rawOptions.product_url === "string" ? rawOptions.product_url : undefined;
+  const crawlId =
+    typeof rawOptions.crawl_id === "string" ? rawOptions.crawl_id : null;
+  const profile =
+    rawOptions.unified_profile === "signup" || rawOptions.unified_profile === "project"
+      ? rawOptions.unified_profile
+      : "project";
+  const options = GrowthRunOptionsSchema.partial().parse(stored);
+
+  try {
+    const result = await startGrowthRun({
+      projectId: parsed.projectId,
+      ownerId: user.id,
+      existingRunId: parsed.growthRunId,
+      unified,
+      productUrl,
+      crawlId,
+      profile: unified ? profile : undefined,
+      options,
+    });
+
+    // #region agent log
+    fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
+      body: JSON.stringify({
+        sessionId: "845232",
+        hypothesisId: "H-slow-sync",
+        location: "growth/actions.ts:executeGrowthRunAction:done",
+        message: "executeGrowthRunAction finished",
+        data: {
+          growthRunId: result.growthRunId,
+          status: result.status,
+          durationMs: Date.now() - startedAt,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${result.growthRunId}`);
+
+    return {
+      ok: true,
+      growthRunId: result.growthRunId,
+      status: result.status,
+      pausedAtPhase: result.pausedAtPhase,
+    };
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      (error as { name?: unknown }).name === "GrowthRunExecutionError" &&
+      typeof (error as { growthRunId?: unknown }).growthRunId === "string"
+    ) {
+      const growthRunId = (error as { growthRunId: string }).growthRunId;
+      revalidatePath(`/projects/${parsed.projectId}/growth/${growthRunId}`);
+      return {
+        ok: true,
+        growthRunId,
+        status: "failed",
+      };
+    }
+
+    return {
+      ok: false,
+      growthRunId: parsed.growthRunId,
+      error: error instanceof Error ? error.message : "Growth run failed.",
+    };
+  }
 }
 
 const ScheduleSchema = z.object({

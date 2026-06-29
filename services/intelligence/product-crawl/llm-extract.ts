@@ -4,25 +4,54 @@ import { generateObject } from "@/services/ai/runtime";
 import { logAIRun } from "@/services/ai/logger";
 import type { CrawledPageContent, ProductPageType } from "../types";
 
+const PAGE_TYPE_VALUES = [
+  "home",
+  "pricing",
+  "features",
+  "product",
+  "about",
+  "solutions",
+  "customers",
+  "blog",
+  "docs",
+  "contact",
+  "legal",
+  "other",
+] as const;
+
+function coercePageIntent(value: unknown): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return "General product information page";
+}
+
+function coercePageTypeGuess(value: unknown): (typeof PAGE_TYPE_VALUES)[number] | null {
+  if (typeof value === "string") {
+    const key = value.trim().toLowerCase();
+    if ((PAGE_TYPE_VALUES as readonly string[]).includes(key)) {
+      return key as (typeof PAGE_TYPE_VALUES)[number];
+    }
+  }
+  return "other";
+}
+
+function coerceRelevanceScore(value: unknown): number {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return Math.min(1, Math.max(0, value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isNaN(parsed)) return Math.min(1, Math.max(0, parsed));
+  }
+  return 0.5;
+}
+
 export const PageFactsSchema = z.object({
-  page_intent: z.string().min(1),
-  page_type_guess: z
-    .enum([
-      "home",
-      "pricing",
-      "features",
-      "product",
-      "about",
-      "solutions",
-      "customers",
-      "blog",
-      "docs",
-      "contact",
-      "legal",
-      "other",
-    ])
-    .nullable(),
-  relevance_score: z.number().min(0).max(1),
+  page_intent: z.preprocess(coercePageIntent, z.string().min(1)),
+  page_type_guess: z.preprocess(
+    coercePageTypeGuess,
+    z.enum(PAGE_TYPE_VALUES).nullable()
+  ),
+  relevance_score: z.preprocess(coerceRelevanceScore, z.number().min(0).max(1)),
   audience_signals: z.array(z.string()).max(12).default([]),
   value_props: z.array(z.string()).max(12).default([]),
   features: z.array(z.string()).max(20).default([]),
