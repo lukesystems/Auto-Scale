@@ -25,6 +25,9 @@ import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { getDefaultVoiceIdHint } from "@/services/voiceover/provider";
+import { RunApprovalCard } from "@/components/growth/run-approval-card";
+import { RunPhaseTimeline } from "@/components/growth/run-phase-timeline";
+import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
 import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
 
 interface RunPageProps {
@@ -76,6 +79,11 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     fingerprintsRes,
     experimentsRes,
     receiptsRes,
+    briefRes,
+    sourcesRes,
+    videoEvidenceRes,
+    patternsRes,
+    projectRes,
   ] =
     await Promise.all([
       supabase.from("video_trend_reports").select("*").eq("growth_run_id", runId).maybeSingle(),
@@ -116,6 +124,11 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         .from("trend_receipts")
         .select("id, concept_id, format_fingerprint_id, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, expected_signal, reasoning, confidence, missing_evidence")
         .eq("growth_run_id", runId),
+      supabase.from("product_briefs").select("product_name, product_summary, target_customer, primary_pain, offer, cta, category").eq("project_id", projectId).maybeSingle(),
+      supabase.from("trendwatch_sources").select("id, source_url, platform, fetch_status, confidence_score").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
+      supabase.from("video_evidence").select("id, video_url, platform, title, source_confidence").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
+      supabase.from("video_patterns").select("id, pattern_type, label, confidence").eq("project_id", projectId).order("confidence", { ascending: false }).limit(12),
+      supabase.from("projects").select("product_url, ai_model_slug").eq("id", projectId).maybeSingle(),
     ]);
 
   const conceptIds = (conceptsRes.data ?? []).map((c) => c.id);
@@ -404,6 +417,89 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           </pre>
         ) : null}
       </header>
+
+      {run.status === "awaiting_user_input" ? (
+        <RunApprovalCard
+          projectId={projectId}
+          growthRunId={runId}
+          pausedAtPhase={run.paused_at_phase}
+        />
+      ) : null}
+
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold mb-3">Run progress</h2>
+          <RunPhaseTimeline
+            currentPhase={run.phase}
+            phaseStatus={(run.phase_status ?? {}) as Record<string, unknown>}
+          />
+        </div>
+        <RunEvidenceTabs
+          briefContent={
+            <div className="space-y-2 text-sm">
+              {briefRes.data ? (
+                <>
+                  <p className="font-medium">{briefRes.data.product_name ?? "Product"}</p>
+                  <p className="text-muted-foreground">{briefRes.data.product_summary}</p>
+                  <dl className="grid gap-1 text-xs">
+                    <div><dt className="inline font-medium">ICP: </dt><dd className="inline">{briefRes.data.target_customer}</dd></div>
+                    <div><dt className="inline font-medium">Pain: </dt><dd className="inline">{briefRes.data.primary_pain}</dd></div>
+                    <div><dt className="inline font-medium">Offer: </dt><dd className="inline">{briefRes.data.offer}</dd></div>
+                    <div><dt className="inline font-medium">CTA: </dt><dd className="inline">{briefRes.data.cta}</dd></div>
+                  </dl>
+                </>
+              ) : (
+                <p className="text-muted-foreground">Brief generates during the autobrief phase.</p>
+              )}
+              {projectRes.data?.ai_model_slug ? (
+                <p className="text-xs text-muted-foreground pt-2">Model: {projectRes.data.ai_model_slug}</p>
+              ) : null}
+            </div>
+          }
+          sourcesContent={
+            <ul className="space-y-2 text-sm">
+              {(sourcesRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Sources appear after discovery.</li>
+              ) : (
+                sourcesRes.data!.map((s) => (
+                  <li key={s.id} className="rounded border p-2">
+                    <p className="font-mono text-xs truncate">{s.source_url ?? s.platform}</p>
+                    <p className="text-xs text-muted-foreground">{s.fetch_status} · conf {(s.confidence_score ?? 0).toFixed(2)}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+          videosContent={
+            <ul className="space-y-2 text-sm">
+              {(videoEvidenceRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Video evidence appears after video discovery.</li>
+              ) : (
+                videoEvidenceRes.data!.map((v) => (
+                  <li key={v.id} className="rounded border p-2">
+                    <p className="font-medium truncate">{v.title ?? "Video"}</p>
+                    <p className="text-xs text-muted-foreground">{v.platform}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+          patternsContent={
+            <ul className="space-y-2 text-sm">
+              {(patternsRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Patterns appear after pattern mining.</li>
+              ) : (
+                patternsRes.data!.map((p) => (
+                  <li key={p.id} className="rounded border p-2">
+                    <p className="font-medium">{p.label}</p>
+                    <p className="text-xs text-muted-foreground">{p.pattern_type} · {(p.confidence ?? 0).toFixed(2)}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+        />
+      </section>
 
       {showLowConfidenceBanner ? (
         <div

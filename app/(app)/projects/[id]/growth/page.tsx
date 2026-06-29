@@ -6,12 +6,6 @@ import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
-import {
-  GrowthPreflightChecklist,
-  preflightAllGreen,
-  type PreflightItem,
-} from "@/components/growth-preflight-checklist";
-import { isBriefComplete } from "@/lib/brief-completeness";
 import { ProviderReadinessChip } from "@/components/growth/provider-readiness-chip";
 import { NextMoveBanner } from "@/components/app/next-move-banner";
 import { getNextMove } from "@/lib/next-move";
@@ -40,7 +34,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   }
 
   const supabase = createSupabaseServerClient();
-  const [runs, accounts, project, brief, sources, videoEvidence, stats, formDefaults] =
+  const [runs, accounts, project, brief, stats, formDefaults] =
     await Promise.all([
     supabase
       .from("growth_runs")
@@ -51,57 +45,23 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
     supabase.from("connected_accounts").select("id, platform, handle, status").eq("project_id", projectId),
     supabase.from("projects").select("name, product_url").eq("id", projectId).single(),
     supabase.from("product_briefs").select("*").eq("project_id", projectId).maybeSingle(),
-    supabase.from("trendwatch_sources").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-    supabase.from("video_evidence").select("id", { count: "exact", head: true }).eq("project_id", projectId),
     getProjectStats(projectId),
     loadGrowthRunFormDefaults(projectId),
   ]);
 
+  const activeRun = runs.data?.find((r) =>
+    ["pending", "running", "awaiting_user_input", "awaiting_approval", "live"].includes(r.status)
+  );
+
   const accountCount = accounts.data?.length ?? 0;
   const publishingLabel = getPublishingProviderLabel();
   const ffmpegHealth = checkFfmpegHealth();
+  const hasProductUrl = Boolean(project.data?.product_url?.trim());
+  const canStartRun = hasProductUrl;
 
-  const briefOk = isBriefComplete(brief.data ?? null);
-  const sourceCount = sources.count ?? 0;
-  const videoEvidenceCount = videoEvidence.count ?? 0;
-
-  const preflight: PreflightItem[] = [
-    {
-      ok: briefOk,
-      label: "Product brief complete",
-      detail: briefOk ? null : "Brief needs ICP, primary pain, offer, and CTA.",
-      remediation: briefOk ? null : { label: "Open Brief", href: `/projects/${projectId}/brief` },
-    },
-    {
-      ok: sourceCount >= 3,
-      label: `Sources ≥ 3 (${sourceCount} saved)`,
-      detail: sourceCount >= 3 ? null : "Growth Run reasons over public source evidence.",
-      remediation: sourceCount >= 3 ? null : { label: "Add sources", href: `/projects/${projectId}/sources` },
-    },
-    {
-      ok: videoEvidenceCount >= 3,
-      label: `Video Intelligence references ≥ 3 (${videoEvidenceCount} saved)`,
-      detail: videoEvidenceCount >= 3 ? null : "Import reference videos so the loop has format evidence.",
-      remediation:
-        videoEvidenceCount >= 3
-          ? null
-          : { label: "Import references", href: `/projects/${projectId}/video-intelligence` },
-    },
-    {
-      ok: ffmpegHealth.available,
-      label: "FFmpeg available for rendering",
-      detail: ffmpegHealth.available ? null : ffmpegHealth.message ?? ffmpegHealth.fixHint ?? null,
-      remediation: ffmpegHealth.available
-        ? null
-        : { label: "Provider setup", href: `/settings/providers` },
-    },
-  ];
-
-  const allGreen = preflightAllGreen(preflight);
-  const briefComplete = isBriefComplete(brief.data ?? null);
   const nextMove = getNextMove({
     projectId,
-    briefComplete,
+    activeRunId: activeRun?.id ?? runs.data?.[0]?.id,
     stats,
   });
   const byPlatform = (accounts.data ?? []).reduce<Record<string, number>>((acc, a) => {
@@ -141,11 +101,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </a>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              No product URL saved.{" "}
-              <Link href={`/projects/${projectId}/brief`} className="underline">
-                Set it in the Brief
-              </Link>{" "}
-              so the run can understand your product.
+              No product URL saved. Create a new project from your product URL to start AutoScale.
             </span>
           )}
         </div>
@@ -208,11 +164,14 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
         <div>
           <h2 className="text-sm font-semibold">Start a Growth Run</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            AutoScale uses your saved product URL to find the formats worth testing and build a production plan.
+            AutoScale runs end to end: brief, discovery, trend hops, video production, and scheduling.
           </p>
+          {!ffmpegHealth.available ? (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              {ffmpegHealth.message} Video rendering may fail until FFmpeg is available.
+            </p>
+          ) : null}
         </div>
-
-        <GrowthPreflightChecklist projectId={projectId} items={preflight} />
 
         <form action={startGrowthRunAction} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="projectId" value={projectId} />
@@ -311,10 +270,9 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           </details>
 
           <div className="sm:col-span-2">
-            <StartRunSubmit disabled={!allGreen} />
+            <StartRunSubmit disabled={!canStartRun} />
             <p className="mt-2 text-xs text-muted-foreground">
-              First runs stay in manual approval. AutoScale generates the trend report, strategy, concepts, scripts,
-              storyboards, video assets, and captions before anything is scheduled.
+              Discovery and evidence gathering happen automatically inside the run.
             </p>
           </div>
         </form>

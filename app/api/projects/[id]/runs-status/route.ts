@@ -27,7 +27,7 @@ export async function GET(
       .from("growth_runs")
       .select("id, status, phase, started_at, created_at")
       .eq("project_id", projectId)
-      .in("status", ["pending", "running", "awaiting_approval", "live"])
+      .in("status", ["pending", "running", "awaiting_user_input", "awaiting_approval", "live"])
       .order("created_at", { ascending: false })
       .limit(10),
     supabase

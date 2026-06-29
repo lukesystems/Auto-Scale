@@ -1,8 +1,10 @@
 export const GROWTH_RUN_PHASES = [
+  "autobrief",
   "brief",
   "deep_discovery",
   "video_discovery",
   "pattern_mining",
+  "trendhop",
   "videotrend",
   "strategy",
   "loadout",
@@ -17,11 +19,13 @@ export const GROWTH_RUN_PHASES = [
 
 export type GrowthRunPhase = (typeof GROWTH_RUN_PHASES)[number];
 
-export const GROWTH_RUN_PHASE_LABELS: Record<GrowthRunPhase, string> = {
+export const GROWTH_RUN_PHASE_LABELS: Record<string, string> = {
+  autobrief: "Understanding your product",
   brief: "Loading product brief",
   deep_discovery: "Gathering niche evidence",
   video_discovery: "Discovering video signals",
   pattern_mining: "Mining competitor patterns",
+  trendhop: "Scanning trending content",
   videotrend: "Analyzing video trends in your niche",
   strategy: "Building video strategy",
   loadout: "Planning posting loadout",
@@ -47,6 +51,7 @@ export function growthPhaseMessage(
     videoSaved?: number;
     patternsMined?: number;
     candidatesSaved?: number;
+    itemCount?: number;
     lowConfidence?: boolean;
     confidence?: number;
   } | undefined;
@@ -65,6 +70,12 @@ export function growthPhaseMessage(
     return mined > 0
       ? `Mined ${mined} pattern${mined === 1 ? "" : "s"}`
       : "Pattern mining complete (sparse evidence)";
+  }
+  if (phase === "trendhop" && typeof entry.itemCount === "number") {
+    return `Found ${entry.itemCount} trend hop${entry.itemCount === 1 ? "" : "s"}`;
+  }
+  if (phase === "autobrief" && entry.status === "succeeded") {
+    return "Product brief generated";
   }
   if (phase === "concepts" && typeof entry.count === "number") {
     return `Generated ${entry.count} video concept${entry.count === 1 ? "" : "s"}`;

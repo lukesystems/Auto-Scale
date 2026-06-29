@@ -25,44 +25,38 @@ Product URL
 → winner variants + learnings
 ```
 
-## Pivot note (current)
+## Unified AutoScale flow (current)
+
+Project creation is **URL-only** with a **per-project AI model** picker (curated list + Advanced OpenRouter catalog).
+
+One **continuous Growth Run** absorbs the former separate panels:
+
+```txt
+Product URL + model pick
+→ autobrief → deep_discovery → video_discovery → pattern_mining → trendhop
+→ videotrend → strategy → concepts → render → approval → schedule → compound
+```
+
+- Foundation routes (`/brief`, `/sources`, `/video-intelligence`, `/patterns`, `/signals`, `/trendwatch`) **redirect** to the active run view with evidence tabs.
+- **TrendHop** runs inside the orchestrator (`trendhop` phase), not as a separate nav surface.
+- Global **approval policy** in `/settings`: `auto_approve_all` | `ask_at_critical` | `ask_at_every_stage`. Runs pause with `awaiting_user_input` until the user continues.
+- Per-project model stored on `projects.ai_model_slug`; all AI calls use `withProjectAIContext()` when executing a run.
+
+Migration: `0027_unified_flow_model_approval.sql`
+
+## Pivot note (legacy)
 
 The legacy text-loop (ideas → posts → approval → schedule → experiments → winners) is
 deprecated. **Growth Run is the sole loop.** Routes for ideas / content /
-approval / exports / schedule / experiments / legacy-winners now redirect to
+approval / exports / schedule / experiments / legacy-winners redirect to
 `/projects/[id]/growth`.
 
-**TrendWatch is now trend-hop, not text-insight.** The new TrendWatch surface
-(`/projects/[id]/trendwatch`) scans trending TikTok / YouTube Shorts /
-Instagram Reels content and proposes organic video concepts that hop on each
-trend to promote the product. It is **not** part of the autonomous Growth Run
-— it is on-demand + schedulable (3 / 7 / 14 days). See `services/trendhop/`
-and migration `0021_trendhop.sql`.
-
 The legacy `services/trendwatch/` text-insight pipeline still exists at the
-service level (it is referenced by deep discovery and pattern mining), but is
-no longer surfaced in the UI.
+service level (referenced by deep discovery and pattern mining) but is not a separate UI panel.
 
 ## Active build direction
 
-The current focus is the **Scraping Engine**.
-
-AutoBrief already gives the product context. The next layer must discover and enrich public competitor/source evidence before TrendWatch reasons deeply.
-
-Agents should treat this as the active next loop:
-
-```txt
-Saved Product Brief
-→ discovery query plan
-→ source candidates
-→ safe fetch/enrichment
-→ source classification
-→ signal scoring
-→ pattern mining
-→ TrendWatch-ready insights
-```
-
-Do not treat this as a generic scraper. It is a growth intelligence engine.
+The unified run loop is live. Ongoing work: harden resumable orchestrator checkpoints, expand approval gate UX, and compound winner automation.
 
 ## Stack
 

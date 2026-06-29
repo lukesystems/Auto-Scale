@@ -8,6 +8,8 @@ import { updateAutobriefProgress } from "./crawl-progress";
 export interface BeginAutobriefRunInput {
   userId: string;
   productUrl: string;
+  aiModelSlug?: string | null;
+  aiModelSource?: "curated" | "advanced" | null;
 }
 
 export type BeginAutobriefRunResult =
@@ -22,6 +24,8 @@ export async function beginAutobriefRun(input: BeginAutobriefRunInput): Promise<
     const project = await createBriefGeneratingProject({
       userId: input.userId,
       productUrl: parsed.url,
+      aiModelSlug: input.aiModelSlug,
+      aiModelSource: input.aiModelSource,
     });
 
     const crawlId = await saveProductCrawl({

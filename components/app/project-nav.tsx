@@ -1,32 +1,26 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  FileText,
-  Network,
-  Video,
-  Sparkles,
-  TrendingUp,
   Rocket,
-  Package,
+  TrendingUp,
   Trophy,
-  Brain,
   GitBranch,
   Lightbulb,
-  Calendar,
   Menu,
   X,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type PipelineStep } from "@/lib/project-pipeline";
+import { useState } from "react";
 
 interface ProjectNavProps {
   projectId: string;
   pipeline?: PipelineStep[];
+  activeRunId?: string | null;
 }
 
 type NavItem = {
@@ -42,62 +36,50 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const GROUPS: NavGroup[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    items: [
-      { key: "overview", href: "", label: "Overview", icon: LayoutDashboard },
-      { key: "runs", href: "/runs", label: "Run Center", icon: GitBranch },
-    ],
-  },
-  {
-    id: "foundation",
-    label: "Foundation",
-    items: [
-      { key: "brief", href: "/brief", label: "Brief", icon: FileText },
-      { key: "sources", href: "/sources", label: "Sources", icon: Network },
-      { key: "video-intelligence", href: "/video-intelligence", label: "Video Intelligence", icon: Video },
-      { key: "patterns", href: "/patterns", label: "Patterns", icon: Sparkles },
-      { key: "signals", href: "/signals", label: "Signals", icon: TrendingUp },
-    ],
-  },
-  {
-    id: "growth-run",
-    label: "Growth Run",
-    items: [
-      { key: "growth", href: "/growth", label: "Hub", icon: Rocket },
-      { key: "daily-growth", href: "/growth/daily", label: "Daily Pack", icon: Package },
-      { key: "growth-results", href: "/growth/results", label: "Growth Graph", icon: TrendingUp },
-      { key: "winners", href: "/growth/winners", label: "Winners", icon: Trophy },
-    ],
-  },
-  {
-    id: "trendwatch",
-    label: "TrendWatch",
-    items: [
-      { key: "trendwatch", href: "/trendwatch", label: "Hops", icon: Brain },
-      { key: "trendwatch-schedule", href: "/trendwatch/schedule", label: "Schedule", icon: Calendar },
-    ],
-  },
-  {
-    id: "library",
-    label: "Library",
-    items: [
-      { key: "variants", href: "/growth/variants", label: "Variants", icon: GitBranch },
-      { key: "learnings", href: "/growth/learnings", label: "Learnings", icon: Lightbulb },
-    ],
-  },
-];
+function buildGroups(activeRunId?: string | null): NavGroup[] {
+  const runHref = activeRunId ? `/growth/${activeRunId}` : "/growth";
+  return [
+    {
+      id: "overview",
+      label: "Overview",
+      items: [
+        { key: "overview", href: "", label: "Overview", icon: LayoutDashboard },
+        { key: "runs", href: "/runs", label: "Run Center", icon: GitBranch },
+      ],
+    },
+    {
+      id: "autoscale",
+      label: "AutoScale",
+      items: [
+        { key: "growth", href: runHref, label: "Active Run", icon: Rocket },
+        { key: "growth-results", href: "/growth/results", label: "Growth Graph", icon: TrendingUp },
+        { key: "winners", href: "/growth/winners", label: "Winners", icon: Trophy },
+        { key: "daily-growth", href: "/growth/daily", label: "Daily Pack", icon: Rocket },
+      ],
+    },
+    {
+      id: "library",
+      label: "Library",
+      items: [
+        { key: "variants", href: "/growth/variants", label: "Variants", icon: GitBranch },
+        { key: "learnings", href: "/growth/learnings", label: "Learnings", icon: Lightbulb },
+      ],
+    },
+  ];
+}
 
-export function ProjectNav({ projectId, pipeline = [] }: ProjectNavProps) {
+export function ProjectNav({
+  projectId,
+  pipeline = [],
+  activeRunId,
+}: ProjectNavProps) {
   const pathname = usePathname();
   const base = `/projects/${projectId}`;
+  const GROUPS = buildGroups(activeRunId);
   const doneKeys = new Set(pipeline.filter((s) => s.done).map((s) => s.key));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  const allItems = GROUPS.flatMap((g) => g.items);
   const pipelineKeys = new Set(pipeline.map((s) => s.key));
   const doneCount = pipeline.filter((s) => s.done).length;
   const total = pipeline.length || 1;

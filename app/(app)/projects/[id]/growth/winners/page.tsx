@@ -6,8 +6,7 @@ import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { NextMoveBanner } from "@/components/app/next-move-banner";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { isBriefComplete } from "@/lib/brief-completeness";
-import { getProductBrief, getProjectStats } from "../../queries";
+import { getProjectStats } from "../../queries";
 import { getNextMove } from "@/lib/next-move";
 import { formatRelativeTime } from "@/lib/utils";
 import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
@@ -20,15 +19,22 @@ interface PageProps {
 export const metadata = { title: "Winners" };
 
 export default async function GrowthWinnersPage({ params }: PageProps) {
-  const [winners, brief, stats] = await Promise.all([
+  const supabase = createSupabaseServerClient();
+  const [winners, stats, activeRun] = await Promise.all([
     loadWinners(params.id),
-    getProductBrief(params.id),
     getProjectStats(params.id),
+    supabase
+      .from("growth_runs")
+      .select("id")
+      .eq("project_id", params.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const next = getNextMove({
     projectId: params.id,
-    briefComplete: isBriefComplete(brief),
+    activeRunId: activeRun.data?.id,
     stats,
   });
 

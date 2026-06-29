@@ -25,13 +25,9 @@ describe("Phase 1: Stabilization & Security Tests", () => {
       };
       const pipeline = buildPipelineSteps(stats, true);
       
-      const briefStep = pipeline.find((p) => p.key === "brief");
-      const sourcesStep = pipeline.find((p) => p.key === "sources");
       const growthStep = pipeline.find((p) => p.key === "growth");
       const winnersStep = pipeline.find((p) => p.key === "winners");
 
-      expect(briefStep?.done).toBe(true);
-      expect(sourcesStep?.done).toBe(true);
       expect(growthStep?.done).toBe(true);
       expect(winnersStep?.done).toBe(false);
     });

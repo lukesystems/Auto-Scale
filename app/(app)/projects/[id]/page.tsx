@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  Brain,
   Check,
   FileText,
   Rocket,
@@ -28,20 +27,29 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 export default async function ProjectOverviewPage({ params }: PageProps) {
-  const [project, brief, stats, growthHealth, trendhopSummary] = await Promise.all([
+  const supabase = isSupabaseConfigured() ? createSupabaseServerClient() : null;
+  const [project, brief, stats, growthHealth, activeRun] = await Promise.all([
     getProjectOr404(params.id),
     getProductBrief(params.id),
     getProjectStats(params.id),
     loadGrowthHealth(params.id),
-    loadTrendHopSummary(params.id),
+    supabase
+      ? supabase
+          .from("growth_runs")
+          .select("id")
+          .eq("project_id", params.id)
+          .in("status", ["pending", "running", "awaiting_user_input", "awaiting_approval", "live"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const briefOk = isBriefComplete(brief ?? null);
   const next = getNextMove({
     projectId: params.id,
-    briefComplete: briefOk,
+    activeRunId: activeRun.data?.id,
     stats,
-    trendhopFreshCount: trendhopSummary.freshCount,
   });
   const statusIsHealthy = project.status === "brief_saved" || project.status === "active";
 
@@ -73,14 +81,12 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <SignalPill label="Brief" done={briefOk} />
-                <SignalPill label="Sources" done={stats.sourceCount > 0} />
-                <SignalPill label="Video Intelligence" done={stats.videoEvidenceCount > 0} />
                 <SignalPill
-                  label="Growth Run"
+                  label="AutoScale run"
                   done={
                     stats.growthRunCompletedCount > 0 ||
                     stats.growthVideoReadyCount > 0 ||
-                    stats.growthScheduledCount > 0
+                    Boolean(activeRun.data?.id)
                   }
                 />
                 <SignalPill label="Winners" done={stats.winnerCount > 0} />
@@ -120,55 +126,39 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
                 </div>
               </div>
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                <PipelineRow done={briefOk} label="Product Brief complete" href={`/projects/${params.id}/brief`} />
-                <PipelineRow done={stats.sourceCount > 0} label="Sources gathered" href={`/projects/${params.id}/sources`} />
-                <PipelineRow done={stats.videoEvidenceCount > 0} label="Video Intelligence references" href={`/projects/${params.id}/video-intelligence`} />
+                <PipelineRow done={briefOk} label="Product brief" href={next.href} />
                 <PipelineRow
                   done={
                     stats.growthRunCompletedCount > 0 ||
                     stats.growthVideoReadyCount > 0 ||
-                    stats.growthScheduledCount > 0
+                    Boolean(activeRun.data?.id)
                   }
-                  label="First Growth Run shipped"
-                  href={`/projects/${params.id}/growth`}
+                  label="AutoScale run"
+                  href={next.href}
                 />
                 <PipelineRow done={stats.winnerCount > 0} label="Winner(s) detected" href={`/projects/${params.id}/growth/winners`} />
-                <PipelineRow done={stats.growthRunCompletedCount > 1} label="Compounding variants" href={`/projects/${params.id}/growth`} />
+                <PipelineRow done={stats.growthRunCompletedCount > 1} label="Compounding variants" href={`/projects/${params.id}/growth/variants`} />
               </div>
             </div>
 
             <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Brain className="h-4 w-4 text-primary" />
-                  <h2 className="text-base font-semibold tracking-tight">TrendWatch</h2>
+                  <Rocket className="h-4 w-4 text-primary" />
+                  <h2 className="text-base font-semibold tracking-tight">Active run</h2>
                 </div>
                 <Button asChild variant="outline" size="sm">
-                  <Link href={`/projects/${params.id}/trendwatch`}>
+                  <Link href={next.href}>
                     Open
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </Button>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                {trendhopSummary.freshCount > 0
-                  ? `${trendhopSummary.freshCount} fresh hops · last run ${
-                      trendhopSummary.lastRunAt ? formatRelativeTime(trendhopSummary.lastRunAt) : "never"
-                    }`
-                  : "No fresh trend hops. Run TrendWatch to scan today's viral patterns."}
+                {activeRun.data?.id
+                  ? "AutoScale is running or waiting for your review. Open the run to see progress, evidence, and videos."
+                  : "Start a new run from the Growth hub or create a project from your product URL."}
               </p>
-              {trendhopSummary.preview.length > 0 && (
-                <ul className="mt-4 space-y-2 text-sm">
-                  {trendhopSummary.preview.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/70 px-3 py-2">
-                      <span className="truncate">{p.trend_name}</span>
-                      <Badge variant="outline" className="capitalize">
-                        {p.platform.replace("_", " ")}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
           </div>
 
@@ -432,35 +422,5 @@ async function loadGrowthHealth(projectId: string): Promise<GrowthHealth> {
       ? { scheduledAt: nextScheduledRes.data.scheduled_for ?? null }
       : null,
     experimentCount: experimentCountRes.count ?? 0,
-  };
-}
-
-async function loadTrendHopSummary(projectId: string) {
-  if (!isSupabaseConfigured()) {
-    return { freshCount: 0, lastRunAt: null as string | null, preview: [] as Array<{ id: string; trend_name: string; platform: string }> };
-  }
-  const supabase = createSupabaseServerClient();
-  const [itemsRes, runRes] = await Promise.all([
-    supabase
-      .from("trendhop_items")
-      .select("id, trend_name, platform")
-      .eq("project_id", projectId)
-      .is("dismissed_at", null)
-      .order("created_at", { ascending: false })
-      .limit(3),
-    supabase
-      .from("trendhop_runs")
-      .select("created_at, completed_at")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  const items = itemsRes.data ?? [];
-  return {
-    freshCount: items.length,
-    lastRunAt: runRes.data?.completed_at ?? runRes.data?.created_at ?? null,
-    preview: items,
   };
 }

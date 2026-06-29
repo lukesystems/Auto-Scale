@@ -1,92 +1,60 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import type { ProviderMode } from "@/lib/provider-mode";
-import type { AutoBrief } from "@/services/autobrief/schema";
 import {
-  beginAutoBriefRunAction,
-  beginOnboardingGrowthRunAction,
-  executeAutoBriefRunAction,
-  executeOnboardingGrowthRunAction,
-} from "@/app/(app)/autobrief/actions";
+  beginUnifiedRunAction,
+  executeUnifiedRunAction,
+} from "@/app/(app)/unified-run/actions";
 import {
   OnboardingPipelineShell,
   type PipelineStage,
 } from "@/components/onboarding/onboarding-pipeline-shell";
 import { useAutobriefProgress } from "@/hooks/use-autobrief-progress";
 import { useGrowthRunProgress } from "@/hooks/use-growth-run-progress";
-import { LOW_CONFIDENCE_THRESHOLD } from "@/services/autobrief/schema";
+import {
+  ModelPicker,
+  getDefaultModelPickerValue,
+  type ModelPickerValue,
+} from "@/components/ai/model-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const AUTOBRIEF_TIMEOUT_MS = 240_000;
-const GROWTH_RUN_TIMEOUT_MS = 600_000;
+const UNIFIED_RUN_TIMEOUT_MS = 900_000;
 
-export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: { initialProviderMode: ProviderMode }) {
+export function OnboardingWizard({
+  initialProviderMode: _initialProviderMode,
+}: {
+  initialProviderMode: ProviderMode;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<"url" | "running" | "error">("url");
   const [productUrl, setProductUrl] = useState("");
+  const [aiModel, setAiModel] = useState<ModelPickerValue>(getDefaultModelPickerValue);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [crawlId, setCrawlId] = useState<string | null>(null);
   const [growthRunId, setGrowthRunId] = useState<string | null>(null);
-  const [brief, setBrief] = useState<AutoBrief | null>(null);
   const [stage, setStage] = useState<PipelineStage>("crawl");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [slowHint, setSlowHint] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [ffmpegWarning, setFfmpegWarning] = useState<string | null>(null);
-  const [thinEvidenceWarning, setThinEvidenceWarning] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const runIdRef = useRef(0);
 
   const autobriefProgress = useAutobriefProgress(
     projectId,
     crawlId,
-    step === "running" && stage === "crawl"
+    step === "running" && (stage === "crawl" || stage === "brief")
   );
   const growthProgress = useGrowthRunProgress(
     projectId,
     growthRunId,
     step === "running" && (stage === "growth" || stage === "done")
   );
-
-  useEffect(() => {
-    if (step !== "running") {
-      setSlowHint(false);
-      return;
-    }
-    const timer = setTimeout(() => setSlowHint(true), 90_000);
-    return () => clearTimeout(timer);
-  }, [step]);
-
-  useEffect(() => {
-    if (!growthProgress || stage !== "growth") return;
-
-    const videotrend = growthProgress.phaseStatus.videotrend as {
-      lowConfidence?: boolean;
-      evidenceCount?: number;
-      confidence?: number;
-      status?: string;
-    } | undefined;
-
-    if (videotrend?.status !== "succeeded" && videotrend?.status !== "running") return;
-
-    const thin =
-      videotrend.lowConfidence === true ||
-      (typeof videotrend.evidenceCount === "number" && videotrend.evidenceCount < 3) ||
-      (typeof videotrend.confidence === "number" && videotrend.confidence < LOW_CONFIDENCE_THRESHOLD);
-
-    if (thin) {
-      setThinEvidenceWarning(
-        "Thin niche evidence — patterns are directional only. Add competitor video URLs in Sources for stronger VideoTrend output."
-      );
-    }
-  }, [growthProgress, stage]);
 
   function onStart() {
     if (!productUrl.trim()) {
@@ -99,16 +67,17 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
     setStep("running");
     setIsRunning(true);
     setErrorMessage(null);
-    setFfmpegWarning(null);
-    setThinEvidenceWarning(null);
     setProjectId(null);
     setCrawlId(null);
     setGrowthRunId(null);
-    setBrief(null);
     setStage("crawl");
 
     void (async () => {
-      const begin = await beginAutoBriefRunAction({ productUrl });
+      const begin = await beginUnifiedRunAction({
+        productUrl,
+        aiModel,
+        profile: "signup",
+      });
       if (runIdRef.current !== runId) return;
 
       if (!begin.ok) {
@@ -122,109 +91,47 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
       flushSync(() => {
         setProjectId(begin.projectId);
         setCrawlId(begin.crawlId);
-      });
-
-      let briefResult: Awaited<ReturnType<typeof executeAutoBriefRunAction>>;
-      try {
-        briefResult = await withTimeout(
-          executeAutoBriefRunAction({
-            projectId: begin.projectId,
-            crawlId: begin.crawlId,
-            productUrl,
-            profile: "signup",
-          }),
-          AUTOBRIEF_TIMEOUT_MS
-        );
-      } catch (err) {
-        if (runIdRef.current !== runId) return;
-        setErrorMessage(err instanceof Error ? err.message : "AutoBrief timed out.");
-        setStage("failed");
-        setStep("error");
-        setIsRunning(false);
-        return;
-      }
-
-      if (runIdRef.current !== runId) return;
-
-      if (!briefResult.ok) {
-        setErrorMessage(briefResult.error);
-        setStage("failed");
-        setStep("error");
-        setIsRunning(false);
-        return;
-      }
-
-      if (briefResult.fetchWarning) toast.warning(briefResult.fetchWarning);
-      if (briefResult.lowConfidence) {
-        const pct = Math.round(briefResult.brief.confidence_score * 100);
-        const msg = `Low-confidence brief (${pct}%). Add competitor URLs in Sources after onboarding for stronger experiments.`;
-        toast.warning(msg);
-        setThinEvidenceWarning(msg);
-      }
-
-      flushSync(() => {
-        setBrief(briefResult.brief);
-        setStage("brief");
-      });
-
-      const growthBegin = await beginOnboardingGrowthRunAction({ projectId: begin.projectId });
-      if (runIdRef.current !== runId) return;
-
-      if (!growthBegin.ok) {
-        setErrorMessage(growthBegin.error);
-        setStage("failed");
-        setStep("error");
-        setIsRunning(false);
-        return;
-      }
-
-      if (growthBegin.ffmpegWarning) {
-        setFfmpegWarning(growthBegin.ffmpegWarning);
-        toast.warning(growthBegin.ffmpegWarning);
-      }
-
-      flushSync(() => {
-        setGrowthRunId(growthBegin.growthRunId);
+        setGrowthRunId(begin.growthRunId);
         setStage("growth");
       });
 
       startTransition(async () => {
-        let growthResult: Awaited<ReturnType<typeof executeOnboardingGrowthRunAction>>;
         try {
-          growthResult = await withTimeout(
-            executeOnboardingGrowthRunAction({
+          const result = await withTimeout(
+            executeUnifiedRunAction({
               projectId: begin.projectId,
-              growthRunId: growthBegin.growthRunId,
+              growthRunId: begin.growthRunId,
+              productUrl: begin.normalizedUrl,
+              crawlId: begin.crawlId,
+              profile: "signup",
             }),
-            GROWTH_RUN_TIMEOUT_MS
+            UNIFIED_RUN_TIMEOUT_MS
           );
+
+          if (runIdRef.current !== runId) return;
+
+          if (!result.ok) {
+            setErrorMessage(result.error);
+            setStage("failed");
+            setStep("error");
+            setIsRunning(false);
+            if (result.growthRunId) {
+              router.push(`/projects/${begin.projectId}/growth/${result.growthRunId}`);
+            }
+            return;
+          }
+
+          setStage("done");
+          setIsRunning(false);
+          router.push(`/projects/${begin.projectId}/growth/${result.growthRunId}`);
+          router.refresh();
         } catch (err) {
           if (runIdRef.current !== runId) return;
-          setErrorMessage(err instanceof Error ? err.message : "Growth Run timed out.");
+          setErrorMessage(err instanceof Error ? err.message : "AutoScale timed out.");
           setStage("failed");
           setStep("error");
           setIsRunning(false);
-          return;
         }
-
-        if (runIdRef.current !== runId) return;
-
-        if (!growthResult.ok) {
-          setErrorMessage(growthResult.error);
-          setStage("failed");
-          if (growthResult.growthRunId) {
-            router.push(`/projects/${begin.projectId}/growth/${growthResult.growthRunId}`);
-          } else {
-            setStep("error");
-          }
-          setIsRunning(false);
-          return;
-        }
-
-        setStage("done");
-        setIsRunning(false);
-        router.push(`/projects/${begin.projectId}/growth/${growthResult.growthRunId}`);
-        router.refresh();
       });
     })();
   }
@@ -250,13 +157,20 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
             }}
           />
           <p className="text-xs text-muted-foreground">
-            AutoScale reads your site, saves your product brief internally, and launches your first Growth Run automatically.
+            AutoScale runs end to end: product brief, discovery, trend hops, video experiments, and scheduling.
           </p>
         </div>
+
+        <ModelPicker value={aiModel} onChange={setAiModel} disabled={isRunning || pending} />
+
         <div className="flex justify-end pt-2">
           <Button type="button" disabled={isRunning || pending} onClick={onStart}>
-            {isRunning || pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Start Growth Run
+            {isRunning || pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Start AutoScale
           </Button>
         </div>
       </div>
@@ -270,9 +184,7 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
           stage="failed"
           autobriefProgress={autobriefProgress}
           growthProgress={growthProgress}
-          brief={brief}
-          thinEvidenceWarning={thinEvidenceWarning}
-          ffmpegWarning={ffmpegWarning}
+          brief={null}
           errorMessage={errorMessage}
         />
         <Button type="button" onClick={returnToUrl}>
@@ -287,10 +199,7 @@ export function OnboardingWizard({ initialProviderMode: _initialProviderMode }: 
       stage={stage}
       autobriefProgress={autobriefProgress}
       growthProgress={growthProgress}
-      brief={brief}
-      showSlowHint={slowHint}
-      thinEvidenceWarning={thinEvidenceWarning}
-      ffmpegWarning={ffmpegWarning}
+      brief={null}
     />
   );
 }

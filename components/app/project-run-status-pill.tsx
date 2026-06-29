@@ -26,7 +26,7 @@ export function ProjectRunStatusPill({ projectId }: ProjectRunStatusPillProps) {
         if (!res.ok) return;
         const data = (await res.json()) as { runs?: RunRow[] };
         const active = (data.runs ?? []).filter((r) =>
-          ["running", "pending", "awaiting_approval", "live"].includes(r.status)
+          ["running", "pending", "awaiting_user_input", "awaiting_approval", "live"].includes(r.status)
         ).length;
         if (!cancelled) setRunning(active);
       } catch {

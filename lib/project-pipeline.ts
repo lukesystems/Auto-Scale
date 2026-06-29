@@ -19,24 +19,27 @@ export interface ProjectPipelineStats {
   videoEvidenceCount: number;
   patternRunCount: number;
   dailyPackCount: number;
+  activeRunCount?: number;
 }
 
 /**
- * Pivot note: Growth Run is the sole loop. The pipeline now reflects the
- * Brief → Sources → Video Intelligence → First Growth Run → Winners detected
- * → Compounding variants progression.
+ * Unified AutoScale flow: pipeline reflects run progress, not separate panels.
  */
 export function buildPipelineSteps(
   stats: ProjectPipelineStats,
-  briefComplete: boolean
+  hasActiveRun: boolean
 ): PipelineStep[] {
+  const runStarted =
+    hasActiveRun ||
+    stats.growthRunCompletedCount > 0 ||
+    stats.growthVideoReadyCount > 0 ||
+    stats.growthScheduledCount > 0;
+
   return [
     { key: "overview", done: true },
-    { key: "brief", done: briefComplete },
-    { key: "sources", done: stats.sourceCount > 0 },
-    { key: "video-intelligence", done: stats.videoEvidenceCount > 0 },
-    { key: "growth", done: stats.growthRunCompletedCount > 0 || stats.growthVideoReadyCount > 0 || stats.growthScheduledCount > 0 },
+    { key: "growth", done: runStarted },
     { key: "daily-growth", done: stats.dailyPackCount > 0 },
+    { key: "growth-results", done: stats.growthScheduledCount > 0 || stats.growthPostedCount > 0 },
     { key: "winners", done: stats.winnerCount > 0 },
     { key: "variants", done: stats.winnerCount > 1 || stats.growthRunCompletedCount > 1 },
   ];

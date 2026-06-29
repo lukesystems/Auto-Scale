@@ -21,6 +21,8 @@ export async function createBriefGeneratingProject(input: {
   userId: string;
   productUrl: string;
   productName?: string | null;
+  aiModelSlug?: string | null;
+  aiModelSource?: "curated" | "advanced" | null;
 }): Promise<CreateProjectFromAutoBriefResult> {
   const supabase = createSupabaseServerClient();
   const name = input.productName?.trim() || projectNameFromUrl(input.productUrl);
@@ -33,6 +35,8 @@ export async function createBriefGeneratingProject(input: {
       slug: slugify(name),
       product_url: input.productUrl,
       status: "brief_generating",
+      ai_model_slug: input.aiModelSlug ?? null,
+      ai_model_source: input.aiModelSource ?? null,
     })
     .select("id")
     .single();

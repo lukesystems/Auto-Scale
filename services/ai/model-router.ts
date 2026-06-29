@@ -1,5 +1,6 @@
 import type { AIProvider, AITaskType } from "./types";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { getProjectModelFromContext } from "./project-context";
 
 export const STRUCTURED_JSON_TASK_TYPES: readonly AITaskType[] = [
   "autobrief",
@@ -66,6 +67,20 @@ export function resolveSafeStructuredModel(
     requestedModel: model,
     fallbackModel: fallback,
   });
+  // #region agent log
+  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
+    body: JSON.stringify({
+      sessionId: "845232",
+      hypothesisId: "H2",
+      location: "model-router.ts:resolveSafeStructuredModel",
+      message: "unstable model replaced",
+      data: { taskType, requestedModel: model, fallbackModel: fallback, provider },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   return fallback;
 }
 
@@ -83,6 +98,11 @@ const TASK_ENV_MAP: Record<AITaskType, keyof ReturnType<typeof getManagedProvide
 };
 
 export function resolveModelForTask(taskType: AITaskType = "default"): string | undefined {
+  const projectModel = getProjectModelFromContext();
+  if (projectModel?.trim()) {
+    return projectModel.trim();
+  }
+
   const config = getManagedProviderConfig();
   const taskModel = config.models[TASK_ENV_MAP[taskType]];
   if (taskModel) return taskModel;

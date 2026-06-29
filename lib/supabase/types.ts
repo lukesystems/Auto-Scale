@@ -84,6 +84,7 @@ export interface Database {
           preferred_llm_mode: string | null;
           default_project_id: string | null;
           crawl_mode: "llm" | "heuristic";
+          approval_policy: "auto_approve_all" | "ask_at_critical" | "ask_at_every_stage";
           created_at: string;
           updated_at: string;
         };
@@ -103,6 +104,8 @@ export interface Database {
           product_brief_id: string | null;
           description: string | null;
           status: ProjectStatus;
+          ai_model_slug: string | null;
+          ai_model_source: "curated" | "advanced" | null;
           created_at: string;
           updated_at: string;
         };
@@ -1184,16 +1187,17 @@ export interface Database {
           id: string;
           project_id: string;
           status:
-            | "pending" | "running" | "awaiting_approval" | "scheduled"
+            | "pending" | "running" | "awaiting_user_input" | "awaiting_approval" | "scheduled"
             | "live" | "completed" | "failed" | "cancelled";
+          paused_at_phase: string | null;
           trigger: "manual" | "autopilot" | "scheduled";
           approval_mode: "manual" | "per_format" | "autopilot";
           posting_aggressiveness: "conservative" | "balanced" | "aggressive";
           brand_constraints: Json;
           target_platforms: Json;
           phase:
-            | "brief" | "deep_discovery" | "video_discovery" | "pattern_mining"
-            | "videotrend" | "strategy" | "loadout" | "concepts"
+            | "brief" | "autobrief" | "deep_discovery" | "video_discovery" | "pattern_mining"
+            | "trendhop" | "videotrend" | "strategy" | "loadout" | "concepts"
             | "scripts" | "storyboards" | "assets" | "videos" | "captions"
             | "approval" | "schedule" | "live" | "compound" | "done";
           phase_status: Json;
