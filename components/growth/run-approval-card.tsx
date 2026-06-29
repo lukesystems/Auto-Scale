@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
 import {
-  resumeGrowthRunAction,
+  continueGrowthRunStageAction,
   rejectGrowthRunPhaseAction,
 } from "@/app/(app)/unified-run/actions";
 
@@ -28,7 +28,7 @@ export function RunApprovalCard({
 
   function onContinue() {
     startTransition(async () => {
-      const result = await resumeGrowthRunAction({ projectId, growthRunId });
+      const result = await continueGrowthRunStageAction({ projectId, growthRunId });
       if (!result.ok) {
         toast.error(result.error ?? "Failed to continue.");
         return;
@@ -64,12 +64,12 @@ export function RunApprovalCard({
           <span className="font-medium text-foreground">{nextLabel}</span>.
         </p>
         <p className="text-xs text-muted-foreground mt-2">
-          Pauses follow your{" "}
+          Micro-gates follow your{" "}
           <Link href="/settings" className="underline hover:text-foreground inline-flex items-center gap-1">
             <Settings2 className="h-3 w-3" />
             Settings → Approval policy
           </Link>
-          . Choose &quot;Auto-approve everything&quot; to run without stopping.
+          . Macro stage boundaries always pause here regardless of policy.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

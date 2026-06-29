@@ -14,14 +14,16 @@ import { runDiscoveryPhase } from "./run-discovery-phase";
 import { generateVideoTrendReport } from "@/services/videotrend/generate";
 import { generateVideoStrategy } from "@/services/video-strategy/generate";
 import { generateVideoConcepts } from "@/services/video-factory/concepts";
-import { buildVideosForRun } from "@/services/video-factory";
+import { buildScriptsAndStoryboardsForRun, renderVideosForRun } from "@/services/video-factory";
 import { runAutobriefPhase } from "./run-autobrief-phase";
 import { runTrendhopPhase } from "./run-trendhop-phase";
 import {
   maybePauseForUserApproval,
   RunPausedForApprovalError,
 } from "./approval-gates";
+import { maybePauseAtStageBoundary } from "./stage-gates";
 import type { ApprovalGatePhase } from "@/lib/approval-policy";
+import { getStageByBoundaryPhase } from "@/lib/growth-run/stages";
 import { getUserApprovalPolicy } from "@/lib/user-approval-settings";
 import { withProjectAIContext, getProjectAIModelSlug } from "@/services/ai/runtime";
 
@@ -41,6 +43,7 @@ export const UNIFIED_RUN_PHASES = [
   "videos",
   "captions",
   "approval",
+  "schedule",
 ] as const;
 
 export type UnifiedRunPhase = (typeof UNIFIED_RUN_PHASES)[number];
@@ -168,6 +171,13 @@ export async function startGrowthRun(
   const resumeAfter = input.resumeAfterPhase ?? null;
 
   if (input.existingRunId || input.resumeAfterPhase) {
+    const nextStage = input.resumeAfterPhase
+      ? (() => {
+          const completed = getStageByBoundaryPhase(input.resumeAfterPhase!);
+          return completed ? Math.min(completed.id + 1, 4) : 1;
+        })()
+      : 1;
+
     await supabase
       .from("growth_runs")
       .update({
@@ -175,6 +185,7 @@ export async function startGrowthRun(
         paused_at_phase: null,
         error: null,
         started_at: new Date().toISOString(),
+        current_stage: nextStage,
       })
       .eq("id", runId);
   }
@@ -329,6 +340,7 @@ export async function startGrowthRun(
       }
 
       // --- videotrend ---
+      let justCompletedStage1 = false;
       if (shouldRunPhase("videotrend", resumeAfter)) {
         if (discovery.evidenceCount === 0 && discovery.patternsMined === 0) {
           throw new Error(
@@ -351,6 +363,16 @@ export async function startGrowthRun(
           lowConfidence: discovery.lowConfidence || report.confidence < 0.35,
           evidenceCount: discovery.evidenceCount,
           hookValidation: vt.hookValidation,
+        });
+        justCompletedStage1 = true;
+      }
+
+      if (justCompletedStage1) {
+        await maybePauseAtStageBoundary({
+          client: supabase,
+          growthRunId: runId,
+          stage: 1,
+          boundaryPhase: "videotrend",
         });
       }
 
@@ -417,11 +439,46 @@ export async function startGrowthRun(
         .eq("growth_run_id", runId);
       conceptIds = (runConcepts ?? []).map((row) => row.id);
 
-      // --- render pipeline ---
-      if (shouldRunPhase("videos", resumeAfter) && conceptIds.length > 0) {
-        await setPhase(supabase, runId, "videos");
+      // --- scripts + storyboards (stage 2 tail) ---
+      let justCompletedStage2 = false;
+      if (shouldRunPhase("scripts", resumeAfter) && conceptIds.length > 0) {
+        await setPhase(supabase, runId, "scripts");
         await markPhaseStatus(supabase, runId, "scripts", "running");
-        const built = await buildVideosForRun({
+        const scripted = await buildScriptsAndStoryboardsForRun({
+          projectId: input.projectId,
+          conceptIds,
+        });
+        await markPhaseStatus(supabase, runId, "scripts", "succeeded", {
+          count: scripted.completedConceptIds.length,
+          failures: scripted.failures.length,
+        });
+        await markPhaseStatus(supabase, runId, "storyboards", "succeeded", {
+          count: scripted.completedConceptIds.length,
+          failures: scripted.failures.length,
+        });
+        if (scripted.failures.length > 0) {
+          throw new Error(
+            `Storyboard generation failed for ${scripted.failures.length} concept(s): ${scripted.failures[0]?.error ?? "unknown"}`
+          );
+        }
+        justCompletedStage2 = true;
+      }
+
+      if (justCompletedStage2) {
+        await maybePauseAtStageBoundary({
+          client: supabase,
+          growthRunId: runId,
+          stage: 2,
+          boundaryPhase: "storyboards",
+        });
+      }
+
+      // --- render pipeline (stage 3) ---
+      let justCompletedStage3 = false;
+      if (shouldRunPhase("assets", resumeAfter) && conceptIds.length > 0) {
+        await setPhase(supabase, runId, "assets");
+        await markPhaseStatus(supabase, runId, "assets", "running");
+        const built = await renderVideosForRun({
           growthRunId: runId,
           projectId: input.projectId,
           conceptIds,
@@ -429,8 +486,6 @@ export async function startGrowthRun(
         });
         videoIds = built.videoIds;
         failures = built.failures;
-        await markPhaseStatus(supabase, runId, "scripts", "succeeded");
-        await markPhaseStatus(supabase, runId, "storyboards", "succeeded");
         await markPhaseStatus(supabase, runId, "assets", "succeeded", {
           failures: failures.length,
         });
@@ -438,55 +493,59 @@ export async function startGrowthRun(
           count: videoIds.length,
         });
         await markPhaseStatus(supabase, runId, "captions", "succeeded");
+
+        await setPhase(supabase, runId, "approval", { status: "awaiting_approval" });
+
+        const autoApproveVideos =
+          approvalPolicy === "auto_approve_all" || runOptions.approval_mode === "autopilot";
+
+        if (autoApproveVideos) {
+          await supabase
+            .from("videos")
+            .update({
+              status: "approved",
+              approval_status: "auto_approved",
+              approved_at: new Date().toISOString(),
+            })
+            .eq("growth_run_id", runId)
+            .in("status", ["rendering", "ready"]);
+        } else if (runOptions.approval_mode === "per_format") {
+          await supabase
+            .from("videos")
+            .update({
+              status: "approved",
+              approval_status: "auto_approved",
+              approved_at: new Date().toISOString(),
+            })
+            .eq("growth_run_id", runId)
+            .in(
+              "concept_id",
+              (
+                await supabase
+                  .from("video_concepts")
+                  .select("id")
+                  .eq("growth_run_id", runId)
+                  .in("video_type", ["slide", "founder_pov", "pain_led"])
+              ).data?.map((r) => r.id) ?? []
+            );
+        }
+
+        await markPhaseStatus(supabase, runId, "approval", "succeeded");
+        justCompletedStage3 = true;
       }
 
-      await setPhase(supabase, runId, "approval", { status: "awaiting_approval" });
-
-      const autoApproveVideos =
-        approvalPolicy === "auto_approve_all" || runOptions.approval_mode === "autopilot";
-
-      if (autoApproveVideos) {
-        await supabase
-          .from("videos")
-          .update({
-            status: "approved",
-            approval_status: "auto_approved",
-            approved_at: new Date().toISOString(),
-          })
-          .eq("growth_run_id", runId)
-          .in("status", ["rendering", "ready"]);
-      } else if (runOptions.approval_mode === "per_format") {
-        await supabase
-          .from("videos")
-          .update({
-            status: "approved",
-            approval_status: "auto_approved",
-            approved_at: new Date().toISOString(),
-          })
-          .eq("growth_run_id", runId)
-          .in(
-            "concept_id",
-            (
-              await supabase
-                .from("video_concepts")
-                .select("id")
-                .eq("growth_run_id", runId)
-                .in("video_type", ["slide", "founder_pov", "pain_led"])
-            ).data?.map((r) => r.id) ?? []
-          );
+      if (justCompletedStage3) {
+        await maybePauseAtStageBoundary({
+          client: supabase,
+          growthRunId: runId,
+          stage: 3,
+          boundaryPhase: "approval",
+        });
       }
-
-      await gate({
-        client: supabase,
-        growthRunId: runId,
-        ownerId: input.ownerId,
-        phase: "videos",
-        policy: approvalPolicy,
-      });
 
       return {
         growthRunId: runId,
-        status: "awaiting_approval",
+        status: "completed",
         videoIds,
         failures,
       };
@@ -534,16 +593,59 @@ export async function resumeGrowthRun(input: {
   growthRunId: string;
   ownerId: string;
 }): Promise<StartGrowthRunResult> {
+  return continueGrowthRunStage(input);
+}
+
+/** Continue after a stage boundary pause (or legacy micro-gate). */
+export async function continueGrowthRunStage(input: {
+  growthRunId: string;
+  ownerId: string;
+}): Promise<StartGrowthRunResult> {
   const supabase = createSupabaseServerClient();
   const { data: run } = await supabase
     .from("growth_runs")
-    .select("id, project_id, paused_at_phase, phase, options, status")
+    .select("id, project_id, paused_at_phase, phase, options, status, current_stage")
     .eq("id", input.growthRunId)
     .single();
 
   if (!run) throw new Error("Growth run not found.");
   if (run.status !== "awaiting_user_input" && run.status !== "failed") {
     throw new Error("Run is not waiting for user input or retry.");
+  }
+
+  if (run.status === "awaiting_user_input" && run.paused_at_phase === "approval") {
+    const { data: videos } = await supabase
+      .from("videos")
+      .select("id, approval_status")
+      .eq("growth_run_id", run.id);
+
+    const rows = videos ?? [];
+    if (rows.length === 0) {
+      throw new Error("No rendered videos yet. Generate videos before scheduling.");
+    }
+    const allApproved = rows.every(
+      (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
+    );
+    if (!allApproved) {
+      throw new Error("Approve all videos in the production workspace before scheduling.");
+    }
+
+    await supabase
+      .from("growth_runs")
+      .update({
+        status: "awaiting_approval",
+        phase: "schedule",
+        current_stage: 4,
+        paused_at_phase: null,
+      })
+      .eq("id", run.id);
+
+    return {
+      growthRunId: run.id,
+      status: "awaiting_approval",
+      videoIds: rows.map((r) => r.id),
+      failures: [],
+    };
   }
 
   const opts = parseGrowthRunOptions(run.options);

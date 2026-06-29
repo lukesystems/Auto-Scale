@@ -31,6 +31,10 @@ import {
 } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { checkFfmpegHealth } from "@/services/ffmpeg/health";
+import {
+  continueGrowthRunStage,
+  rejectGrowthRunPhase,
+} from "@/services/growth-run/orchestrator";
 
 function parseGrowthRunOptions(raw: unknown) {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -789,4 +793,72 @@ export async function saveGrowthSettingsAction(formData: FormData) {
 
   revalidatePath(`/projects/${parsed.projectId}/growth`);
   revalidatePath(`/projects/${parsed.projectId}/growth/settings`);
+}
+
+const ContinueStageSchema = z.object({
+  projectId: z.string().uuid(),
+  growthRunId: z.string().uuid(),
+});
+
+export type ContinueGrowthRunStageResult =
+  | {
+      ok: true;
+      growthRunId: string;
+      status: string;
+      pausedAtPhase?: string;
+    }
+  | { ok: false; growthRunId?: string; error: string };
+
+/** Continue after a macro-stage boundary pause. Always requires explicit user CTA. */
+export async function continueGrowthRunStageAction(
+  input: z.infer<typeof ContinueStageSchema>
+): Promise<ContinueGrowthRunStageResult> {
+  const user = await requireUser();
+  const parsed = ContinueStageSchema.parse(input);
+
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select("id")
+    .eq("id", parsed.growthRunId)
+    .eq("project_id", parsed.projectId)
+    .maybeSingle();
+
+  if (!run) {
+    return { ok: false, error: "Growth run not found." };
+  }
+
+  try {
+    const result = await continueGrowthRunStage({
+      growthRunId: parsed.growthRunId,
+      ownerId: user.id,
+    });
+
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${result.growthRunId}`);
+
+    return {
+      ok: true,
+      growthRunId: result.growthRunId,
+      status: result.status,
+      pausedAtPhase: result.pausedAtPhase,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      growthRunId: parsed.growthRunId,
+      error: err instanceof Error ? err.message : "Failed to continue run.",
+    };
+  }
+}
+
+export async function rejectGrowthRunStageAction(
+  input: z.infer<typeof ContinueStageSchema>
+): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const parsed = ContinueStageSchema.parse(input);
+
+  await rejectGrowthRunPhase({ growthRunId: parsed.growthRunId });
+  revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+  return { ok: true };
 }

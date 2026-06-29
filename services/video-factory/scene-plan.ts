@@ -44,9 +44,24 @@ function templateForMode(input: BuildScenePlanInput): SceneContract[] {
       return demoShortTemplate(input);
     case "ai_broll_short":
       return aiBrollTemplate(input);
+    case "reference_remix":
+      return input.preferAiBroll ? aiBrollTemplate(input) : fastSlidesTemplate(input);
     default:
       return fastSlidesTemplate(input);
   }
+}
+
+function visualMethodForPurpose(
+  purpose: SceneContract["purpose"],
+  preferAiBroll?: boolean
+): SceneContract["visual_method"] {
+  if (
+    preferAiBroll &&
+    (purpose === "problem" || purpose === "mechanism" || purpose === "proof")
+  ) {
+    return "ai_broll";
+  }
+  return "slide";
 }
 
 function fastSlidesTemplate(input: BuildScenePlanInput): SceneContract[] {
@@ -85,7 +100,7 @@ function fastSlidesTemplate(input: BuildScenePlanInput): SceneContract[] {
     order,
     scene_type: "fast_slides",
     purpose: b.purpose,
-    visual_method: "slide",
+    visual_method: visualMethodForPurpose(b.purpose, input.preferAiBroll),
     voiceover_text: b.vo,
     subtitle_text: b.vo,
     overlay_text: b.overlay ?? "",

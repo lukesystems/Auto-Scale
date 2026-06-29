@@ -18,8 +18,8 @@ export function getFalProviderStatus(): FalProviderStatus {
     configured: config.fal.configured,
     enabled: config.fal.enabled,
     message: config.fal.configured
-      ? "Fal credentials are configured. Media generation pipeline is not active yet."
-      : "Fal is not configured. Set FAL_KEY when media generation ships.",
+      ? "Fal credentials are configured. Seedance text-to-video runs for ai_broll scenes when storyboard asset_method is fal_clip."
+      : "Fal is not configured. Set FAL_KEY to enable Seedance text-to-video b-roll.",
   };
 }
 

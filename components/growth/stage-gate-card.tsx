@@ -1,0 +1,224 @@
+"use client";
+
+import { useTransition } from "react";
+import Link from "next/link";
+import { Loader2, Play, Settings2, X } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
+import {
+  getNextStageCta,
+  getStageByBoundaryPhase,
+  isStageBoundaryPause,
+  resolveRunStage,
+} from "@/lib/growth-run/stages";
+import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
+import {
+  continueGrowthRunStageAction,
+  rejectGrowthRunPhaseAction,
+} from "@/app/(app)/unified-run/actions";
+
+export interface StageGateSummary {
+  briefName?: string | null;
+  briefLine?: string | null;
+  sourceCount?: number;
+  videoEvidenceCount?: number;
+  patternCount?: number;
+  trendStructures?: number;
+  trendConfidence?: number;
+  conceptCount?: number;
+  scriptCount?: number;
+  storyboardCount?: number;
+  scriptPreviews?: Array<{ hook: string; excerpt: string }>;
+  videoCount?: number;
+  approvedVideoCount?: number;
+}
+
+export function StageGateCard({
+  projectId,
+  growthRunId,
+  pausedAtPhase,
+  currentStage,
+  summary,
+}: {
+  projectId: string;
+  growthRunId: string;
+  pausedAtPhase: string | null;
+  currentStage?: number | null;
+  summary: StageGateSummary;
+}) {
+  const [pending, startTransition] = useTransition();
+  const isStageGate = isStageBoundaryPause(pausedAtPhase);
+  const stage = pausedAtPhase ? getStageByBoundaryPhase(pausedAtPhase) : undefined;
+  const stageId = resolveRunStage({
+    current_stage: currentStage,
+    paused_at_phase: pausedAtPhase,
+    status: "awaiting_user_input",
+  });
+
+  const completedLabel =
+    GROWTH_RUN_PHASE_LABELS[pausedAtPhase ?? ""] ?? pausedAtPhase ?? "this step";
+  const nextPhase = pausedAtPhase ? getNextGrowthRunPhase(pausedAtPhase) : null;
+  const nextLabel = nextPhase ? GROWTH_RUN_PHASE_LABELS[nextPhase] ?? nextPhase : "the next step";
+  const ctaLabel = isStageGate
+    ? getNextStageCta(pausedAtPhase)
+    : "Continue run";
+
+  function onContinue() {
+    startTransition(async () => {
+      const result = await continueGrowthRunStageAction({ projectId, growthRunId });
+      if (!result.ok) {
+        toast.error(result.error ?? "Failed to continue.");
+        return;
+      }
+      if (result.status === "awaiting_user_input") {
+        toast.info("Paused again for your review.");
+      } else if (result.status === "awaiting_approval" && pausedAtPhase === "approval") {
+        toast.success("Ready to schedule — review the posting plan below.");
+      } else {
+        toast.success("Continuing AutoScale run…");
+      }
+      window.location.reload();
+    });
+  }
+
+  function onCancel() {
+    startTransition(async () => {
+      const result = await rejectGrowthRunPhaseAction({ projectId, growthRunId });
+      if (!result.ok) {
+        toast.error(result.error ?? "Failed to cancel.");
+        return;
+      }
+      toast.info("Run cancelled.");
+      window.location.reload();
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-4">
+      <div>
+        {isStageGate && stage ? (
+          <>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+              Stage {stage.id} complete — {stage.title}
+            </p>
+            <p className="text-sm font-semibold mt-1">{stage.rangeLabel}</p>
+          </>
+        ) : (
+          <p className="text-sm font-semibold">Review before we continue</p>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">
+          <span className="font-medium text-foreground">{completedLabel}</span> is done.
+          {!isStageGate ? (
+            <>
+              {" "}
+              Review the evidence tabs below, then continue to start{" "}
+              <span className="font-medium text-foreground">{nextLabel}</span>.
+            </>
+          ) : null}
+        </p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Macro stages always pause for your review. Micro-gates follow{" "}
+          <Link href="/settings" className="underline hover:text-foreground inline-flex items-center gap-1">
+            <Settings2 className="h-3 w-3" />
+            Settings → Approval policy
+          </Link>
+          .
+        </p>
+      </div>
+
+      {isStageGate ? <StageSummary stageId={stageId} summary={summary} /> : null}
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" onClick={onContinue} disabled={pending}>
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {ctaLabel}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={pending}>
+          <X className="h-4 w-4" />
+          Cancel run
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StageSummary({
+  stageId,
+  summary,
+}: {
+  stageId: number;
+  summary: StageGateSummary;
+}) {
+  if (stageId === 1) {
+    return (
+      <div className="grid gap-2 sm:grid-cols-2 text-xs">
+        <SummaryItem label="Product" value={summary.briefName ?? "Brief saved"} />
+        <SummaryItem label="Tagline" value={summary.briefLine ?? "—"} />
+        <SummaryItem label="Sources" value={String(summary.sourceCount ?? 0)} />
+        <SummaryItem label="Video evidence" value={String(summary.videoEvidenceCount ?? 0)} />
+        <SummaryItem label="Patterns" value={String(summary.patternCount ?? 0)} />
+        <SummaryItem
+          label="Winning structures"
+          value={
+            typeof summary.trendStructures === "number"
+              ? `${summary.trendStructures} (${Math.round((summary.trendConfidence ?? 0) * 100)}% conf.)`
+              : "—"
+          }
+        />
+      </div>
+    );
+  }
+
+  if (stageId === 2) {
+    return (
+      <div className="space-y-3 text-xs">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <SummaryItem label="Concepts" value={String(summary.conceptCount ?? 0)} />
+          <SummaryItem label="Scripts" value={String(summary.scriptCount ?? 0)} />
+          <SummaryItem label="Storyboards" value={String(summary.storyboardCount ?? 0)} />
+        </div>
+        {(summary.scriptPreviews ?? []).length > 0 ? (
+          <ul className="space-y-2">
+            {summary.scriptPreviews!.slice(0, 3).map((script, i) => (
+              <li key={i} className="rounded-md border bg-background/80 px-3 py-2">
+                <p className="font-medium">{script.hook}</p>
+                <p className="mt-1 text-muted-foreground line-clamp-2">{script.excerpt}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">
+            Review strategy and concepts below before generating videos.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (stageId === 3) {
+    return (
+      <div className="grid gap-2 sm:grid-cols-2 text-xs">
+        <SummaryItem label="Rendered videos" value={String(summary.videoCount ?? 0)} />
+        <SummaryItem
+          label="Approved"
+          value={`${summary.approvedVideoCount ?? 0} / ${summary.videoCount ?? 0}`}
+        />
+        <p className="sm:col-span-2 text-muted-foreground">
+          Approve each video in the production workspace, then continue to scheduling.
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background/80 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-medium">{value}</div>
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ import { createGrowthRun } from "@/services/growth-run/repository";
 import {
   startGrowthRun,
   resumeGrowthRun,
+  continueGrowthRunStage,
   rejectGrowthRunPhase,
   GrowthRunExecutionError,
 } from "@/services/growth-run/orchestrator";
@@ -200,6 +201,13 @@ export async function resumeGrowthRunAction(input: {
   projectId: string;
   growthRunId: string;
 }): Promise<ExecuteUnifiedRunResult> {
+  return continueGrowthRunStageAction(input);
+}
+
+export async function continueGrowthRunStageAction(input: {
+  projectId: string;
+  growthRunId: string;
+}): Promise<ExecuteUnifiedRunResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
 
   const supabase = createSupabaseServerClient();
@@ -209,7 +217,7 @@ export async function resumeGrowthRunAction(input: {
   if (!user) return { ok: false, error: "Not signed in." };
 
   try {
-    const result = await resumeGrowthRun({
+    const result = await continueGrowthRunStage({
       growthRunId: input.growthRunId,
       ownerId: user.id,
     });

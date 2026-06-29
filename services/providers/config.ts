@@ -89,7 +89,7 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
     fal: {
       apiKey: falKey,
       configured: Boolean(falKey),
-      enabled: false,
+      enabled: Boolean(falKey),
     },
     models: {
       autobrief: readEnv("AUTOSCALE_MODEL_AUTOBRIEF"),

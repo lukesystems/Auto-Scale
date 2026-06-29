@@ -1,3 +1,5 @@
+import { GROWTH_RUN_STAGES } from "./stages";
+
 export const GROWTH_RUN_PHASES = [
   "autobrief",
   "brief",
@@ -15,7 +17,10 @@ export const GROWTH_RUN_PHASES = [
   "videos",
   "captions",
   "approval",
+  "schedule",
 ] as const;
+
+export { GROWTH_RUN_STAGES };
 
 export type GrowthRunPhase = (typeof GROWTH_RUN_PHASES)[number];
 
@@ -36,7 +41,16 @@ export const GROWTH_RUN_PHASE_LABELS: Record<string, string> = {
   videos: "Rendering videos",
   captions: "Adding captions",
   approval: "Ready for review",
+  schedule: "Scheduling and posting",
 };
+
+/** Phases grouped under each macro-stage heading (for timeline UI). */
+export const GROWTH_RUN_PHASES_BY_STAGE = GROWTH_RUN_STAGES.map((stage) => ({
+  stageId: stage.id,
+  title: stage.title,
+  rangeLabel: stage.rangeLabel,
+  phases: stage.phases.filter((p) => GROWTH_RUN_PHASES.includes(p as GrowthRunPhase)),
+}));
 
 export function growthPhaseMessage(
   phase: string,

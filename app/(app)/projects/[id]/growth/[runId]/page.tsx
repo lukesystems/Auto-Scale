@@ -26,12 +26,14 @@ import { getManagedProviderConfig } from "@/services/providers/config";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { getDefaultVoiceIdHint } from "@/services/voiceover/provider";
 import { RunApprovalCard } from "@/components/growth/run-approval-card";
+import { StageGateCard } from "@/components/growth/stage-gate-card";
 import { RunRetryCard } from "@/components/growth/run-retry-card";
-import { RunPhaseTimeline, RunPageLiveUpdater } from "@/components/growth/run-phase-timeline";
+import { StageProgress, RunPageLiveUpdater } from "@/components/growth/run-phase-timeline";
 import { RunPageAutoExecutor } from "@/components/growth/run-page-auto-executor";
 import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
 import { RunBriefPanel } from "@/components/growth/run-brief-panel";
 import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
+import { isStageBoundaryPause, resolveRunStage } from "@/lib/growth-run/stages";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -136,6 +138,12 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     ]);
 
   const conceptIds = (conceptsRes.data ?? []).map((c) => c.id);
+  const { data: scriptRows } = conceptIds.length
+    ? await supabase
+        .from("video_scripts")
+        .select("concept_id, hook_line, voiceover_full")
+        .in("concept_id", conceptIds)
+    : { data: [] as Array<{ concept_id: string; hook_line: string | null; voiceover_full: string | null }> };
   const { data: storyboards } = conceptIds.length
     ? await supabase.from("storyboards").select("id, concept_id, total_duration_seconds").in("concept_id", conceptIds)
     : { data: [] as Array<{ id: string; concept_id: string; total_duration_seconds: number }> };
@@ -347,6 +355,40 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
     );
 
+  const runStage = resolveRunStage({
+    current_stage: run.current_stage,
+    paused_at_phase: run.paused_at_phase,
+    phase: run.phase,
+    status: run.status,
+  });
+
+  const stageGateSummary = {
+    briefName: briefRes.data?.product_name,
+    briefLine: briefRes.data?.one_line_description,
+    sourceCount: sourcesRes.data?.length ?? 0,
+    videoEvidenceCount: videoEvidenceRes.data?.length ?? 0,
+    patternCount: patternsRes.data?.length ?? 0,
+    trendStructures: Array.isArray(trendReport.data?.winning_structures)
+      ? (trendReport.data!.winning_structures as unknown[]).length
+      : undefined,
+    trendConfidence: trendReport.data?.confidence,
+    conceptCount: conceptsRes.data?.length ?? 0,
+    scriptCount: scriptRows?.length ?? 0,
+    storyboardCount: storyboards?.length ?? 0,
+    scriptPreviews: (scriptRows ?? []).slice(0, 3).map((row) => {
+      const concept = conceptsById.get(row.concept_id);
+      const voiceover = (row.voiceover_full ?? "").trim();
+      return {
+        hook: row.hook_line || concept?.hook || "Script",
+        excerpt: voiceover.slice(0, 160) || concept?.angle || "Script saved",
+      };
+    }),
+    videoCount: videosRes.data?.length ?? 0,
+    approvedVideoCount: videosWithConcept.filter(
+      (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
+    ).length,
+  };
+
   const voiceIdHint = getDefaultVoiceIdHint();
   const hasSilentVoiceover = (assetsRes.data ?? []).some(
     (a) =>
@@ -355,7 +397,9 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
   );
 
   let schedulePreview = null;
-  if (allApproved && run.status === "awaiting_approval") {
+  const showScheduleStage =
+    runStage === 4 || (run.phase === "schedule" && run.status === "awaiting_approval");
+  if (showScheduleStage && allApproved) {
     const user = await requireUser();
     const settings = await loadProjectGrowthSettings(projectId);
     const { data: projectRow } = await supabase
@@ -436,11 +480,21 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       />
 
       {run.status === "awaiting_user_input" ? (
-        <RunApprovalCard
-          projectId={projectId}
-          growthRunId={runId}
-          pausedAtPhase={run.paused_at_phase}
-        />
+        isStageBoundaryPause(run.paused_at_phase) ? (
+          <StageGateCard
+            projectId={projectId}
+            growthRunId={runId}
+            pausedAtPhase={run.paused_at_phase}
+            currentStage={run.current_stage}
+            summary={stageGateSummary}
+          />
+        ) : (
+          <RunApprovalCard
+            projectId={projectId}
+            growthRunId={runId}
+            pausedAtPhase={run.paused_at_phase}
+          />
+        )
       ) : null}
 
       {run.status === "failed" ? (
@@ -454,11 +508,12 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       <section className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
         <div className="rounded-xl border border-border bg-card p-4">
           <h2 className="text-sm font-semibold mb-3">Run progress</h2>
-          <RunPhaseTimeline
+          <StageProgress
             currentPhase={run.phase}
             phaseStatus={(run.phase_status ?? {}) as Record<string, unknown>}
             runStatus={run.status}
             pausedAtPhase={run.paused_at_phase}
+            currentStage={run.current_stage}
           />
         </div>
         <RunEvidenceTabs
@@ -551,12 +606,26 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
-      <ProductionWorkspace
-        projectId={projectId}
-        runId={runId}
-        videos={workspaceVideos}
-        voiceIdHint={voiceIdHint}
-      />
+      {(runStage >= 3 || workspaceVideos.length > 0) ? (
+        <ProductionWorkspace
+          projectId={projectId}
+          runId={runId}
+          videos={workspaceVideos}
+          voiceIdHint={voiceIdHint}
+        />
+      ) : null}
+
+      {showScheduleStage && run.status === "awaiting_approval" ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+            Stage 4 — Distribution
+          </p>
+          <p className="text-sm font-semibold">Scheduling and posting via Post Bridge</p>
+          <p className="text-xs text-muted-foreground">
+            Review the posting plan below, then schedule when ready.
+          </p>
+        </div>
+      ) : null}
 
       {schedulePreview ? (
         <SchedulePreviewPanel
@@ -567,7 +636,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
           providerLabel={publishingProviderLabel}
           hasSilentVoiceover={hasSilentVoiceover}
         />
-      ) : allApproved && run.status === "awaiting_approval" ? (
+      ) : showScheduleStage && allApproved ? (
         <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm space-y-3">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="growthRunId" value={runId} />

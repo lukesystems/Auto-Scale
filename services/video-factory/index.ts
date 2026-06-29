@@ -12,6 +12,7 @@ import { generateCaptionsForVideo } from "./captions";
 import { loadConnectedAccounts } from "@/services/growth-run/repository";
 import { renderConceptVideo } from "./render-concept";
 import { isFfmpegAvailable } from "./ffmpeg";
+import { isFalConfigured } from "@/services/media/fal-config";
 import { resolveProductionMode } from "./production-modes";
 import {
   ensureProductionJob,
@@ -20,14 +21,104 @@ import {
   tagAssetsWithJob,
 } from "./production-job";
 
+function preferFalForConcept(
+  productionMode: ReturnType<typeof resolveProductionMode>,
+  videoType: string
+): boolean {
+  return (
+    (["ai_broll", "trend_remix", "ai_broll_short", "reference_remix"].includes(
+      productionMode
+    ) ||
+      ["ai_broll", "trend_remix"].includes(videoType) ||
+      productionMode === "fast_slides") &&
+    isFalConfigured()
+  );
+}
+
+async function loadConcept(conceptId: string) {
+  const supabase = createSupabaseServerClient();
+  const { data: concept, error } = await supabase
+    .from("video_concepts")
+    .select("id, video_type, platform, target_length_seconds, hook, cta, production_mode")
+    .eq("id", conceptId)
+    .single();
+  if (error || !concept) throw new Error(`concept missing: ${error?.message}`);
+
+  const productionMode =
+    (concept.production_mode as ReturnType<typeof resolveProductionMode> | null) ??
+    resolveProductionMode(concept.video_type as never);
+  if (!concept.production_mode) {
+    await supabase
+      .from("video_concepts")
+      .update({ production_mode: productionMode })
+      .eq("id", conceptId);
+  }
+
+  return { concept, productionMode };
+}
+
 /**
- * Video Factory orchestrator.
- *
- * Per concept: script → storyboard → per-scene assets → voiceover → final
- * video row → per-account captions. Each stage persists immediately so a
- * partial failure doesn't lose work.
+ * Stage 2 tail: script + storyboard per concept (no asset render yet).
  */
-export async function buildVideosForRun(opts: {
+export async function buildScriptsAndStoryboardsForRun(opts: {
+  projectId: string;
+  conceptIds: string[];
+}): Promise<{
+  completedConceptIds: string[];
+  failures: Array<{ conceptId: string; error: string }>;
+}> {
+  const supabase = createSupabaseServerClient();
+  const completedConceptIds: string[] = [];
+  const failures: Array<{ conceptId: string; error: string }> = [];
+
+  for (const conceptId of opts.conceptIds) {
+    try {
+      const { data: existingBoard } = await supabase
+        .from("storyboards")
+        .select("id")
+        .eq("concept_id", conceptId)
+        .maybeSingle();
+      if (existingBoard) {
+        completedConceptIds.push(conceptId);
+        continue;
+      }
+
+      const { concept, productionMode } = await loadConcept(conceptId);
+
+      const { script } = await generateScriptForConcept({
+        conceptId,
+        projectId: opts.projectId,
+      });
+
+      await generateStoryboardForConcept({
+        conceptId,
+        projectId: opts.projectId,
+        script,
+        videoType: concept.video_type,
+        productionMode,
+        hook: concept.hook,
+        cta: concept.cta ?? "",
+        platform: concept.platform,
+        targetLengthSeconds: concept.target_length_seconds,
+        preferFalForBroll: preferFalForConcept(productionMode, concept.video_type),
+      });
+
+      completedConceptIds.push(conceptId);
+    } catch (err) {
+      failures.push({
+        conceptId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { completedConceptIds, failures };
+}
+
+/**
+ * Stage 3: per-scene assets → voiceover → render → captions.
+ */
+export async function renderVideosForRun(opts: {
   growthRunId: string;
   projectId: string;
   conceptIds: string[];
@@ -41,42 +132,16 @@ export async function buildVideosForRun(opts: {
 
   for (const conceptId of opts.conceptIds) {
     try {
-      const { data: concept, error } = await supabase
-        .from("video_concepts")
-        .select("id, video_type, platform, target_length_seconds, hook, cta, production_mode")
-        .eq("id", conceptId)
-        .single();
-      if (error || !concept) throw new Error(`concept missing: ${error?.message}`);
+      const { concept, productionMode } = await loadConcept(conceptId);
 
-      const productionMode =
-        (concept.production_mode as ReturnType<typeof resolveProductionMode> | null) ??
-        resolveProductionMode(concept.video_type as never);
-      if (!concept.production_mode) {
-        await supabase
-          .from("video_concepts")
-          .update({ production_mode: productionMode })
-          .eq("id", conceptId);
-      }
+      const { data: storyboard } = await supabase
+        .from("storyboards")
+        .select("id, aspect_ratio, total_duration_seconds")
+        .eq("concept_id", conceptId)
+        .maybeSingle();
+      if (!storyboard) throw new Error("storyboard not found — run scripts/storyboards first");
 
-      const { script } = await generateScriptForConcept({
-        conceptId,
-        projectId: opts.projectId,
-      });
-
-      const { storyboard, storyboardId } = await generateStoryboardForConcept({
-        conceptId,
-        projectId: opts.projectId,
-        script,
-        videoType: concept.video_type,
-        productionMode,
-        hook: concept.hook,
-        cta: concept.cta ?? "",
-        platform: concept.platform,
-        targetLengthSeconds: concept.target_length_seconds,
-        preferFalForBroll: ["ai_broll", "trend_remix", "ai_broll_short"].includes(
-          productionMode
-        ) || ["ai_broll", "trend_remix"].includes(concept.video_type),
-      });
+      const storyboardId = storyboard.id;
 
       const { data: scenes, error: scErr } = await supabase
         .from("storyboard_scenes")
@@ -97,23 +162,35 @@ export async function buildVideosForRun(opts: {
           onScreenText: scene.on_screen_text,
           voiceoverLine: scene.voiceover_line,
           durationSeconds: Number(scene.duration_seconds),
-          aspectRatio: storyboard.aspect_ratio,
+          aspectRatio: storyboard.aspect_ratio as string,
         });
       }
+
+      const { data: scriptRow } = await supabase
+        .from("video_scripts")
+        .select("voiceover_full")
+        .eq("concept_id", conceptId)
+        .maybeSingle();
+      const voiceoverText =
+        (scriptRow?.voiceover_full as string | null) ??
+        (scenes ?? [])
+          .map((s) => (s.voiceover_line as string | null) ?? "")
+          .filter(Boolean)
+          .join(" ");
 
       await queueVoiceover({
         projectId: opts.projectId,
         growthRunId: opts.growthRunId,
         conceptId,
-        scriptText: script.voiceover_full,
+        scriptText: voiceoverText,
       });
 
       const { videoId, assetId: finalAssetId } = await queueFinalAssembly({
         projectId: opts.projectId,
         growthRunId: opts.growthRunId,
         conceptId,
-        aspectRatio: storyboard.aspect_ratio,
-        durationSeconds: Math.round(storyboard.total_duration_seconds),
+        aspectRatio: storyboard.aspect_ratio as string,
+        durationSeconds: Math.round(Number(storyboard.total_duration_seconds)),
       });
 
       const { jobId } = await ensureProductionJob({
@@ -158,8 +235,6 @@ export async function buildVideosForRun(opts: {
         await setProductionJobStage(jobId, "queued", "awaiting_ffmpeg");
       }
 
-      // Per-account captions: only spin up captions for accounts on this
-      // concept's platform.
       const platformAccounts = accounts
         .filter((a) => a.platform === concept.platform)
         .map((a) => ({
@@ -187,4 +262,21 @@ export async function buildVideosForRun(opts: {
   }
 
   return { videoIds, failures };
+}
+
+/**
+ * Full video factory (scripts through captions). Prefer staged
+ * `buildScriptsAndStoryboardsForRun` + `renderVideosForRun` for gated runs.
+ */
+export async function buildVideosForRun(opts: {
+  growthRunId: string;
+  projectId: string;
+  conceptIds: string[];
+  connectedAccountIds?: string[];
+}): Promise<{ videoIds: string[]; failures: Array<{ conceptId: string; error: string }> }> {
+  await buildScriptsAndStoryboardsForRun({
+    projectId: opts.projectId,
+    conceptIds: opts.conceptIds,
+  });
+  return renderVideosForRun(opts);
 }

@@ -6,6 +6,8 @@ import { GROWTH_RUN_PHASES, GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/pha
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
 import { cn } from "@/lib/utils";
 
+export { StageProgress } from "@/components/growth/stage-progress";
+
 export function RunPhaseTimeline({
   currentPhase,
   phaseStatus,

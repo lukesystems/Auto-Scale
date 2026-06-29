@@ -1190,6 +1190,7 @@ export interface Database {
             | "pending" | "running" | "awaiting_user_input" | "awaiting_approval" | "scheduled"
             | "live" | "completed" | "failed" | "cancelled";
           paused_at_phase: string | null;
+          current_stage: number;
           trigger: "manual" | "autopilot" | "scheduled";
           approval_mode: "manual" | "per_format" | "autopilot";
           posting_aggressiveness: "conservative" | "balanced" | "aggressive";

@@ -12,6 +12,7 @@ import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { buildSrtFromScenes } from "./subtitles";
 import { assembleVideoToBuffer } from "./assembler";
 import { generateSeedanceClip, downloadRemoteVideo } from "./fal/seedance";
+import { isFalConfigured } from "@/services/media/fal-config";
 import { uploadGrowthMedia } from "./storage";
 import { getRenderProfile } from "./render-profiles";
 import { isFfmpegAvailable } from "./ffmpeg";
@@ -98,10 +99,15 @@ export async function renderConceptVideo(opts: {
       const duration = Math.max(0.5, Number(scene.duration_seconds));
       const scenePath = join(workDir, `scene-${scene.scene_index}`);
 
+      const scenePurpose =
+        (scene.purpose as SceneContract["purpose"] | null) ?? roleToPurpose(scene.role);
       const useBroll =
         scene.asset_method === "fal_clip" ||
         scene.visual_method === "ai_broll" ||
-        concept.production_mode === "ai_broll_short";
+        (isFalConfigured() &&
+          (concept.production_mode === "ai_broll_short" ||
+            (concept.production_mode === "fast_slides" &&
+              ["problem", "mechanism", "proof"].includes(scenePurpose))));
 
       if (useBroll) {
         const prompt =

@@ -1,14 +1,17 @@
 export type ApprovalPolicy = "auto_approve_all" | "ask_at_critical" | "ask_at_every_stage";
 
-/** Phases where the run may pause for user approval. */
+/** Phases where the run may pause for user approval (micro-gates + stage boundaries). */
 export type ApprovalGatePhase =
   | "autobrief"
   | "deep_discovery"
   | "video_discovery"
   | "pattern_mining"
   | "trendhop"
+  | "videotrend"
   | "concepts"
+  | "storyboards"
   | "videos"
+  | "approval"
   | "schedule";
 
 const CRITICAL_GATES = new Set<ApprovalGatePhase>(["autobrief", "videos", "schedule"]);
@@ -41,9 +44,9 @@ export const APPROVAL_POLICY_LABELS: Record<ApprovalPolicy, string> = {
 
 export const APPROVAL_POLICY_DESCRIPTIONS: Record<ApprovalPolicy, string> = {
   auto_approve_all:
-    "AutoScale runs end to end without stopping. Videos are auto-approved and scheduled when publishing is connected.",
+    "Within-stage micro-gates are skipped, but the four macro stages still pause for your review before strategy, video production, and scheduling.",
   ask_at_critical:
-    "Pause after the product brief is ready (before discovery), after videos are rendered, and before posting.",
+    "Pause after the product brief is ready (before discovery), after videos are rendered, and before posting — plus mandatory pauses at each macro stage.",
   ask_at_every_stage:
-    "Pause after brief, discovery, patterns, trend hops, concepts, videos, and before posting.",
+    "Pause after brief, discovery, patterns, trend hops, concepts, videos, and before posting — plus mandatory pauses at each macro stage.",
 };
