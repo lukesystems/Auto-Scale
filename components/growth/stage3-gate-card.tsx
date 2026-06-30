@@ -1,4 +1,4 @@
-import { acknowledgeLowEvidenceAction } from "@/app/(app)/projects/[id]/growth/actions";
+import { continueStage3ToScheduleAction } from "@/app/(app)/projects/[id]/growth/actions";
 
 export function Stage3GateCard({
   projectId,
@@ -25,11 +25,11 @@ export function Stage3GateCard({
           distribution.
         </p>
       </div>
-      <form action={acknowledgeLowEvidenceAction} className="inline">
+      <form action={continueStage3ToScheduleAction} className="inline">
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="growthRunId" value={growthRunId} />
         <button type="submit" className="rounded border px-2 py-1 text-xs hover:bg-muted">
-          Acknowledge low evidence &amp; continue
+          Continue to scheduling
         </button>
       </form>
     </div>

@@ -196,11 +196,6 @@ export async function startGrowthRunAction(formData: FormData) {
     throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
   }
 
-  const ffmpeg = checkFfmpegHealth();
-  if (!ffmpeg.available) {
-    throw new Error(`${ffmpeg.message}${ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""}`);
-  }
-
   const supabase = createSupabaseServerClient();
   const ctx = await buildGrowthRunStartContext(parsed.data.projectId, parsed.data);
   const { data: project } = await supabase
@@ -249,22 +244,6 @@ export async function executeGrowthRunAction(
 ): Promise<ExecuteGrowthRunResult> {
   const user = await requireUser();
   const parsed = ExecuteRunSchema.parse(input);
-  const startedAt = Date.now();
-
-  // #region agent log
-  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-    body: JSON.stringify({
-      sessionId: "845232",
-      hypothesisId: "H-slow-sync",
-      location: "growth/actions.ts:executeGrowthRunAction:start",
-      message: "executeGrowthRunAction started",
-      data: { growthRunId: parsed.growthRunId },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 
   const supabase = createSupabaseServerClient();
   const { data: run } = await supabase
@@ -328,25 +307,6 @@ export async function executeGrowthRunAction(
             profile: unified ? profile : undefined,
             options,
           });
-
-    // #region agent log
-    fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
-      body: JSON.stringify({
-        sessionId: "845232",
-        hypothesisId: "H-slow-sync",
-        location: "growth/actions.ts:executeGrowthRunAction:done",
-        message: "executeGrowthRunAction finished",
-        data: {
-          growthRunId: result.growthRunId,
-          status: result.status,
-          durationMs: Date.now() - startedAt,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     revalidatePath(`/projects/${parsed.projectId}/growth`);
     revalidatePath(`/projects/${parsed.projectId}/growth/${result.growthRunId}`);
@@ -748,6 +708,24 @@ export async function acknowledgeLowEvidenceAction(formData: FormData) {
     })
     .eq("id", parsed.growthRunId);
   revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+}
+
+export async function continueStage3ToScheduleAction(formData: FormData) {
+  const user = await requireUser();
+  const parsed = AcknowledgeLowEvidenceSchema.parse({
+    projectId: formData.get("projectId"),
+    growthRunId: formData.get("growthRunId"),
+  });
+
+  try {
+    await continueGrowthRunStage({
+      growthRunId: parsed.growthRunId,
+      ownerId: user.id,
+    });
+  } finally {
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+  }
 }
 
 const ReferenceUrlSchema = z.object({

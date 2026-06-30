@@ -352,7 +352,24 @@ export async function renderVideosForRun(opts: {
           continue;
         }
       } else {
+        const error = "FFmpeg is unavailable. Stage 3 rendering cannot produce a ready MP4 in this environment.";
         await setProductionJobStage(jobId, "queued", "awaiting_ffmpeg");
+        await supabase
+          .from("videos")
+          .update({ status: "failed" })
+          .eq("id", videoId);
+        await supabase
+          .from("generated_assets")
+          .update({
+            status: "failed",
+            metadata: {
+              aspect_ratio: storyboard.aspect_ratio,
+              error,
+            } as never,
+          } as never)
+          .eq("id", finalAssetId);
+        failures.push({ conceptId, error });
+        continue;
       }
 
       const platformAccounts = accounts

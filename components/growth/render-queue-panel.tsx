@@ -9,9 +9,9 @@ export function RenderQueuePanel({
   if (!videos.length) return null;
   return (
     <div className="rounded-lg border bg-card p-4 space-y-2">
-      <h3 className="text-sm font-semibold">Render queue</h3>
+      <h3 className="text-sm font-semibold">Render progress</h3>
       <p className="text-xs text-muted-foreground">
-        Concepts ordered by hook score. Partial failures keep sibling videos in the batch.
+        Concepts ordered by hook score. Stage 3 only advances when every video reaches ready.
       </p>
       <ol className="space-y-1 text-xs">
         {[...videos]

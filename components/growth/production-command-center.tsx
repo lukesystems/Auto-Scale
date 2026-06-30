@@ -53,7 +53,7 @@ export function ProductionCommandCenter({
           <div>
             <h2 className="text-lg font-semibold">Production Command Center</h2>
             <p className="text-sm text-muted-foreground">
-              Agent plan → scene timeline → asset pipeline → per-video approve before Stage 4.
+              Production plan → scene timeline → asset pipeline → per-video approve before Stage 4.
             </p>
           </div>
           {totalCount > 0 ? (

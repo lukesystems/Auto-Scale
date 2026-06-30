@@ -584,11 +584,47 @@ export async function startGrowthRun(
         });
         videoIds = built.videoIds;
         failures = built.failures;
+        const { data: renderedVideos } = videoIds.length
+          ? await supabase
+              .from("videos")
+              .select("id, status")
+              .in("id", videoIds)
+          : { data: [] };
+        const readyVideoIds = (renderedVideos ?? [])
+          .filter((video) => video.status === "ready")
+          .map((video) => video.id);
+
+        if (failures.length > 0 || readyVideoIds.length !== videoIds.length || videoIds.length === 0) {
+          const notReadyCount = Math.max(videoIds.length - readyVideoIds.length, 0);
+          const reason =
+            failures[0]?.error ??
+            (videoIds.length === 0
+              ? "No videos were rendered."
+              : `${notReadyCount} video(s) did not reach ready status.`);
+          await markPhaseStatus(supabase, runId, "assets", "failed", {
+            rendered: readyVideoIds.length,
+            attempted: conceptIds.length,
+            failures: failures.length,
+            notReady: notReadyCount,
+            error: reason,
+          });
+          await markPhaseStatus(supabase, runId, "videos", "failed", {
+            count: readyVideoIds.length,
+            attempted: videoIds.length,
+          });
+          await markPhaseStatus(supabase, runId, "captions", "skipped", {
+            reason: "Video rendering did not complete.",
+          });
+          throw new Error(
+            `Video rendering failed for Stage 3: ${reason}`
+          );
+        }
+
         await markPhaseStatus(supabase, runId, "assets", "succeeded", {
-          failures: failures.length,
+          failures: 0,
         });
         await markPhaseStatus(supabase, runId, "videos", "succeeded", {
-          count: videoIds.length,
+          count: readyVideoIds.length,
         });
         await markPhaseStatus(supabase, runId, "captions", "succeeded");
 
@@ -606,7 +642,7 @@ export async function startGrowthRun(
               approved_at: new Date().toISOString(),
             })
             .eq("growth_run_id", runId)
-            .in("status", ["rendering", "ready"]);
+            .eq("status", "ready");
         } else if (runOptions.approval_mode === "per_format") {
           await supabase
             .from("videos")
@@ -616,6 +652,7 @@ export async function startGrowthRun(
               approved_at: new Date().toISOString(),
             })
             .eq("growth_run_id", runId)
+            .eq("status", "ready")
             .in(
               "concept_id",
               (
@@ -866,10 +903,14 @@ async function prepareStage4Schedule(input: {
 
   const { data: videos } = await supabase
     .from("videos")
-    .select("id, approval_status")
+    .select("id, status, approval_status")
     .eq("growth_run_id", scheduleRunId);
 
   const rows = videos ?? [];
+  const allReady = rows.length > 0 && rows.every((v) => v.status === "ready");
+  if (!allReady) {
+    throw new Error("All videos must reach ready status before scheduling.");
+  }
   const allApproved = rows.every(
     (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
   );
@@ -956,12 +997,16 @@ export async function continueGrowthRunStage(input: {
   if (run.status === "awaiting_user_input" && run.paused_at_phase === "approval") {
     const { data: videos } = await supabase
       .from("videos")
-      .select("id, approval_status")
+      .select("id, status, approval_status")
       .eq("growth_run_id", run.id);
 
     const rows = videos ?? [];
     if (rows.length === 0) {
       throw new Error("No rendered videos yet. Generate videos before scheduling.");
+    }
+    const allReady = rows.every((v) => v.status === "ready");
+    if (!allReady) {
+      throw new Error("All videos must reach ready status before scheduling.");
     }
     const allApproved = rows.every(
       (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
