@@ -9,10 +9,9 @@ import {
 } from "../actions";
 import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
 import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
-import {
-  ProductionWorkspace,
-  type ProductionWorkspaceVideo,
-} from "@/components/growth/production-workspace";
+import type { ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
+import { ProductionCommandCenter } from "@/components/growth/production-command-center";
+import { Stage3GateCard } from "@/components/growth/stage3-gate-card";
 import {
   mapScheduleItemStatusToState,
   ScheduleStatusBadge,
@@ -33,7 +32,12 @@ import { RunPageAutoExecutor } from "@/components/growth/run-page-auto-executor"
 import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
 import { RunBriefPanel } from "@/components/growth/run-brief-panel";
 import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
-import { isStageBoundaryPause, resolveRunStage } from "@/lib/growth-run/stages";
+import { isStageBoundaryPause, resolveRunStage, getStageById } from "@/lib/growth-run/stages";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import { getProductionProviderStatus } from "@/lib/production-provider-status";
+import {
+  resolveProductionOptions,
+} from "@/services/video-factory/production-options";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -71,6 +75,23 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     .eq("project_id", projectId)
     .maybeSingle();
   if (!run) notFound();
+
+  const runOptionsRaw =
+    run.options && typeof run.options === "object" && !Array.isArray(run.options)
+      ? run.options
+      : {};
+  const storedRunOptions = GrowthRunOptionsSchema.partial().parse(runOptionsRaw);
+  const projectGrowthSettings = await loadProjectGrowthSettings(projectId);
+  const runProductionOptions = resolveProductionOptions({
+    productionFormat: storedRunOptions.production_format ?? null,
+    audioMode: storedRunOptions.audio_mode ?? null,
+    falRenderMode: storedRunOptions.fal_render_mode ?? null,
+    falModelTier: storedRunOptions.fal_model_tier ?? null,
+    projectDefaults: {
+      production_format: projectGrowthSettings.production_format,
+      audio_mode: projectGrowthSettings.audio_mode,
+    },
+  });
 
   const publishingProviderLabel = getPublishingProviderLabel() as PublishingProviderLabel;
 
@@ -362,6 +383,8 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     status: run.status,
   });
 
+  const productionProviderStatus = getProductionProviderStatus();
+
   const stageGateSummary = {
     briefName: briefRes.data?.product_name,
     briefLine: briefRes.data?.one_line_description,
@@ -424,11 +447,11 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     });
   }
 
-  const runOptions =
+  const runOptionsRecord =
     run.options && typeof run.options === "object" && !Array.isArray(run.options)
       ? (run.options as Record<string, unknown>)
       : {};
-  const discoveryLowConfidence = runOptions.discovery_low_confidence === true;
+  const discoveryLowConfidence = runOptionsRecord.discovery_low_confidence === true;
   const videotrendLowConfidence =
     typeof trendReport.data?.confidence === "number" && trendReport.data.confidence < 0.35;
   const showLowConfidenceBanner = discoveryLowConfidence || videotrendLowConfidence;
@@ -448,6 +471,18 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
         <p className="text-sm text-muted-foreground">
           status: <strong>{run.status}</strong> · phase: <strong>{run.phase}</strong> · trigger:{" "}
           {run.trigger}
+          {run.execution_mode === "stage_only" && run.target_stage ? (
+            <>
+              {" "}
+              ·{" "}
+              <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-800 dark:text-violet-200">
+                Stage-only run · Stage {run.target_stage}
+                {getStageById(run.target_stage)?.title
+                  ? `: ${getStageById(run.target_stage)!.title}`
+                  : ""}
+              </span>
+            </>
+          ) : null}
         </p>
         <p className="text-xs text-muted-foreground">
           <a
@@ -486,7 +521,12 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             growthRunId={runId}
             pausedAtPhase={run.paused_at_phase}
             currentStage={run.current_stage}
+            executionMode={run.execution_mode}
+            targetStage={run.target_stage}
             summary={stageGateSummary}
+            productionFormat={runProductionOptions.productionFormat}
+            audioMode={runProductionOptions.audioMode}
+            providerStatus={productionProviderStatus}
           />
         ) : (
           <RunApprovalCard
@@ -607,12 +647,35 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
       {(runStage >= 3 || workspaceVideos.length > 0) ? (
-        <ProductionWorkspace
-          projectId={projectId}
-          runId={runId}
-          videos={workspaceVideos}
-          voiceIdHint={voiceIdHint}
-        />
+        <>
+          <Stage3GateCard
+            projectId={projectId}
+            growthRunId={runId}
+            videoCount={workspaceVideos.length}
+            approvedVideoCount={
+              workspaceVideos.filter(
+                (v) => v.approvalStatus === "approved" || v.approvalStatus === "auto_approved"
+              ).length
+            }
+            readyVideoCount={workspaceVideos.filter((v) => v.status === "ready").length}
+          />
+          <ProductionCommandCenter
+            projectId={projectId}
+            runId={runId}
+            videos={workspaceVideos}
+            productionFormat={runProductionOptions.productionFormat}
+            audioMode={runProductionOptions.audioMode}
+            falRenderMode={runProductionOptions.falRenderMode}
+            falModelTier={runProductionOptions.falModelTier}
+            providerStatus={productionProviderStatus}
+            approvedCount={
+              workspaceVideos.filter(
+                (v) => v.approvalStatus === "approved" || v.approvalStatus === "auto_approved"
+              ).length
+            }
+            totalCount={workspaceVideos.length}
+          />
+        </>
       ) : null}
 
       {showScheduleStage && run.status === "awaiting_approval" ? (

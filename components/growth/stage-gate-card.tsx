@@ -9,14 +9,20 @@ import { GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
 import {
   getNextStageCta,
   getStageByBoundaryPhase,
+  getStageById,
   isStageBoundaryPause,
   resolveRunStage,
 } from "@/lib/growth-run/stages";
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
 import {
   continueGrowthRunStageAction,
-  rejectGrowthRunPhaseAction,
-} from "@/app/(app)/unified-run/actions";
+  rejectGrowthRunStageAction,
+  finalizeStageOnlyRunAction,
+} from "@/app/(app)/projects/[id]/growth/actions";
+import { ProductionFormatPicker, FalRenderModePicker } from "@/components/growth/production-format-picker";
+import { AudioModePicker } from "@/components/growth/audio-mode-picker";
+import { ProductionProviderBar, type ProductionProviderStatus } from "@/components/growth/production-provider-bar";
+import type { AudioMode, ProductionFormat } from "@/services/video-factory/production-options";
 
 export interface StageGateSummary {
   briefName?: string | null;
@@ -39,15 +45,27 @@ export function StageGateCard({
   growthRunId,
   pausedAtPhase,
   currentStage,
+  executionMode,
+  targetStage,
   summary,
+  productionFormat = "slide",
+  audioMode = "voiceover",
+  providerStatus,
 }: {
   projectId: string;
   growthRunId: string;
   pausedAtPhase: string | null;
   currentStage?: number | null;
+  executionMode?: "sequential_first" | "stage_only";
+  targetStage?: number | null;
   summary: StageGateSummary;
+  productionFormat?: ProductionFormat;
+  audioMode?: AudioMode;
+  providerStatus: ProductionProviderStatus;
 }) {
   const [pending, startTransition] = useTransition();
+  const isStageOnly = executionMode === "stage_only";
+  const stageOnlyDef = targetStage ? getStageById(targetStage) : undefined;
   const isStageGate = isStageBoundaryPause(pausedAtPhase);
   const stage = pausedAtPhase ? getStageByBoundaryPhase(pausedAtPhase) : undefined;
   const stageId = resolveRunStage({
@@ -60,13 +78,58 @@ export function StageGateCard({
     GROWTH_RUN_PHASE_LABELS[pausedAtPhase ?? ""] ?? pausedAtPhase ?? "this step";
   const nextPhase = pausedAtPhase ? getNextGrowthRunPhase(pausedAtPhase) : null;
   const nextLabel = nextPhase ? GROWTH_RUN_PHASE_LABELS[nextPhase] ?? nextPhase : "the next step";
-  const ctaLabel = isStageGate
-    ? getNextStageCta(pausedAtPhase)
-    : "Continue run";
+  const ctaLabel = isStageOnly
+    ? "Mark stage complete"
+    : isStageGate
+      ? getNextStageCta(pausedAtPhase)
+      : "Continue run";
+  const showProductionPickers = isStageGate && pausedAtPhase === "storyboards";
 
-  function onContinue() {
+  function onContinue(form?: HTMLFormElement | null) {
     startTransition(async () => {
-      const result = await continueGrowthRunStageAction({ projectId, growthRunId });
+      if (isStageOnly) {
+        const result = await finalizeStageOnlyRunAction({ projectId, growthRunId });
+        if (!result.ok) {
+          toast.error(result.error ?? "Failed to finalize run.");
+          return;
+        }
+        toast.success(
+          stageOnlyDef
+            ? `Stage ${stageOnlyDef.id} (${stageOnlyDef.title}) marked complete.`
+            : "Stage run marked complete."
+        );
+        window.location.href = `/projects/${projectId}/growth`;
+        return;
+      }
+
+      const productionFormatValue = form
+        ? (new FormData(form).get("productionFormat") as ProductionFormat | null)
+        : null;
+      const audioModeValue = form
+        ? (new FormData(form).get("audioMode") as AudioMode | null)
+        : null;
+
+      const falRenderModeValue = form
+        ? (new FormData(form).get("falRenderMode") as "cinematic" | "fast" | null)
+        : null;
+
+      const falModelTierValue = form
+        ? (new FormData(form).get("falModelTier") as
+            | "auto"
+            | "fast"
+            | "standard"
+            | "cinematic"
+            | null)
+        : null;
+
+      const result = await continueGrowthRunStageAction({
+        projectId,
+        growthRunId,
+        ...(productionFormatValue ? { productionFormat: productionFormatValue } : {}),
+        ...(audioModeValue ? { audioMode: audioModeValue } : {}),
+        ...(falRenderModeValue ? { falRenderMode: falRenderModeValue } : {}),
+        ...(falModelTierValue ? { falModelTier: falModelTierValue } : {}),
+      });
       if (!result.ok) {
         toast.error(result.error ?? "Failed to continue.");
         return;
@@ -84,7 +147,7 @@ export function StageGateCard({
 
   function onCancel() {
     startTransition(async () => {
-      const result = await rejectGrowthRunPhaseAction({ projectId, growthRunId });
+      const result = await rejectGrowthRunStageAction({ projectId, growthRunId });
       if (!result.ok) {
         toast.error(result.error ?? "Failed to cancel.");
         return;
@@ -118,19 +181,55 @@ export function StageGateCard({
           ) : null}
         </p>
         <p className="text-xs text-muted-foreground mt-2">
-          Macro stages always pause for your review. Micro-gates follow{" "}
-          <Link href="/settings" className="underline hover:text-foreground inline-flex items-center gap-1">
-            <Settings2 className="h-3 w-3" />
-            Settings → Approval policy
-          </Link>
-          .
+          {isStageOnly ? (
+            <>
+              This was a stage-only run. Review the results below, then mark the stage complete or
+              start another stage from the Growth hub.
+            </>
+          ) : (
+            <>
+              Macro stages always pause for your review. Micro-gates follow{" "}
+              <Link href="/settings" className="underline hover:text-foreground inline-flex items-center gap-1">
+                <Settings2 className="h-3 w-3" />
+                Settings → Approval policy
+              </Link>
+              .
+            </>
+          )}
         </p>
       </div>
 
       {isStageGate ? <StageSummary stageId={stageId} summary={summary} /> : null}
 
+      {showProductionPickers ? (
+        <form
+          id={`stage-gate-production-${growthRunId}`}
+          className="space-y-4 rounded-lg border bg-background/80 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onContinue(e.currentTarget);
+          }}
+        >
+          <ProductionProviderBar status={providerStatus} />
+          <ProductionFormatPicker defaultValue={productionFormat} />
+          <FalRenderModePicker defaultValue="fast" />
+          <AudioModePicker defaultValue={audioMode} />
+        </form>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={onContinue} disabled={pending}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() =>
+            onContinue(
+              showProductionPickers
+                ? (document.getElementById(`stage-gate-production-${growthRunId}`) as HTMLFormElement)
+                : null
+            )
+          }
+          disabled={pending}
+        >
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           {ctaLabel}
         </Button>

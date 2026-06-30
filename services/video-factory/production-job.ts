@@ -8,10 +8,52 @@ export type ProductionJobStatus =
   | "queued"
   | "planning"
   | "generating_assets"
+  | "generating_audio"
+  | "generating_subs"
   | "assembling"
+  | "uploading"
   | "quality_check"
   | "ready"
-  | "failed";
+  | "failed"
+  | "partial";
+
+export const RENDER_PHASES = [
+  "queued",
+  "assets",
+  "audio",
+  "subs",
+  "assemble",
+  "upload",
+  "done",
+] as const;
+export type RenderPhase = (typeof RENDER_PHASES)[number];
+
+export async function saveRenderCheckpoint(
+  jobId: string,
+  phase: RenderPhase,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("video_production_jobs")
+    .select("metadata")
+    .eq("id", jobId)
+    .maybeSingle();
+  const existing =
+    data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+      ? (data.metadata as Record<string, unknown>)
+      : {};
+  await supabase
+    .from("video_production_jobs")
+    .update({
+      metadata: {
+        ...existing,
+        render_checkpoint: phase,
+        render_artifact: metadata,
+      } as never,
+    } as never)
+    .eq("id", jobId);
+}
 
 export async function ensureProductionJob(opts: {
   projectId: string;

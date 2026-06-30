@@ -12,6 +12,10 @@ export interface SlideRenderInput {
   brandColor?: string | null;
   isHook?: boolean;
   isCta?: boolean;
+  /** myth | reality | them | us for split layouts */
+  slideLayout?: "default" | "myth_reality" | "comparison";
+  splitLabel?: string;
+  splitBody?: string;
 }
 
 const DIMENSIONS: Record<string, { width: number; height: number }> = {
@@ -58,20 +62,120 @@ function parseBrandColor(hex: string | null | undefined): string {
   return /^#[0-9a-fA-F]{6}$/.test(cleaned) ? cleaned : DEFAULT_BRAND;
 }
 
+/** Truncate headline to maxWords, adding ellipsis if needed. */
+function capHeadline(text: string, maxWords = 8): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text.trim();
+  return words.slice(0, maxWords).join(" ") + "…";
+}
+
 /**
  * Render a 9:16 vertical slide with SaaS-style typography and safe zones.
  */
 export async function renderSlidePng(input: SlideRenderInput): Promise<Buffer> {
+  const split = parseSplitOverlay(input.overlayText);
+  const layout =
+    input.slideLayout ??
+    (split?.kind === "myth" || split?.kind === "reality"
+      ? "myth_reality"
+      : split?.kind === "them" || split?.kind === "us"
+        ? "comparison"
+        : "default");
+
+  if (layout === "myth_reality" && split) {
+    return renderMythRealitySlide({ ...input, splitLabel: split.label, splitBody: split.body });
+  }
+  if (layout === "comparison" && split) {
+    return renderComparisonSlide({ ...input, splitLabel: split.label, splitBody: split.body });
+  }
+
+  return renderDefaultSlide(input);
+}
+
+function parseSplitOverlay(
+  overlay?: string | null
+): { kind: "myth" | "reality" | "them" | "us"; label: string; body: string } | null {
+  if (!overlay?.includes("|")) return null;
+  const [label, ...rest] = overlay.split("|");
+  const body = rest.join("|").trim();
+  const key = label.trim().toUpperCase();
+  if (key === "MYTH") return { kind: "myth", label: "MYTH", body };
+  if (key === "REALITY") return { kind: "reality", label: "REALITY", body };
+  if (key === "THEM") return { kind: "them", label: "THEM", body };
+  if (key === "US") return { kind: "us", label: "US", body };
+  return null;
+}
+
+async function renderMythRealitySlide(
+  input: SlideRenderInput & { splitLabel: string; splitBody: string }
+): Promise<Buffer> {
+  const dims = DIMENSIONS[input.aspectRatio ?? "9:16"] ?? DIMENSIONS["9:16"];
+  const brand = parseBrandColor(input.brandColor);
+  const isMyth = input.splitLabel === "MYTH";
+  const accent = isMyth ? "#64748b" : brand;
+  const bg = isMyth ? "#1e293b" : "#12121a";
+  const lines = wrapLines(input.splitBody, 22);
+
+  const tspans = lines
+    .map((line, i) => {
+      const y = dims.height / 2 - 40 + i * 62;
+      return `<tspan x="${dims.width / 2}" y="${y}">${escapeXml(line)}</tspan>`;
+    })
+    .join("");
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${dims.width}" height="${dims.height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="${BG_DARK}"/>
+  <rect x="${SAFE.side}" y="${SAFE.top + 80}" width="${dims.width - SAFE.side * 2}" height="${dims.height - SAFE.top - SAFE.bottom - 120}" rx="20" fill="${bg}" stroke="${accent}" stroke-width="3"/>
+  <text x="${dims.width / 2}" y="${SAFE.top + 140}" text-anchor="middle" fill="${accent}" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800" letter-spacing="4">${escapeXml(input.splitLabel)}</text>
+  <text text-anchor="middle" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700">${tspans}</text>
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function renderComparisonSlide(
+  input: SlideRenderInput & { splitLabel: string; splitBody: string }
+): Promise<Buffer> {
+  const dims = DIMENSIONS[input.aspectRatio ?? "9:16"] ?? DIMENSIONS["9:16"];
+  const brand = parseBrandColor(input.brandColor);
+  const isThem = input.splitLabel === "THEM";
+  const colW = (dims.width - SAFE.side * 2 - 24) / 2;
+  const leftX = SAFE.side;
+  const rightX = SAFE.side + colW + 24;
+  const activeX = isThem ? leftX : rightX;
+  const activeColor = isThem ? "#64748b" : brand;
+  const lines = wrapLines(input.splitBody, 16);
+  const tspans = lines
+    .map((line, i) => {
+      const y = dims.height / 2 + i * 56;
+      return `<tspan x="${activeX + colW / 2}" y="${y}">${escapeXml(line)}</tspan>`;
+    })
+    .join("");
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${dims.width}" height="${dims.height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="${BG_DARK}"/>
+  <rect x="${leftX}" y="${SAFE.top + 100}" width="${colW}" height="${dims.height - SAFE.top - SAFE.bottom - 140}" rx="16" fill="#1e293b" stroke="${isThem ? activeColor : "#334155"}" stroke-width="${isThem ? 4 : 2}"/>
+  <rect x="${rightX}" y="${SAFE.top + 100}" width="${colW}" height="${dims.height - SAFE.top - SAFE.bottom - 140}" rx="16" fill="#12121a" stroke="${!isThem ? activeColor : "#334155"}" stroke-width="${!isThem ? 4 : 2}"/>
+  <text x="${leftX + colW / 2}" y="${SAFE.top + 150}" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="24" font-weight="700">THEM</text>
+  <text x="${rightX + colW / 2}" y="${SAFE.top + 150}" text-anchor="middle" fill="${brand}" font-family="Arial" font-size="24" font-weight="700">US</text>
+  <text text-anchor="middle" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700">${tspans}</text>
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function renderDefaultSlide(input: SlideRenderInput): Promise<Buffer> {
   const dims = DIMENSIONS[input.aspectRatio ?? "9:16"] ?? DIMENSIONS["9:16"];
   const brand = parseBrandColor(input.brandColor);
   const isHook = input.isHook ?? (input.role === "hook" || input.purpose === "hook");
   const isCta = input.isCta ?? (input.role === "cta" || input.purpose === "cta");
 
-  const headline =
+  const rawHeadline =
     input.overlayText?.trim() ||
     input.onScreenText?.trim() ||
     input.voiceoverLine?.trim() ||
     input.role;
+  const headline = capHeadline(rawHeadline, 8);
 
   const maxChars = isHook ? 22 : 28;
   const lines = wrapLines(headline, maxChars);
@@ -134,6 +238,7 @@ export function sceneToSlideInput(
   > & { role?: string },
   opts?: { aspectRatio?: string; brandColor?: string | null }
 ): SlideRenderInput {
+  const split = parseSplitOverlay(scene.overlay_text);
   return {
     onScreenText: scene.overlay_text || scene.visual_prompt || scene.voiceover_text,
     voiceoverLine: scene.voiceover_text,
@@ -145,5 +250,12 @@ export function sceneToSlideInput(
     brandColor: opts?.brandColor,
     isHook: scene.purpose === "hook",
     isCta: scene.purpose === "cta",
+    slideLayout: split
+      ? split.kind === "myth" || split.kind === "reality"
+        ? "myth_reality"
+        : "comparison"
+      : "default",
+    splitLabel: split?.label,
+    splitBody: split?.body,
   };
 }

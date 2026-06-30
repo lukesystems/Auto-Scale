@@ -1,6 +1,13 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  ProductionFormatSchema,
+  AudioModeSchema,
+  type ProductionFormat,
+  type AudioMode,
+} from "@/services/video-factory/production-options";
+import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 
 export interface GrowthRunFormDefaults {
   targetPlatforms: Array<"tiktok" | "instagram" | "youtube">;
@@ -8,6 +15,8 @@ export interface GrowthRunFormDefaults {
   postingAggressiveness: "conservative" | "balanced" | "aggressive";
   durationDays: number;
   formatHypothesisCount: number;
+  productionFormat: ProductionFormat;
+  audioMode: AudioMode;
 }
 
 const FALLBACK: GrowthRunFormDefaults = {
@@ -16,6 +25,8 @@ const FALLBACK: GrowthRunFormDefaults = {
   postingAggressiveness: "conservative",
   durationDays: 1,
   formatHypothesisCount: 1,
+  productionFormat: "slide",
+  audioMode: "voiceover",
 };
 
 export async function loadGrowthRunFormDefaults(
@@ -30,7 +41,14 @@ export async function loadGrowthRunFormDefaults(
     .limit(1)
     .maybeSingle();
 
-  if (!lastRun) return FALLBACK;
+  if (!lastRun) {
+    const settings = await loadProjectGrowthSettings(projectId);
+    return {
+      ...FALLBACK,
+      productionFormat: settings.production_format,
+      audioMode: settings.audio_mode,
+    };
+  }
 
   const options = (lastRun.options ?? {}) as Record<string, unknown>;
   const loadout = lastRun.id
@@ -63,5 +81,11 @@ export async function loadGrowthRunFormDefaults(
     durationDays:
       typeof options.duration_days === "number" ? options.duration_days : FALLBACK.durationDays,
     formatHypothesisCount,
+    productionFormat: ProductionFormatSchema.parse(
+      typeof options.production_format === "string" ? options.production_format : FALLBACK.productionFormat
+    ),
+    audioMode: AudioModeSchema.parse(
+      typeof options.audio_mode === "string" ? options.audio_mode : FALLBACK.audioMode
+    ),
   };
 }

@@ -1,4 +1,19 @@
 import { z } from "zod";
+import {
+  coerceAccountType,
+  coerceAssetMethod,
+  coerceDiscoveryQuery,
+  coerceHypotheses,
+  coercePatternType,
+  coerceToString,
+  parseFollowerCount,
+} from "@/services/ai/coerce-llm-output";
+import {
+  ProductionFormatSchema,
+  AudioModeSchema,
+  FalRenderModeSchema,
+  FalModelTierSchema,
+} from "@/services/video-factory/production-options";
 import { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
 import {
   confidenceScoreField,
@@ -293,10 +308,14 @@ export const StoryboardSceneSchema = z.object({
   role: z.enum(SCENE_ROLES),
   duration_seconds: z.number().positive(),
   visual_intent: z.string(),
-  on_screen_text: z.string().optional().default(""),
-  voiceover_line: z.string().optional().default(""),
-  asset_method: z.enum(ASSET_METHODS).default("slide"),
-  asset_prompt: z.string().optional().default(""),
+  on_screen_text: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
+  voiceover_line: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
+  asset_method: z
+    .preprocess((val) => coerceAssetMethod(val), z.enum(ASSET_METHODS).default("slide")),
+  asset_prompt: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
 });
 
 export const StoryboardSchema = z.object({
@@ -344,6 +363,16 @@ export const GrowthRunOptionsSchema = z.object({
   concept_target_count: z.number().int().min(1).max(40).default(3),
   /** Dev / emergency: allow scheduling videos with silent TTS fallback */
   allow_silent_voiceover: z.boolean().default(false),
+  /** User-selected production format for Stage 3 render */
+  production_format: ProductionFormatSchema.optional(),
+  /** User-selected audio mode for Stage 3 render */
+  audio_mode: AudioModeSchema.optional(),
+  /** cinematic = fal middle scenes; fast = slides only */
+  fal_render_mode: FalRenderModeSchema.optional(),
+  /** Override fal model tier; auto derives from render mode + scene purpose */
+  fal_model_tier: FalModelTierSchema.optional(),
+  /** User acknowledged low-evidence render for this run */
+  low_evidence_acknowledged: z.boolean().optional(),
 });
 
 export type GrowthRunOptions = z.infer<typeof GrowthRunOptionsSchema>;

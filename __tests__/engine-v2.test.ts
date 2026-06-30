@@ -25,7 +25,8 @@ describe("production mode schema", () => {
   it("accepts implemented modes", () => {
     expect(ProductionModeSchema.parse("fast_slides")).toBe("fast_slides");
     expect(PRODUCTION_MODE_SPECS.fast_slides.implemented).toBe(true);
-    expect(PRODUCTION_MODE_SPECS.demo_short.implemented).toBe(false);
+    expect(PRODUCTION_MODE_SPECS.ai_broll_short.implemented).toBe(true);
+    expect(PRODUCTION_MODE_SPECS.demo_short.implemented).toBe(true);
   });
 });
 

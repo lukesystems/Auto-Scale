@@ -1092,6 +1092,8 @@ export interface Database {
           flat_views_threshold: number;
           promising_save_rate_threshold: number;
           strong_save_rate_threshold: number;
+          production_format: "pain_led" | "slide" | "ai_broll_short" | "objection" | "comparison" | "demo_short";
+          audio_mode: "music_only" | "voiceover" | "voiceover_bgm";
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -1191,6 +1193,8 @@ export interface Database {
             | "live" | "completed" | "failed" | "cancelled";
           paused_at_phase: string | null;
           current_stage: number;
+          execution_mode: "sequential_first" | "stage_only";
+          target_stage: number | null;
           trigger: "manual" | "autopilot" | "scheduled";
           approval_mode: "manual" | "per_format" | "autopilot";
           posting_aggressiveness: "conservative" | "balanced" | "aggressive";
@@ -1473,6 +1477,8 @@ export interface Database {
           evidence_video_ids: Json;
           trendhop_item_id: string | null;
           queued_for_next_run: boolean;
+          render_approved: boolean;
+          demo_clip_url: string | null;
           status: "draft" | "scripted" | "approved" | "killed";
           created_at: string;
           updated_at: string;
@@ -1572,7 +1578,7 @@ export interface Database {
           scene_id: string | null;
           production_job_id: string | null;
           kind:
-            | "slide_image" | "fal_clip" | "voiceover" | "subtitle"
+            | "slide_image" | "fal_clip" | "voiceover" | "subtitle" | "caption_ass"
             | "music" | "final_mp4" | "thumbnail";
           provider: string | null;
           provider_request_id: string | null;
@@ -1607,10 +1613,14 @@ export interface Database {
             | "queued"
             | "planning"
             | "generating_assets"
+            | "generating_audio"
+            | "generating_subs"
             | "assembling"
+            | "uploading"
             | "quality_check"
             | "ready"
-            | "failed";
+            | "failed"
+            | "partial";
           current_stage: string | null;
           error: string | null;
           metadata: Json;

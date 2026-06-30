@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProductionFormatSchema, AudioModeSchema } from "@/services/video-factory/production-options";
 
 export const OperationModeSchema = z.enum(["manual", "assisted", "managed"]);
 export type OperationMode = z.infer<typeof OperationModeSchema>;
@@ -44,6 +45,8 @@ export const ProjectGrowthSettingsSchema = z.object({
   run_cooldown_hours: z.number().int().min(1).max(168).default(24),
   max_active_runs: z.number().int().min(1).max(3).default(1),
   onboarding_completed: z.boolean().default(false),
+  production_format: ProductionFormatSchema.default("slide"),
+  audio_mode: AudioModeSchema.default("voiceover"),
 });
 
 export type ProjectGrowthSettings = z.infer<typeof ProjectGrowthSettingsSchema>;

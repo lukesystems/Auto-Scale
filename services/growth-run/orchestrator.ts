@@ -23,9 +23,21 @@ import {
 } from "./approval-gates";
 import { maybePauseAtStageBoundary } from "./stage-gates";
 import type { ApprovalGatePhase } from "@/lib/approval-policy";
-import { getStageByBoundaryPhase } from "@/lib/growth-run/stages";
+import {
+  getStageByBoundaryPhase,
+  getStageForPhase,
+  type GrowthRunStageId,
+} from "@/lib/growth-run/stages";
+import {
+  getResumePhaseBeforeStage,
+  loadConceptIdsForStage3,
+  projectHasRepeatRunEligibility,
+  validateStagePreconditions,
+} from "@/lib/growth-run/stage-preconditions";
 import { getUserApprovalPolicy } from "@/lib/user-approval-settings";
 import { withProjectAIContext, getProjectAIModelSlug } from "@/services/ai/runtime";
+
+export type GrowthRunExecutionMode = "sequential_first" | "stage_only";
 
 export const UNIFIED_RUN_PHASES = [
   "autobrief",
@@ -62,6 +74,8 @@ export interface StartGrowthRunInput {
   profile?: "signup" | "project";
   /** Resume from phase after this gate (user approved). */
   resumeAfterPhase?: string | null;
+  executionMode?: GrowthRunExecutionMode;
+  targetStage?: GrowthRunStageId;
 }
 
 export interface StartGrowthRunResult {
@@ -88,7 +102,21 @@ function phaseIndex(phase: string): number {
   return idx === -1 ? 0 : idx;
 }
 
-function shouldRunPhase(phase: UnifiedRunPhase, resumeAfterPhase: string | null): boolean {
+function isPhaseInExecutionScope(
+  phase: UnifiedRunPhase,
+  ctx: { executionMode: GrowthRunExecutionMode; targetStage?: GrowthRunStageId }
+): boolean {
+  if (ctx.executionMode !== "stage_only" || !ctx.targetStage) return true;
+  const stage = getStageForPhase(phase);
+  return stage?.id === ctx.targetStage;
+}
+
+function shouldRunPhase(
+  phase: UnifiedRunPhase,
+  resumeAfterPhase: string | null,
+  ctx: { executionMode: GrowthRunExecutionMode; targetStage?: GrowthRunStageId }
+): boolean {
+  if (!isPhaseInExecutionScope(phase, ctx)) return false;
   if (!resumeAfterPhase) return true;
   return phaseIndex(phase) > phaseIndex(resumeAfterPhase);
 }
@@ -123,6 +151,49 @@ function mapLoadoutRow(row: {
     total_videos_planned: row.total_videos_planned,
     duration_days: row.duration_days,
   };
+}
+
+function mapTrendReportRow(row: {
+  confidence: number;
+  winning_structures: unknown;
+  hook_patterns: unknown;
+  opening_frames: unknown;
+  cta_patterns: unknown;
+  audience_language: unknown;
+  platform_patterns: unknown;
+  recommended_experiments: unknown;
+  competitor_gaps: unknown;
+  repurposable_formats: unknown;
+  evidence_video_ids: unknown;
+}) {
+  return {
+    confidence: row.confidence,
+    winning_structures: row.winning_structures as never,
+    hook_patterns: row.hook_patterns as never,
+    opening_frames: row.opening_frames as never,
+    cta_patterns: row.cta_patterns as never,
+    audience_language: row.audience_language as never,
+    platform_patterns: row.platform_patterns as never,
+    recommended_experiments: row.recommended_experiments as never,
+    competitor_gaps: row.competitor_gaps as never,
+    repurposable_formats: row.repurposable_formats as never,
+    evidence_video_ids: row.evidence_video_ids as never,
+  } as Awaited<ReturnType<typeof generateVideoTrendReport>>["report"];
+}
+
+async function loadTrendReportForRun(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  runIds: string[]
+) {
+  for (const runId of runIds) {
+    const { data: existingReport } = await supabase
+      .from("video_trend_reports")
+      .select("*")
+      .eq("growth_run_id", runId)
+      .maybeSingle();
+    if (existingReport) return mapTrendReportRow(existingReport);
+  }
+  return null;
 }
 
 async function gate(
@@ -164,6 +235,8 @@ export async function startGrowthRun(
         targetPlatforms: options.target_platforms,
         brandConstraints: options.brand_constraints,
         distributionMode: options.distribution_mode,
+        executionMode: input.executionMode,
+        targetStage: input.targetStage,
         client: supabase,
       });
 
@@ -171,12 +244,14 @@ export async function startGrowthRun(
   const resumeAfter = input.resumeAfterPhase ?? null;
 
   if (input.existingRunId || input.resumeAfterPhase) {
-    const nextStage = input.resumeAfterPhase
-      ? (() => {
-          const completed = getStageByBoundaryPhase(input.resumeAfterPhase!);
-          return completed ? Math.min(completed.id + 1, 4) : 1;
-        })()
-      : 1;
+    const nextStage =
+      input.targetStage ??
+      (input.resumeAfterPhase
+        ? (() => {
+            const completed = getStageByBoundaryPhase(input.resumeAfterPhase!);
+            return completed ? Math.min(completed.id + 1, 4) : 1;
+          })()
+        : 1);
 
     await supabase
       .from("growth_runs")
@@ -186,6 +261,17 @@ export async function startGrowthRun(
         error: null,
         started_at: new Date().toISOString(),
         current_stage: nextStage,
+        ...(input.executionMode ? { execution_mode: input.executionMode } : {}),
+        ...(input.targetStage ? { target_stage: input.targetStage } : {}),
+      })
+      .eq("id", runId);
+  } else if (input.executionMode === "stage_only" && input.targetStage) {
+    await supabase
+      .from("growth_runs")
+      .update({
+        execution_mode: "stage_only",
+        target_stage: input.targetStage,
+        current_stage: input.targetStage,
       })
       .eq("id", runId);
   }
@@ -203,10 +289,20 @@ export async function startGrowthRun(
     try {
       const { data: runRow } = await supabase
         .from("growth_runs")
-        .select("options")
+        .select("options, execution_mode, target_stage, parent_run_id")
         .eq("id", runId)
         .single();
       const storedOpts = (runRow?.options ?? {}) as Record<string, unknown>;
+      const execCtx = {
+        executionMode: (input.executionMode ??
+          runRow?.execution_mode ??
+          "sequential_first") as GrowthRunExecutionMode,
+        targetStage: (input.targetStage ??
+          runRow?.target_stage ??
+          undefined) as GrowthRunStageId | undefined,
+      };
+      const parentRunId = runRow?.parent_run_id ?? null;
+      const artifactRunIds = [runId, parentRunId].filter(Boolean) as string[];
       const unified = input.unified ?? storedOpts.unified === true;
       const productUrl =
         input.productUrl ??
@@ -216,7 +312,7 @@ export async function startGrowthRun(
         (typeof storedOpts.crawl_id === "string" ? storedOpts.crawl_id : null);
 
       // --- autobrief ---
-      if (unified && productUrl && shouldRunPhase("autobrief", resumeAfter)) {
+      if (unified && productUrl && shouldRunPhase("autobrief", resumeAfter, execCtx)) {
         await setPhase(supabase, runId, "autobrief");
         await markPhaseStatus(supabase, runId, "autobrief", "running");
         const briefResult = await runAutobriefPhase({
@@ -244,7 +340,7 @@ export async function startGrowthRun(
       }
 
       // --- discovery sub-phases ---
-      if (shouldRunPhase("deep_discovery", resumeAfter)) {
+      if (shouldRunPhase("deep_discovery", resumeAfter, execCtx)) {
         discovery = await runDiscoveryPhase({
           projectId: input.projectId,
           growthRunId: runId,
@@ -273,7 +369,7 @@ export async function startGrowthRun(
       }
 
       // --- trendhop ---
-      if (shouldRunPhase("trendhop", resumeAfter)) {
+      if (shouldRunPhase("trendhop", resumeAfter, execCtx)) {
         await setPhase(supabase, runId, "trendhop");
         await markPhaseStatus(supabase, runId, "trendhop", "running");
         const hop = await runTrendhopPhase({
@@ -298,29 +394,9 @@ export async function startGrowthRun(
       let report: Awaited<ReturnType<typeof generateVideoTrendReport>>["report"] | null = null;
       let strategy: Awaited<ReturnType<typeof generateVideoStrategy>>["strategy"] | null = null;
       let loadout: Awaited<ReturnType<typeof generateVideoStrategy>>["loadout"] | null = null;
-      let conceptIds: string[] = [];
 
-      if (!shouldRunPhase("videotrend", resumeAfter)) {
-        const { data: existingReport } = await supabase
-          .from("video_trend_reports")
-          .select("*")
-          .eq("growth_run_id", runId)
-          .maybeSingle();
-        if (existingReport) {
-          report = {
-            confidence: existingReport.confidence,
-            winning_structures: existingReport.winning_structures as never,
-            hook_patterns: existingReport.hook_patterns as never,
-            opening_frames: existingReport.opening_frames as never,
-            cta_patterns: existingReport.cta_patterns as never,
-            audience_language: existingReport.audience_language as never,
-            platform_patterns: existingReport.platform_patterns as never,
-            recommended_experiments: existingReport.recommended_experiments as never,
-            competitor_gaps: existingReport.competitor_gaps as never,
-            repurposable_formats: existingReport.repurposable_formats as never,
-            evidence_video_ids: existingReport.evidence_video_ids as never,
-          } as Awaited<ReturnType<typeof generateVideoTrendReport>>["report"];
-        }
+      if (!shouldRunPhase("videotrend", resumeAfter, execCtx)) {
+        report = await loadTrendReportForRun(supabase, artifactRunIds);
         const { data: existingStrategy } = await supabase
           .from("video_strategies")
           .select("*")
@@ -341,7 +417,7 @@ export async function startGrowthRun(
 
       // --- videotrend ---
       let justCompletedStage1 = false;
-      if (shouldRunPhase("videotrend", resumeAfter)) {
+      if (shouldRunPhase("videotrend", resumeAfter, execCtx)) {
         if (discovery.evidenceCount === 0 && discovery.patternsMined === 0) {
           throw new Error(
             "Discovery did not produce video evidence or patterns. Add competitor sources on the Library page or retry the run after discovery completes."
@@ -376,6 +452,16 @@ export async function startGrowthRun(
         });
       }
 
+      if (
+        execCtx.executionMode === "stage_only" &&
+        execCtx.targetStage === 2 &&
+        !report
+      ) {
+        throw new Error(
+          "Video trend report missing. Run Stage 1 (Research) before strategy & scripts."
+        );
+      }
+
       const thinEvidence =
         discovery.lowConfidence || (report?.confidence ?? 1) < 0.35;
       const strategyOptions =
@@ -384,7 +470,7 @@ export async function startGrowthRun(
           : runOptions;
 
       // --- strategy + loadout ---
-      if (shouldRunPhase("strategy", resumeAfter) && report) {
+      if (shouldRunPhase("strategy", resumeAfter, execCtx) && report) {
         await setPhase(supabase, runId, "strategy");
         await markPhaseStatus(supabase, runId, "strategy", "running");
         const st = await generateVideoStrategy({
@@ -409,7 +495,7 @@ export async function startGrowthRun(
       }
 
       // --- concepts ---
-      if (shouldRunPhase("concepts", resumeAfter) && report && strategy && loadout) {
+      if (shouldRunPhase("concepts", resumeAfter, execCtx) && report && strategy && loadout) {
         await setPhase(supabase, runId, "concepts");
         await markPhaseStatus(supabase, runId, "concepts", "running");
         const concepts = await generateVideoConcepts({
@@ -433,20 +519,32 @@ export async function startGrowthRun(
         });
       }
 
-      const { data: runConcepts } = await supabase
-        .from("video_concepts")
-        .select("id")
-        .eq("growth_run_id", runId);
-      conceptIds = (runConcepts ?? []).map((row) => row.id);
+      const conceptIds = await loadConceptIdsForStage3(
+        supabase,
+        input.projectId,
+        runId,
+        parentRunId
+      );
+
+      if (
+        execCtx.executionMode === "stage_only" &&
+        execCtx.targetStage === 3 &&
+        conceptIds.length === 0
+      ) {
+        throw new Error(
+          "No concepts with scripts and storyboards. Run Stage 2 before regenerating videos."
+        );
+      }
 
       // --- scripts + storyboards (stage 2 tail) ---
       let justCompletedStage2 = false;
-      if (shouldRunPhase("scripts", resumeAfter) && conceptIds.length > 0) {
+      if (shouldRunPhase("scripts", resumeAfter, execCtx) && conceptIds.length > 0) {
         await setPhase(supabase, runId, "scripts");
         await markPhaseStatus(supabase, runId, "scripts", "running");
         const scripted = await buildScriptsAndStoryboardsForRun({
           projectId: input.projectId,
           conceptIds,
+          growthRunId: runId,
         });
         await markPhaseStatus(supabase, runId, "scripts", "succeeded", {
           count: scripted.completedConceptIds.length,
@@ -475,7 +573,7 @@ export async function startGrowthRun(
 
       // --- render pipeline (stage 3) ---
       let justCompletedStage3 = false;
-      if (shouldRunPhase("assets", resumeAfter) && conceptIds.length > 0) {
+      if (shouldRunPhase("assets", resumeAfter, execCtx) && conceptIds.length > 0) {
         await setPhase(supabase, runId, "assets");
         await markPhaseStatus(supabase, runId, "assets", "running");
         const built = await renderVideosForRun({
@@ -589,6 +687,240 @@ export async function startGrowthRun(
   });
 }
 
+export interface RunGrowthRunStageOnlyInput {
+  projectId: string;
+  ownerId: string;
+  stage: GrowthRunStageId;
+  priorRunId?: string;
+  /** When set, execute this pending run instead of creating a new row. */
+  growthRunId?: string;
+  options?: Partial<GrowthRunOptions>;
+  approvalMode?: "manual" | "per_format" | "autopilot";
+  postingAggressiveness?: "conservative" | "balanced" | "aggressive";
+  targetPlatforms?: Array<"tiktok" | "instagram" | "youtube">;
+  brandConstraints?: Record<string, unknown>;
+  distributionMode?: "postiz" | "export_only";
+  productUrl?: string;
+}
+
+/**
+ * Create (or reuse) a Growth Run scoped to one macro stage and execute it.
+ * Repeat projects only — first run stays on the sequential gated flow.
+ */
+export async function runGrowthRunStageOnly(
+  input: RunGrowthRunStageOnlyInput
+): Promise<StartGrowthRunResult> {
+  const supabase = createSupabaseServerClient();
+
+  const eligible = await projectHasRepeatRunEligibility(supabase, input.projectId);
+  if (!eligible) {
+    throw new Error("Complete your first Growth Run before running individual stages.");
+  }
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("product_url")
+    .eq("id", input.projectId)
+    .maybeSingle();
+  const productUrl = input.productUrl ?? project?.product_url ?? undefined;
+
+  const pre = await validateStagePreconditions(supabase, input.projectId, input.stage, {
+    growthRunId: input.growthRunId ?? input.priorRunId,
+    productUrl,
+  });
+  if (!pre.ok) throw new Error(pre.error);
+
+  if (input.stage === 4) {
+    const scheduleRunId = pre.parentRunId ?? input.priorRunId ?? input.growthRunId;
+    if (!scheduleRunId) {
+      throw new Error("No run with approved videos found.");
+    }
+    return prepareStage4Schedule({
+      growthRunId: scheduleRunId,
+      projectId: input.projectId,
+      ownerId: input.ownerId,
+    });
+  }
+
+  if (input.growthRunId) {
+    return runGrowthRunStage({
+      growthRunId: input.growthRunId,
+      ownerId: input.ownerId,
+      stage: input.stage,
+    });
+  }
+
+  const runOptions = {
+    ...(input.options ?? {}),
+    ...(input.stage === 1
+      ? {
+          unified: true,
+          product_url: productUrl,
+          unified_profile: "project" as const,
+        }
+      : {}),
+  };
+
+  const run = await createGrowthRun({
+    projectId: input.projectId,
+    options: runOptions as Record<string, unknown>,
+    trigger: "manual",
+    approvalMode: input.approvalMode,
+    postingAggressiveness: input.postingAggressiveness,
+    targetPlatforms: input.targetPlatforms,
+    brandConstraints: input.brandConstraints,
+    distributionMode: input.distributionMode,
+    parentRunId: pre.parentRunId ?? input.priorRunId ?? null,
+    executionMode: "stage_only",
+    targetStage: input.stage,
+    client: supabase,
+  });
+
+  return startGrowthRun({
+    projectId: input.projectId,
+    ownerId: input.ownerId,
+    existingRunId: run.id,
+    executionMode: "stage_only",
+    targetStage: input.stage,
+    unified: input.stage === 1,
+    productUrl,
+    options: input.options,
+  });
+}
+
+/** Run a single macro stage on an existing Growth Run (repeat / stage-only mode). */
+export async function runGrowthRunStage(input: {
+  growthRunId: string;
+  ownerId: string;
+  stage: GrowthRunStageId;
+}): Promise<StartGrowthRunResult> {
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select("id, project_id, options, parent_run_id, execution_mode, target_stage")
+    .eq("id", input.growthRunId)
+    .single();
+
+  if (!run) throw new Error("Growth run not found.");
+
+  if (input.stage === 4) {
+    return prepareStage4Schedule({
+      growthRunId: run.id,
+      projectId: run.project_id,
+      ownerId: input.ownerId,
+    });
+  }
+
+  const stored = (run.options ?? {}) as Record<string, unknown>;
+  const opts = parseGrowthRunOptions(run.options);
+  const productUrl =
+    typeof stored.product_url === "string"
+      ? stored.product_url
+      : (
+          await supabase
+            .from("projects")
+            .select("product_url")
+            .eq("id", run.project_id)
+            .maybeSingle()
+        ).data?.product_url ?? undefined;
+
+  const pre = await validateStagePreconditions(supabase, run.project_id, input.stage, {
+    growthRunId: run.id,
+    productUrl,
+  });
+  if (!pre.ok) throw new Error(pre.error);
+
+  const resumeAfter = getResumePhaseBeforeStage(input.stage);
+  const unified = input.stage === 1 || stored.unified === true;
+
+  return startGrowthRun({
+    projectId: run.project_id,
+    ownerId: input.ownerId,
+    existingRunId: run.id,
+    resumeAfterPhase: resumeAfter,
+    executionMode: "stage_only",
+    targetStage: input.stage,
+    unified,
+    productUrl,
+    crawlId: typeof stored.crawl_id === "string" ? stored.crawl_id : undefined,
+    profile:
+      stored.unified_profile === "signup" || stored.unified_profile === "project"
+        ? stored.unified_profile
+        : "project",
+    options: opts,
+  });
+}
+
+async function prepareStage4Schedule(input: {
+  growthRunId: string;
+  projectId: string;
+  ownerId: string;
+}): Promise<StartGrowthRunResult> {
+  const supabase = createSupabaseServerClient();
+  const pre = await validateStagePreconditions(supabase, input.projectId, 4, {
+    growthRunId: input.growthRunId,
+  });
+  if (!pre.ok) throw new Error(pre.error);
+
+  const scheduleRunId = pre.parentRunId ?? input.growthRunId;
+
+  const { data: videos } = await supabase
+    .from("videos")
+    .select("id, approval_status")
+    .eq("growth_run_id", scheduleRunId);
+
+  const rows = videos ?? [];
+  const allApproved = rows.every(
+    (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
+  );
+  if (!allApproved) {
+    throw new Error("Approve all videos in the production workspace before scheduling.");
+  }
+
+  await supabase
+    .from("growth_runs")
+    .update({
+      status: "awaiting_approval",
+      phase: "schedule",
+      current_stage: 4,
+      paused_at_phase: null,
+      execution_mode: "stage_only",
+      target_stage: 4,
+    })
+    .eq("id", scheduleRunId);
+
+  return {
+    growthRunId: scheduleRunId,
+    status: "awaiting_approval",
+    videoIds: rows.map((r) => r.id),
+    failures: [],
+  };
+}
+
+export async function finalizeStageOnlyRun(input: {
+  growthRunId: string;
+}): Promise<void> {
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select("execution_mode, paused_at_phase")
+    .eq("id", input.growthRunId)
+    .single();
+
+  if (!run || run.execution_mode !== "stage_only") {
+    throw new Error("Only stage-only runs can be finalized this way.");
+  }
+
+  await supabase
+    .from("growth_runs")
+    .update({
+      status: "completed",
+      paused_at_phase: null,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", input.growthRunId);
+}
+
 export async function resumeGrowthRun(input: {
   growthRunId: string;
   ownerId: string;
@@ -604,13 +936,21 @@ export async function continueGrowthRunStage(input: {
   const supabase = createSupabaseServerClient();
   const { data: run } = await supabase
     .from("growth_runs")
-    .select("id, project_id, paused_at_phase, phase, options, status, current_stage")
+    .select(
+      "id, project_id, paused_at_phase, phase, options, status, current_stage, execution_mode, target_stage"
+    )
     .eq("id", input.growthRunId)
     .single();
 
   if (!run) throw new Error("Growth run not found.");
   if (run.status !== "awaiting_user_input" && run.status !== "failed") {
     throw new Error("Run is not waiting for user input or retry.");
+  }
+
+  if (run.execution_mode === "stage_only") {
+    throw new Error(
+      "This was a stage-only run. Mark it complete or start the next stage from the Growth hub."
+    );
   }
 
   if (run.status === "awaiting_user_input" && run.paused_at_phase === "approval") {

@@ -4,6 +4,31 @@ import { generateObject } from "@/services/ai/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { VideoScriptSchema, type VideoScript } from "@/services/growth-run/schema";
 
+type StoredScriptRow = {
+  id: string;
+  hook_line: string;
+  body_lines: unknown;
+  cta_line: string | null;
+  voiceover_full: string | null;
+  on_screen_text: unknown;
+  estimated_duration_seconds: number | null;
+};
+
+export function videoScriptFromStoredRow(row: StoredScriptRow): VideoScript {
+  return VideoScriptSchema.parse({
+    hook_line: row.hook_line,
+    body_lines: Array.isArray(row.body_lines)
+      ? row.body_lines.filter((line): line is string => typeof line === "string")
+      : [],
+    cta_line: row.cta_line ?? "",
+    voiceover_full: row.voiceover_full ?? "",
+    on_screen_text: Array.isArray(row.on_screen_text)
+      ? row.on_screen_text.filter((line): line is string => typeof line === "string")
+      : [],
+    estimated_duration_seconds: row.estimated_duration_seconds ?? 30,
+  });
+}
+
 /**
  * Generate a per-concept script. Storyboard is built from this script in
  * a second step (see storyboard.ts).
@@ -13,6 +38,24 @@ export async function generateScriptForConcept(opts: {
   projectId: string;
 }): Promise<{ script: VideoScript; scriptId: string }> {
   const supabase = createSupabaseServerClient();
+
+  const { data: existingScript, error: existingErr } = await supabase
+    .from("video_scripts")
+    .select(
+      "id, hook_line, body_lines, cta_line, voiceover_full, on_screen_text, estimated_duration_seconds"
+    )
+    .eq("concept_id", opts.conceptId)
+    .maybeSingle();
+  if (existingErr) {
+    throw new Error(`video_scripts load: ${existingErr.message}`);
+  }
+  if (existingScript) {
+    return {
+      script: videoScriptFromStoredRow(existingScript),
+      scriptId: existingScript.id,
+    };
+  }
+
   const [conceptResult, receiptResult, cellResult] = await Promise.all([
     supabase.from("video_concepts").select("*").eq("id", opts.conceptId).single(),
     supabase.from("trend_receipts").select("*").eq("concept_id", opts.conceptId).maybeSingle(),

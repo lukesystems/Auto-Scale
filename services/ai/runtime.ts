@@ -1,5 +1,7 @@
 import { z, type ZodTypeAny } from "zod";
 
+import { unwrapStructuredPayload } from "./coerce-llm-output";
+
 import type {
 
   AIAdapter,
@@ -275,7 +277,9 @@ export async function generateObject<T extends ZodTypeAny>(
 
       const parsed: unknown = JSON.parse(text);
 
-      const validated = params.schema.parse(parsed) as z.infer<T>;
+      const normalized = unwrapStructuredPayload(parsed);
+
+      const validated = params.schema.parse(normalized) as z.infer<T>;
 
       return {
 

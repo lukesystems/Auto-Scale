@@ -9,7 +9,38 @@ import {
 } from "@/services/growth-run/schema";
 import { resolveProductionMode, type ProductionMode } from "./production-modes";
 import { buildScenePlan, scenePlanToStoryboardRows } from "./scene-plan";
-import { roleToPurpose, assetMethodToVisualMethod } from "./scene-contract";
+import {
+  roleToPurpose,
+  assetMethodToVisualMethod,
+  purposeToRole,
+  visualMethodToAssetMethod,
+  type ScenePlan,
+} from "./scene-contract";
+import { isFalConfigured } from "@/services/media/fal-config";
+import type { ProductionFormat } from "./production-options";
+import { preferAiBrollForFormat } from "./production-options";
+
+function storyboardFromScenePlan(
+  plan: ScenePlan,
+  aspect: string,
+  targetLengthSeconds: number
+): Storyboard {
+  return {
+    aspect_ratio: aspect,
+    total_duration_seconds: targetLengthSeconds,
+    scenes: plan.scenes.map((s) => ({
+      scene_index: s.order,
+      role: purposeToRole(s.purpose),
+      duration_seconds: s.duration_seconds,
+      visual_intent: s.visual_prompt || s.voiceover_text || "",
+      on_screen_text: s.overlay_text || s.visual_prompt || "",
+      voiceover_line: s.voiceover_text || "",
+      asset_method: visualMethodToAssetMethod(s.visual_method),
+      asset_prompt: s.visual_prompt || "",
+    })),
+    notes: "Deterministic scene plan (AI storyboard unavailable)",
+  };
+}
 
 /**
  * Build a storyboard from a script. Storyboard is mandatory before video
@@ -23,24 +54,36 @@ export async function generateStoryboardForConcept(opts: {
   script: VideoScript;
   videoType: string;
   productionMode?: ProductionMode | null;
+  productionFormat?: ProductionFormat | null;
+  falRenderMode?: "cinematic" | "fast" | null;
   hook?: string;
   cta?: string;
   platform: "tiktok" | "instagram" | "youtube";
   targetLengthSeconds: number;
-  preferFalForBroll: boolean; // when concept is ai_broll or trend_remix, allow fal_clip
+  preferFalForBroll: boolean;
 }): Promise<{ storyboard: Storyboard; storyboardId: string; scenePlanJson: unknown }> {
   const supabase = createSupabaseServerClient();
   const aspect = "9:16";
   const productionMode =
     opts.productionMode ?? resolveProductionMode(opts.videoType as never);
+  const productionFormat = opts.productionFormat ?? undefined;
+  const falConfigured = isFalConfigured();
+  const preferAiBroll =
+    opts.preferFalForBroll ||
+    (productionFormat
+      ? preferAiBrollForFormat(productionFormat, opts.falRenderMode ?? "fast", falConfigured)
+      : false);
 
   const deterministicPlan = buildScenePlan({
     productionMode,
+    productionFormat,
+    falRenderMode: opts.falRenderMode ?? "fast",
     script: opts.script,
     hook: opts.hook ?? opts.script.hook_line,
     cta: opts.cta ?? opts.script.cta_line,
     targetLengthSeconds: opts.targetLengthSeconds,
-    preferAiBroll: opts.preferFalForBroll,
+    preferAiBroll,
+    falConfigured,
   });
 
   const prompt = [
@@ -51,7 +94,7 @@ export async function generateStoryboardForConcept(opts: {
     JSON.stringify(opts.script),
     "",
     "Produce a Storyboard JSON: scenes[] with role (hook|context|demo|proof|cta|outro|transition),",
-    "duration_seconds, visual_intent, on_screen_text, voiceover_line, asset_method, asset_prompt.",
+    "duration_seconds, visual_intent, on_screen_text (single STRING per scene, not an array), voiceover_line, asset_method, asset_prompt.",
     "",
     "Rules for asset_method:",
     "- For 'slide' / 'pain_led' / 'founder_pov' / 'objection' / 'comparison' / 'demo' videos:",
@@ -66,18 +109,26 @@ export async function generateStoryboardForConcept(opts: {
     "Return strict JSON. Do not invent metrics.",
   ].join("\n");
 
-  const res = await generateObject({
-    schema: StoryboardSchema,
-    schemaDescription:
-      "Storyboard: aspect_ratio, total_duration_seconds, scenes[] (scene_index, role, duration_seconds, visual_intent, on_screen_text, voiceover_line, asset_method, asset_prompt), notes.",
-    taskType: "content",
-    system: "You build short-form video storyboards. Mandatory before generation.",
-    prompt,
-    temperature: 0.5,
-    maxTokens: 2500,
-  });
-
-  const board = res.object;
+  let board: Storyboard;
+  try {
+    const res = await generateObject({
+      schema: StoryboardSchema,
+      schemaDescription:
+        "Storyboard: aspect_ratio, total_duration_seconds, scenes[] (scene_index, role, duration_seconds, visual_intent, on_screen_text, voiceover_line, asset_method, asset_prompt), notes.",
+      taskType: "content",
+      system: "You build short-form video storyboards. Mandatory before generation.",
+      prompt,
+      temperature: 0.5,
+      maxTokens: 2500,
+    });
+    board = res.object;
+  } catch (err) {
+    console.warn(
+      "[storyboard] AI storyboard failed; using deterministic scene plan",
+      err instanceof Error ? err.message : err
+    );
+    board = storyboardFromScenePlan(deterministicPlan, aspect, opts.targetLengthSeconds);
+  }
   const { data: sbRow, error: sbErr } = await supabase
     .from("storyboards")
     .insert({

@@ -14,25 +14,67 @@ import { renderConceptVideo } from "./render-concept";
 import { isFfmpegAvailable } from "./ffmpeg";
 import { isFalConfigured } from "@/services/media/fal-config";
 import { resolveProductionMode } from "./production-modes";
+import type { ProductionFormat } from "./production-options";
+import {
+  preferAiBrollForFormat,
+  resolveProductionModeFromFormat,
+  resolveProductionOptions,
+} from "./production-options";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
 import {
   ensureProductionJob,
   linkStoryboardToJob,
   setProductionJobStage,
   tagAssetsWithJob,
 } from "./production-job";
+import { runPreRenderGate } from "./pre-render-gate";
 
 function preferFalForConcept(
   productionMode: ReturnType<typeof resolveProductionMode>,
-  videoType: string
+  videoType: string,
+  productionFormat?: ProductionFormat | null,
+  falRenderMode: "cinematic" | "fast" = "fast"
 ): boolean {
+  if (falRenderMode === "fast") return false;
+  if (productionFormat)
+    return preferAiBrollForFormat(productionFormat, falRenderMode, isFalConfigured());
   return (
     (["ai_broll", "trend_remix", "ai_broll_short", "reference_remix"].includes(
       productionMode
     ) ||
-      ["ai_broll", "trend_remix"].includes(videoType) ||
+      ["ai_broll", "trend_remix", "pain_led"].includes(videoType) ||
       productionMode === "fast_slides") &&
     isFalConfigured()
   );
+}
+
+async function loadRunFalRenderMode(growthRunId?: string): Promise<"cinematic" | "fast"> {
+  if (!growthRunId) return "fast";
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("growth_runs")
+    .select("options")
+    .eq("id", growthRunId)
+    .maybeSingle();
+  if (!data?.options || typeof data.options !== "object" || Array.isArray(data.options)) {
+    return "fast";
+  }
+  const opts = GrowthRunOptionsSchema.partial().parse(data.options);
+  return opts.fal_render_mode === "cinematic" ? "cinematic" : "fast";
+}
+
+async function loadRunProductionFormat(growthRunId: string): Promise<ProductionFormat | null> {
+  const supabase = createSupabaseServerClient();
+  const { data } = await supabase
+    .from("growth_runs")
+    .select("options")
+    .eq("id", growthRunId)
+    .maybeSingle();
+  if (!data?.options || typeof data.options !== "object" || Array.isArray(data.options)) {
+    return null;
+  }
+  const opts = GrowthRunOptionsSchema.partial().parse(data.options);
+  return opts.production_format ?? null;
 }
 
 async function loadConcept(conceptId: string) {
@@ -63,6 +105,7 @@ async function loadConcept(conceptId: string) {
 export async function buildScriptsAndStoryboardsForRun(opts: {
   projectId: string;
   conceptIds: string[];
+  growthRunId?: string;
 }): Promise<{
   completedConceptIds: string[];
   failures: Array<{ conceptId: string; error: string }>;
@@ -70,6 +113,10 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
   const supabase = createSupabaseServerClient();
   const completedConceptIds: string[] = [];
   const failures: Array<{ conceptId: string; error: string }> = [];
+  const productionFormat = opts.growthRunId
+    ? await loadRunProductionFormat(opts.growthRunId)
+    : null;
+  const runFalRenderMode = await loadRunFalRenderMode(opts.growthRunId);
 
   for (const conceptId of opts.conceptIds) {
     try {
@@ -84,6 +131,8 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
       }
 
       const { concept, productionMode } = await loadConcept(conceptId);
+      const format = productionFormat ?? undefined;
+      const resolvedMode = format ? resolveProductionModeFromFormat(format) : productionMode;
 
       const { script } = await generateScriptForConcept({
         conceptId,
@@ -95,12 +144,14 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
         projectId: opts.projectId,
         script,
         videoType: concept.video_type,
-        productionMode,
+        productionMode: resolvedMode,
+        productionFormat: format ?? null,
+        falRenderMode: runFalRenderMode,
         hook: concept.hook,
         cta: concept.cta ?? "",
         platform: concept.platform,
         targetLengthSeconds: concept.target_length_seconds,
-        preferFalForBroll: preferFalForConcept(productionMode, concept.video_type),
+        preferFalForBroll: preferFalForConcept(resolvedMode, concept.video_type, format, runFalRenderMode),
       });
 
       completedConceptIds.push(conceptId);
@@ -129,10 +180,21 @@ export async function renderVideosForRun(opts: {
 
   const videoIds: string[] = [];
   const failures: Array<{ conceptId: string; error: string }> = [];
+  const falCallCount = { value: 0 };
 
   for (const conceptId of opts.conceptIds) {
     try {
       const { concept, productionMode } = await loadConcept(conceptId);
+
+      const { data: conceptRow } = await supabase
+        .from("video_concepts")
+        .select("render_approved, demo_clip_url, hook")
+        .eq("id", conceptId)
+        .maybeSingle();
+      if (conceptRow?.render_approved === false) {
+        failures.push({ conceptId, error: "Concept not approved for render" });
+        continue;
+      }
 
       const { data: storyboard } = await supabase
         .from("storyboards")
@@ -168,9 +230,58 @@ export async function renderVideosForRun(opts: {
 
       const { data: scriptRow } = await supabase
         .from("video_scripts")
-        .select("voiceover_full")
+        .select("voiceover_full, hook_line, body_lines, cta_line, estimated_duration_seconds")
         .eq("concept_id", conceptId)
         .maybeSingle();
+
+      const { data: runRow } = await supabase
+        .from("growth_runs")
+        .select("options")
+        .eq("id", opts.growthRunId)
+        .maybeSingle();
+      const runOpts =
+        runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
+          ? GrowthRunOptionsSchema.partial().parse(runRow.options)
+          : {};
+      const { audioMode } = resolveProductionOptions({
+        productionFormat: runOpts.production_format ?? null,
+        audioMode: runOpts.audio_mode ?? null,
+        falRenderMode: runOpts.fal_render_mode ?? null,
+      });
+
+      const { data: receipt } = await supabase
+        .from("trend_receipts")
+        .select("confidence")
+        .eq("concept_id", conceptId)
+        .maybeSingle();
+
+      if (scriptRow) {
+        const gate = runPreRenderGate({
+          hook: conceptRow?.hook ?? concept.hook,
+          cta: concept.cta ?? "",
+          script: {
+            hook_line: scriptRow.hook_line ?? concept.hook,
+            body_lines: Array.isArray(scriptRow.body_lines) ? (scriptRow.body_lines as string[]) : [],
+            cta_line: scriptRow.cta_line ?? concept.cta ?? "",
+            voiceover_full: scriptRow.voiceover_full ?? "",
+            on_screen_text: [],
+            estimated_duration_seconds: scriptRow.estimated_duration_seconds ?? concept.target_length_seconds,
+          },
+          targetLengthSeconds: concept.target_length_seconds,
+          sceneDurationsSeconds: (scenes ?? []).map((s) => Number(s.duration_seconds)),
+          audioMode,
+          trendConfidence: receipt?.confidence != null ? Number(receipt.confidence) : null,
+          lowEvidenceAcknowledged: runOpts.low_evidence_acknowledged ?? false,
+        });
+        if (!gate.passed) {
+          failures.push({
+            conceptId,
+            error: `Pre-render gate blocked: ${gate.blockReasons.join("; ")}`,
+          });
+          continue;
+        }
+      }
+
       const voiceoverText =
         (scriptRow?.voiceover_full as string | null) ??
         (scenes ?? [])
@@ -207,16 +318,25 @@ export async function renderVideosForRun(opts: {
 
       if (isFfmpegAvailable()) {
         try {
+          await setProductionJobStage(jobId, "generating_assets", "scene_assets");
           await setProductionJobStage(jobId, "assembling", "render");
-          await renderConceptVideo({
+          const renderResult = await renderConceptVideo({
             projectId: opts.projectId,
             growthRunId: opts.growthRunId,
             conceptId,
             videoId,
             finalAssetId,
+            jobId,
+            demoClipUrl: (conceptRow?.demo_clip_url as string | null) ?? null,
+            falCallCount,
           });
           await tagAssetsWithJob(conceptId, jobId);
-          await setProductionJobStage(jobId, "quality_check", "quality_gate");
+          await setProductionJobStage(
+            jobId,
+            renderResult.partialFailures?.length ? "partial" : "quality_check",
+            renderResult.partialFailures?.length ? "partial_success" : "quality_gate",
+            renderResult.partialFailures?.join("; ") ?? null
+          );
           await setProductionJobStage(jobId, "ready", "ready");
         } catch (renderErr) {
           await setProductionJobStage(

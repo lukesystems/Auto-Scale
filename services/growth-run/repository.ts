@@ -18,6 +18,8 @@ export interface CreateGrowthRunInput {
   brandConstraints?: Record<string, unknown>;
   parentRunId?: string | null;
   distributionMode?: "postiz" | "export_only";
+  executionMode?: "sequential_first" | "stage_only";
+  targetStage?: 1 | 2 | 3 | 4;
   client?: SupabaseClientType;
 }
 
@@ -37,6 +39,8 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
       brand_constraints: (input.brandConstraints ?? {}) as never,
       distribution_mode: input.distributionMode ?? "postiz",
       parent_run_id: input.parentRunId ?? null,
+      execution_mode: input.executionMode ?? "sequential_first",
+      target_stage: input.targetStage ?? null,
       batch_kind: batchKind,
       status: "pending",
       phase: "brief",

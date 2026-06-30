@@ -1,5 +1,11 @@
 import Link from "next/link";
 import {
+  AUDIO_MODE_SPECS,
+  PRODUCTION_FORMAT_SPECS,
+  type AudioMode,
+  type ProductionFormat,
+} from "@/services/video-factory/production-options";
+import {
   decideVideoAction,
   rerenderVideoAction,
   reviseHookAction,
@@ -84,9 +90,18 @@ interface ProductionWorkspaceProps {
   runId: string;
   videos: ProductionWorkspaceVideo[];
   voiceIdHint?: string;
+  productionFormat?: ProductionFormat;
+  audioMode?: AudioMode;
 }
 
-export function ProductionWorkspace({ projectId, runId, videos, voiceIdHint }: ProductionWorkspaceProps) {
+export function ProductionWorkspace({
+  projectId,
+  runId,
+  videos,
+  voiceIdHint,
+  productionFormat,
+  audioMode,
+}: ProductionWorkspaceProps) {
   if (!videos.length) {
     return (
       <section className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
@@ -102,6 +117,22 @@ export function ProductionWorkspace({ projectId, runId, videos, voiceIdHint }: P
         <p className="text-sm text-muted-foreground mt-1">
           Agent plan → scene timeline → asset pipeline → review. Revise without restarting the run.
         </p>
+        {productionFormat || audioMode ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Run production:{" "}
+            {productionFormat ? (
+              <span className="font-medium text-foreground">
+                {PRODUCTION_FORMAT_SPECS[productionFormat].label}
+              </span>
+            ) : null}
+            {productionFormat && audioMode ? " · " : null}
+            {audioMode ? (
+              <span className="font-medium text-foreground">
+                {AUDIO_MODE_SPECS[audioMode].label}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
       </header>
       {videos.map((video) => (
         <article key={video.id} className="rounded-xl border bg-card overflow-hidden">
@@ -111,6 +142,8 @@ export function ProductionWorkspace({ projectId, runId, videos, voiceIdHint }: P
               <p className="text-xs text-muted-foreground">
                 {video.productionMode ?? video.videoType} · {video.platform} · job{" "}
                 {video.job?.status ?? "pending"}
+                {productionFormat ? ` · ${PRODUCTION_FORMAT_SPECS[productionFormat].label}` : ""}
+                {audioMode ? ` · ${AUDIO_MODE_SPECS[audioMode].label}` : ""}
               </p>
             </div>
             <span
@@ -294,9 +327,11 @@ function AssetPipeline({
       <PipelineRow
         label="Voiceover"
         status={
-          voice?.provider
-            ? `${voice.status} · ${voice.provider}${voiceSilent ? " (silent fallback)" : ""}`
-            : voice?.status ?? "pending"
+          voice?.status === "skipped"
+            ? "skipped (music only)"
+            : voice?.provider
+              ? `${voice.status} · ${voice.provider}${voiceSilent ? " (silent fallback)" : ""}`
+              : voice?.status ?? "pending"
         }
       />
       {voice?.publicUrl ? (

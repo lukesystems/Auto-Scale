@@ -14,6 +14,13 @@ export interface VoiceoverResult {
   qualityPenalty: number;
   /** Providers tried in order; failures include error messages for UI/debug. */
   attemptLog: Array<{ provider: VoiceProviderId; ok: boolean; error?: string }>;
+  alignment?: CharacterAlignment | null;
+}
+
+export interface CharacterAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
 }
 
 /** Non-secret voice id hint for UI (ElevenLabs default when env unset). */
@@ -47,9 +54,16 @@ export async function synthesizeWithProvider(opts: {
     tried.add(provider);
     try {
       if (provider === "elevenlabs" && process.env.ELEVENLABS_API_KEY && text) {
-        const buffer = await elevenLabsTts(text);
+        const withTimestamps = await elevenLabsTtsWithTimestamps(text);
         attemptLog.push({ provider, ok: true });
-        return { buffer, provider, isSilent: false, qualityPenalty: 0, attemptLog };
+        return {
+          buffer: withTimestamps.buffer,
+          provider,
+          isSilent: false,
+          qualityPenalty: 0,
+          attemptLog,
+          alignment: withTimestamps.alignment,
+        };
       }
       if (provider === "openai" && process.env.OPENAI_API_KEY && text) {
         const buffer = await openAiTts(text);
@@ -86,6 +100,56 @@ export async function synthesizeWithProvider(opts: {
   };
 }
 
+async function elevenLabsTtsWithTimestamps(text: string): Promise<{
+  buffer: Buffer;
+  alignment: CharacterAlignment | null;
+}> {
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
+  if (!apiKey) throw new Error("ELEVENLABS_API_KEY missing");
+  const voiceId = getDefaultVoiceIdHint();
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        text: text.slice(0, 5000),
+        model_id: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.65,
+          similarity_boost: 0.75,
+          style: 0.1,
+          use_speaker_boost: true,
+        },
+        output_format: "mp3_44100_128",
+      }),
+      signal: AbortSignal.timeout(120_000),
+    }
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `ElevenLabs TTS failed: HTTP ${res.status}${body ? ` — ${body.slice(0, 200)}` : ""}`
+    );
+  }
+  const json = (await res.json()) as {
+    audio_base64?: string;
+    alignment?: CharacterAlignment;
+    normalized_alignment?: CharacterAlignment;
+  };
+  if (!json.audio_base64) {
+    throw new Error("ElevenLabs with-timestamps returned no audio");
+  }
+  return {
+    buffer: Buffer.from(json.audio_base64, "base64"),
+    alignment: json.alignment ?? json.normalized_alignment ?? null,
+  };
+}
+
 async function elevenLabsTts(text: string): Promise<Buffer> {
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY missing");
@@ -102,6 +166,13 @@ async function elevenLabsTts(text: string): Promise<Buffer> {
       body: JSON.stringify({
         text: text.slice(0, 5000),
         model_id: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.65,
+          similarity_boost: 0.75,
+          style: 0.1,
+          use_speaker_boost: true,
+        },
+        output_format: "mp3_44100_128",
       }),
       signal: AbortSignal.timeout(120_000),
     }
@@ -125,10 +196,10 @@ async function openAiTts(text: string): Promise<Buffer> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_TTS_MODEL ?? "tts-1",
+      model: process.env.OPENAI_TTS_MODEL ?? "tts-1-hd",
       voice: process.env.OPENAI_TTS_VOICE ?? "alloy",
       input: text.slice(0, 4096),
-      response_format: "mp3",
+      response_format: "aac",
     }),
     signal: AbortSignal.timeout(120_000),
   });

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  coerceAccountType,
+  coerceToString,
+  parseFollowerCount,
+} from "@/services/ai/coerce-llm-output";
 
 export const TrendWatchAnalysisSchema = z.object({
   niche_summary: z.string(),
@@ -29,16 +34,22 @@ export const TrendWatchAnalysisSchema = z.object({
 export type TrendWatchAnalysis = z.infer<typeof TrendWatchAnalysisSchema>;
 
 export const SourceClassificationSchema = z.object({
-  account_type: z.enum(["official", "competitor", "shadow", "creator", "partner", "affiliate", "review", "unknown"]),
-  follower_count: z.number().int().nonnegative().nullable().default(null),
-  format: z.string().default(""),
-  hook: z.string().default(""),
-  angle: z.string().default(""),
-  visual_pattern: z.string().default(""),
-  cta_pattern: z.string().default(""),
-  audience_pain: z.string().default(""),
-  why_it_worked: z.string().default(""),
-  how_to_adapt: z.string().default(""),
+  account_type: z.preprocess(
+    (val) => coerceAccountType(val),
+    z.enum(["official", "competitor", "shadow", "creator", "partner", "affiliate", "review", "unknown"])
+  ),
+  follower_count: z.preprocess(
+    (val) => parseFollowerCount(val),
+    z.number().int().nonnegative().nullable().default(null)
+  ),
+  format: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  hook: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  angle: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  visual_pattern: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  cta_pattern: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  audience_pain: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  why_it_worked: z.preprocess((val) => coerceToString(val), z.string().default("")),
+  how_to_adapt: z.preprocess((val) => coerceToString(val), z.string().default("")),
   distortion_risk: z.enum(["low", "medium", "high"]).default("medium"),
   transferability_score: z.number().min(0).max(1).default(0.5),
   signal_score: z.number().min(0).max(1).default(0.5),

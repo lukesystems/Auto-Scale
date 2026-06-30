@@ -6,11 +6,17 @@ import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
+import { StageOnlyRunButtons } from "@/components/growth/stage-only-run-buttons";
 import { ProviderReadinessChip } from "@/components/growth/provider-readiness-chip";
+import { ProductionFormatPicker } from "@/components/growth/production-format-picker";
+import { AudioModePicker } from "@/components/growth/audio-mode-picker";
+import { ProductionProviderBar } from "@/components/growth/production-provider-bar";
+import { getProductionProviderStatus } from "@/lib/production-provider-status";
 import { NextMoveBanner } from "@/components/app/next-move-banner";
 import { getNextMove } from "@/lib/next-move";
 import { getProjectStats } from "../queries";
 import { loadGrowthRunFormDefaults } from "@/lib/growth-run-defaults";
+import { projectHasRepeatRunEligibility } from "@/lib/growth-run/stage-preconditions";
 
 interface GrowthIndexProps {
   params: { id: string };
@@ -34,7 +40,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   }
 
   const supabase = createSupabaseServerClient();
-  const [runs, accounts, project, brief, stats, formDefaults] =
+  const [runs, accounts, project, brief, stats, formDefaults, canRunStages] =
     await Promise.all([
     supabase
       .from("growth_runs")
@@ -47,6 +53,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
     supabase.from("product_briefs").select("*").eq("project_id", projectId).maybeSingle(),
     getProjectStats(projectId),
     loadGrowthRunFormDefaults(projectId),
+    projectHasRepeatRunEligibility(supabase, projectId),
   ]);
 
   const activeRun = runs.data?.find((r) =>
@@ -56,6 +63,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   const accountCount = accounts.data?.length ?? 0;
   const publishingLabel = getPublishingProviderLabel();
   const ffmpegHealth = checkFfmpegHealth();
+  const productionProviderStatus = getProductionProviderStatus();
   const hasProductUrl = Boolean(project.data?.product_url?.trim());
   const canStartRun = hasProductUrl;
 
@@ -176,6 +184,12 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
         <form action={startGrowthRunAction} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="projectId" value={projectId} />
 
+          <div className="sm:col-span-2 space-y-4">
+            <ProductionProviderBar status={productionProviderStatus} />
+            <ProductionFormatPicker defaultValue={formDefaults.productionFormat} />
+            <AudioModePicker defaultValue={formDefaults.audioMode} />
+          </div>
+
           <div className="sm:col-span-2 rounded-lg border border-primary/25 bg-primary/[0.04] p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-primary">Product URL</p>
             <p className="mt-1 break-all font-mono text-sm">
@@ -280,6 +294,12 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           </div>
         </form>
       </section>
+
+      {canRunStages ? (
+        <section className="rounded-lg border bg-card p-4">
+          <StageOnlyRunButtons projectId={projectId} disabled={Boolean(activeRun)} />
+        </section>
+      ) : null}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Past runs</h2>
