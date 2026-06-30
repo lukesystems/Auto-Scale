@@ -19,10 +19,10 @@ import {
   rejectGrowthRunStageAction,
   finalizeStageOnlyRunAction,
 } from "@/app/(app)/projects/[id]/growth/actions";
-import { ProductionFormatPicker, FalRenderModePicker } from "@/components/growth/production-format-picker";
+import { ProductionFormatPicker, FalRenderModePicker, VisualPipelinePicker } from "@/components/growth/production-format-picker";
 import { AudioModePicker } from "@/components/growth/audio-mode-picker";
 import { ProductionProviderBar, type ProductionProviderStatus } from "@/components/growth/production-provider-bar";
-import type { AudioMode, ProductionFormat } from "@/services/video-factory/production-options";
+import type { AudioMode, ProductionFormat, VisualPipeline } from "@/services/video-factory/production-options";
 
 export interface StageGateSummary {
   briefName?: string | null;
@@ -50,6 +50,8 @@ export function StageGateCard({
   summary,
   productionFormat = "slide",
   audioMode = "voiceover",
+  falRenderMode = "fast",
+  visualPipeline = "auto",
   providerStatus,
 }: {
   projectId: string;
@@ -61,6 +63,8 @@ export function StageGateCard({
   summary: StageGateSummary;
   productionFormat?: ProductionFormat;
   audioMode?: AudioMode;
+  falRenderMode?: "cinematic" | "fast";
+  visualPipeline?: VisualPipeline | "auto";
   providerStatus: ProductionProviderStatus;
 }) {
   const [pending, startTransition] = useTransition();
@@ -122,6 +126,10 @@ export function StageGateCard({
             | null)
         : null;
 
+      const visualPipelineValue = form
+        ? (new FormData(form).get("visualPipeline") as VisualPipeline | "auto" | null)
+        : null;
+
       const result = await continueGrowthRunStageAction({
         projectId,
         growthRunId,
@@ -129,6 +137,7 @@ export function StageGateCard({
         ...(audioModeValue ? { audioMode: audioModeValue } : {}),
         ...(falRenderModeValue ? { falRenderMode: falRenderModeValue } : {}),
         ...(falModelTierValue ? { falModelTier: falModelTierValue } : {}),
+        ...(visualPipelineValue ? { visualPipeline: visualPipelineValue } : {}),
       });
       if (!result.ok) {
         toast.error(result.error ?? "Failed to continue.");
@@ -212,7 +221,11 @@ export function StageGateCard({
         >
           <ProductionProviderBar status={providerStatus} />
           <ProductionFormatPicker defaultValue={productionFormat} />
-          <FalRenderModePicker defaultValue="fast" />
+          <FalRenderModePicker defaultValue={falRenderMode} />
+          <VisualPipelinePicker
+            defaultValue={visualPipeline}
+            falConfigured={providerStatus.fal.ok}
+          />
           <AudioModePicker defaultValue={audioMode} />
         </form>
       ) : null}

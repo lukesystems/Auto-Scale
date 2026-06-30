@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isFalConfigured } from "@/services/media/fal-config";
+import type { VisualPipeline } from "./production-options";
 
 /**
  * Per-scene asset generation.
@@ -32,6 +33,7 @@ export interface SceneAssetInput {
   voiceoverLine: string | null;
   durationSeconds: number;
   aspectRatio: string;
+  visualPipeline?: VisualPipeline;
 }
 
 export async function generateSceneAsset(input: SceneAssetInput): Promise<{ assetId: string; status: string }> {
@@ -39,6 +41,7 @@ export async function generateSceneAsset(input: SceneAssetInput): Promise<{ asse
 
   type AssetKind =
     | "slide_image"
+    | "fal_image"
     | "fal_clip"
     | "voiceover"
     | "subtitle"
@@ -79,6 +82,15 @@ export async function generateSceneAsset(input: SceneAssetInput): Promise<{ asse
     }
   }
 
+  const baseMetadata = {
+    asset_method: input.assetMethod,
+    prompt: input.assetPrompt,
+    on_screen_text: input.onScreenText,
+    voiceover_line: input.voiceoverLine,
+    aspect_ratio: input.aspectRatio,
+    visual_pipeline: input.visualPipeline ?? "t2v",
+  } as const;
+
   const { data, error } = await supabase
     .from("generated_assets")
     .insert({
@@ -93,17 +105,34 @@ export async function generateSceneAsset(input: SceneAssetInput): Promise<{ asse
       duration_seconds: input.durationSeconds,
       status,
       error: errorMsg,
-      metadata: {
-        asset_method: input.assetMethod,
-        prompt: input.assetPrompt,
-        on_screen_text: input.onScreenText,
-        voiceover_line: input.voiceoverLine,
-        aspect_ratio: input.aspectRatio,
-      } as never,
+      metadata: baseMetadata as never,
     })
     .select("id, status")
     .single();
   if (error) throw new Error(`generated_assets insert: ${error.message}`);
+
+  if (
+    input.assetMethod === "fal_clip" &&
+    input.visualPipeline === "image_to_video" &&
+    isFalConfigured() &&
+    status === "pending"
+  ) {
+    await supabase.from("generated_assets").insert({
+      project_id: input.projectId,
+      growth_run_id: input.growthRunId,
+      concept_id: input.conceptId,
+      scene_id: input.sceneId,
+      kind: "fal_image",
+      provider: "fal_flux",
+      status: "pending",
+      duration_seconds: input.durationSeconds,
+      metadata: {
+        ...baseMetadata,
+        pipeline_step: "frame",
+      } as never,
+    });
+  }
+
   return { assetId: data!.id, status: data!.status };
 }
 

@@ -28,6 +28,13 @@ export function getDefaultVoiceIdHint(): string {
   return process.env.DEFAULT_VOICE_ID?.trim() || "21m00Tcm4TlvDq8ikWAM";
 }
 
+/** True when at least one real TTS provider is configured. */
+export function isVoiceoverTtsConfigured(): boolean {
+  return Boolean(
+    process.env.ELEVENLABS_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
+  );
+}
+
 function configuredProvider(): VoiceProviderId {
   const env = (process.env.VOICE_PROVIDER ?? "elevenlabs").trim().toLowerCase();
   if (env === "openai") return "openai";
@@ -38,14 +45,17 @@ function configuredProvider(): VoiceProviderId {
 export async function synthesizeWithProvider(opts: {
   scriptText: string;
   durationSeconds: number;
+  /** When false (default), missing TTS keys throw instead of silent audio. */
+  allowSilentFallback?: boolean;
 }): Promise<VoiceoverResult> {
   const text = opts.scriptText.trim();
+  const allowSilent = opts.allowSilentFallback ?? false;
   const order: VoiceProviderId[] = [];
   const primary = configuredProvider();
   order.push(primary);
   if (primary !== "openai" && process.env.OPENAI_API_KEY) order.push("openai");
   if (primary !== "elevenlabs" && process.env.ELEVENLABS_API_KEY) order.push("elevenlabs");
-  order.push("silent_dev_fallback");
+  if (allowSilent) order.push("silent_dev_fallback");
 
   const tried = new Set<VoiceProviderId>();
   const attemptLog: VoiceoverResult["attemptLog"] = [];
@@ -89,15 +99,30 @@ export async function synthesizeWithProvider(opts: {
     }
   }
 
-  const buffer = await silentAudio(opts.durationSeconds);
-  attemptLog.push({ provider: "silent_dev_fallback", ok: true });
-  return {
-    buffer,
-    provider: "silent_dev_fallback",
-    isSilent: true,
-    qualityPenalty: 0.25,
-    attemptLog,
-  };
+  const summary = formatVoiceoverFailureSummary(attemptLog);
+  if (allowSilent) {
+    const buffer = await silentAudio(opts.durationSeconds);
+    attemptLog.push({ provider: "silent_dev_fallback", ok: true });
+    return {
+      buffer,
+      provider: "silent_dev_fallback",
+      isSilent: true,
+      qualityPenalty: 0.25,
+      attemptLog,
+    };
+  }
+
+  throw new Error(
+    `Voiceover unavailable — configure ELEVENLABS_API_KEY or OPENAI_API_KEY. ${summary}`
+  );
+}
+
+function formatVoiceoverFailureSummary(
+  attemptLog: VoiceoverResult["attemptLog"]
+): string {
+  const failed = attemptLog.filter((entry) => !entry.ok);
+  if (!failed.length) return "No TTS providers configured.";
+  return failed.map((entry) => `${entry.provider}: ${entry.error ?? "failed"}`).join("; ");
 }
 
 async function elevenLabsTtsWithTimestamps(text: string): Promise<{

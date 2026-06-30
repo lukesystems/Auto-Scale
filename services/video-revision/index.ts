@@ -9,6 +9,13 @@ import { roleToPurpose } from "@/services/video-factory/scene-contract";
 import type { SceneContract } from "@/services/video-factory/scene-contract";
 import { setProductionJobStage } from "@/services/video-factory/production-job";
 import { isFfmpegAvailable } from "@/services/video-factory/ffmpeg";
+import { isFalConfigured } from "@/services/media/fal-config";
+import { resolveProductionOptions } from "@/services/video-factory/production-options";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import { renderSceneVisual } from "@/services/video-factory/scene-render";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type {
   ReviseHookInput,
   ReviseSceneTextInput,
@@ -81,6 +88,92 @@ export async function regenerateSceneVisual(opts: {
     .eq("id", opts.sceneId)
     .single();
   if (!scene) throw new Error("scene not found");
+
+  const useBroll =
+    scene.asset_method === "fal_clip" || scene.visual_method === "ai_broll";
+
+  if (useBroll && isFalConfigured()) {
+    const { data: runRow } = await supabase
+      .from("growth_runs")
+      .select("options, brand_constraints")
+      .eq("id", opts.growthRunId)
+      .maybeSingle();
+    const runOpts =
+      runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
+        ? GrowthRunOptionsSchema.partial().parse(runRow.options)
+        : {};
+    const { falRenderMode, falModelTier, visualPipeline, audioMode } = resolveProductionOptions({
+      productionFormat: runOpts.production_format ?? null,
+      audioMode: runOpts.audio_mode ?? null,
+      falRenderMode: runOpts.fal_render_mode ?? null,
+      falModelTier: runOpts.fal_model_tier ?? null,
+      visualPipeline: runOpts.visual_pipeline ?? null,
+      falConfigured: true,
+    });
+
+    const { data: concept } = await supabase
+      .from("video_concepts")
+      .select("hook, demo_clip_url")
+      .eq("id", opts.conceptId)
+      .single();
+    const { data: storyboard } = await supabase
+      .from("storyboards")
+      .select("aspect_ratio")
+      .eq("concept_id", opts.conceptId)
+      .maybeSingle();
+    const { data: brief } = await supabase
+      .from("product_briefs")
+      .select("product_summary, target_customer")
+      .eq("project_id", opts.projectId)
+      .maybeSingle();
+
+    const brandConstraints =
+      (runRow?.brand_constraints as Record<string, unknown> | null) ?? null;
+    const brandColor = brandConstraints?.primary_color ?? brandConstraints?.brand_color ?? null;
+    const productScreenshotUrl =
+      typeof brandConstraints?.product_screenshot_url === "string"
+        ? brandConstraints.product_screenshot_url
+        : null;
+
+    await supabase
+      .from("generated_assets")
+      .update({ status: "pending", error: null } as never)
+      .eq("concept_id", opts.conceptId)
+      .eq("scene_id", opts.sceneId)
+      .in("kind", ["fal_image", "fal_clip"]);
+
+    const workDir = await mkdtemp(join(tmpdir(), "autoscale-scene-rev-"));
+    try {
+      await renderSceneVisual(
+        {
+          supabase,
+          projectId: opts.projectId,
+          growthRunId: opts.growthRunId,
+          conceptId: opts.conceptId,
+          workDir,
+          aspectRatio: (storyboard?.aspect_ratio as string) ?? "9:16",
+          brandColor: brandColor as string | null,
+          hook: concept?.hook ?? "",
+          productSummary: brief?.product_summary ?? "SaaS product",
+          targetCustomer: brief?.target_customer ?? "founders",
+          trendInference: "",
+          demoClipUrl: (concept?.demo_clip_url as string | null) ?? null,
+          productScreenshotUrl,
+          audioMode,
+          falRenderMode,
+          falModelTier,
+          visualPipeline,
+          falCount: { value: 0 },
+          falScenesCap: 3,
+        },
+        scene,
+        Math.max(0.5, Number(scene.duration_seconds))
+      );
+      return;
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
 
   const png = await renderSlidePng(
     sceneToSlideInput({
@@ -196,7 +289,7 @@ export async function rerenderVideo(opts: {
 
   await supabase.from("videos").update({ status: "rendering" }).eq("id", opts.videoId);
 
-  await renderConceptVideo({
+  const result = await renderConceptVideo({
     projectId: opts.projectId,
     growthRunId: opts.growthRunId,
     conceptId: opts.conceptId,
@@ -204,8 +297,20 @@ export async function rerenderVideo(opts: {
     finalAssetId: video.final_asset_id,
   });
 
+  if (!result.qualityPassed) {
+    if (job?.id) {
+      await setProductionJobStage(
+        job.id,
+        "quality_check",
+        "quality_gate_failed",
+        result.qualityBlockReason ?? "Quality gate failed"
+      );
+    }
+    throw new Error(result.qualityBlockReason ?? "Video failed quality gate");
+  }
+
   if (job?.id) {
-    await setProductionJobStage(job.id, "quality_check", "quality_check");
+    await setProductionJobStage(job.id, "quality_check", "quality_gate");
     await setProductionJobStage(job.id, "ready", "ready");
   }
 }

@@ -107,3 +107,25 @@ export function buildBrollVisualPrompt(input: BrollPromptInput): string {
 
   return parts.filter(Boolean).join(" ").slice(0, 800);
 }
+
+/**
+ * Build a static frame prompt for fal image generation (no motion/camera verbs).
+ */
+export function buildSceneFramePrompt(input: BrollPromptInput): string {
+  const dir = SCENE_DIRECTION[input.scenePurpose] ?? DEFAULT_DIRECTION;
+  const aspect = input.aspectRatio === "16:9" ? "horizontal 16:9" : "vertical 9:16";
+
+  const parts = [
+    `Static ${aspect} frame, single still image composition.`,
+    `Visual: ${dir.visual}.`,
+    `Mood & lighting: ${dir.mood}.`,
+    `Color palette: dark background with ${input.tone === "energetic" ? "vivid neon" : input.tone === "warm" ? "warm amber and gold" : "cool indigo and teal"} accents.`,
+    `Context: ${input.productSummary.slice(0, 150)}.`,
+    `Scene purpose: ${input.scenePurpose} — illustrates "${input.hook.slice(0, 100)}" for ${input.audience.slice(0, 80)}.`,
+    input.trendInference ? `Inspired by trend: ${input.trendInference.slice(0, 100)}.` : "",
+    `Style: minimal, abstract, brand-safe still frame. No text, no logos, no faces, no fake UI.`,
+    `No testimonials, no impersonation, no before-after claims.`,
+  ];
+
+  return parts.filter(Boolean).join(" ").slice(0, 600);
+}

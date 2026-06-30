@@ -2,8 +2,14 @@ import type { FalRenderMode } from "../production-options";
 import type { FalModelTier } from "../production-options";
 import type { SceneContract } from "../scene-contract";
 import {
+  getDefaultFalImageModel,
   getDefaultFalVideoModel,
+  getEnvDefaultFastImageModel,
+  getEnvDefaultImageModel,
+  resolveEnvImageModelOverride,
   resolveEnvModelOverride,
+  type FalImageModelSpec,
+  type FalImageModelTier,
   type FalVideoModelMode,
   type FalVideoModelSpec,
   type FalVideoModelTier,
@@ -15,6 +21,8 @@ export interface SelectFalVideoModelInput {
   falModelTier?: FalModelTier;
   scenePurpose: SceneContract["purpose"];
   referenceImageUrl?: string | null;
+  /** When set (e.g. from fal_image asset), forces I2V mode. */
+  falImageAssetUrl?: string | null;
   durationSeconds: number;
   aspectRatio?: string;
 }
@@ -28,7 +36,11 @@ export interface SelectedFalVideoModel {
   label: string;
 }
 
-function resolveEffectiveTier(input: SelectFalVideoModelInput): FalVideoModelTier {
+function resolveEffectiveTier(input: {
+  falRenderMode: FalRenderMode;
+  falModelTier?: FalModelTier;
+  scenePurpose: SceneContract["purpose"];
+}): FalVideoModelTier {
   const explicit = input.falModelTier ?? "auto";
   if (explicit !== "auto") return explicit;
 
@@ -73,7 +85,8 @@ function resolutionForTier(tier: FalVideoModelTier): string {
  */
 export function selectFalVideoModel(input: SelectFalVideoModelInput): SelectedFalVideoModel {
   const tier = resolveEffectiveTier(input);
-  const hasImage = Boolean(input.referenceImageUrl?.trim());
+  const hasImage =
+    Boolean(input.falImageAssetUrl?.trim()) || Boolean(input.referenceImageUrl?.trim());
   const mode: FalVideoModelMode = hasImage ? "image_to_video" : "text_to_video";
   const spec = pickModelSpec(tier, mode);
   const duration = clampDuration(spec, input.durationSeconds);
@@ -83,6 +96,45 @@ export function selectFalVideoModel(input: SelectFalVideoModelInput): SelectedFa
     mode,
     resolution: resolutionForTier(tier),
     duration,
+    tier,
+    label: spec.label,
+  };
+}
+
+export interface SelectFalImageModelInput {
+  falRenderMode: FalRenderMode;
+  falModelTier?: FalModelTier;
+  scenePurpose: SceneContract["purpose"];
+}
+
+export interface SelectedFalImageModel {
+  modelId: string;
+  tier: FalImageModelTier;
+  label: string;
+}
+
+function pickImageModelSpec(tier: FalImageModelTier): FalImageModelSpec {
+  if (tier === "fast") {
+    return getEnvDefaultFastImageModel();
+  }
+  if (tier === "cinematic") {
+    return getEnvDefaultImageModel();
+  }
+  const envRaw = process.env.AUTOSCALE_FAL_IMAGE_MODEL?.trim();
+  if (envRaw) {
+    return resolveEnvImageModelOverride(envRaw, tier);
+  }
+  return getDefaultFalImageModel(tier);
+}
+
+/**
+ * Choose fal image model for static frame generation (I2V pipeline step 1).
+ */
+export function selectFalImageModel(input: SelectFalImageModelInput): SelectedFalImageModel {
+  const tier = resolveEffectiveTier(input);
+  const spec = pickImageModelSpec(tier);
+  return {
+    modelId: spec.id,
     tier,
     label: spec.label,
   };

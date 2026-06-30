@@ -1578,7 +1578,7 @@ export interface Database {
           scene_id: string | null;
           production_job_id: string | null;
           kind:
-            | "slide_image" | "fal_clip" | "voiceover" | "subtitle" | "caption_ass"
+            | "slide_image" | "fal_image" | "fal_clip" | "voiceover" | "subtitle" | "caption_ass"
             | "music" | "final_mp4" | "thumbnail";
           provider: string | null;
           provider_request_id: string | null;

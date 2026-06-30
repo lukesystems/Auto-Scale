@@ -26,7 +26,11 @@ export const RENDER_PHASES = [
   "upload",
   "done",
 ] as const;
-export type RenderPhase = (typeof RENDER_PHASES)[number];
+export type RenderPhase = (typeof RENDER_PHASES)[number] | `scene:${string}:visual`;
+
+export function sceneVisualCheckpoint(sceneId: string): `scene:${string}:visual` {
+  return `scene:${sceneId}:visual`;
+}
 
 export async function saveRenderCheckpoint(
   jobId: string,

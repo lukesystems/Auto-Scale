@@ -58,6 +58,9 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
           out,
         ]);
       } else {
+        const frames = Math.max(1, Math.ceil(scene.durationSeconds * 30));
+        const kenBurns = `zoompan=z='min(zoom+0.0008,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30`;
+        const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${kenBurns},format=yuv420p`;
         await runFfmpeg([
           "-loop",
           "1",

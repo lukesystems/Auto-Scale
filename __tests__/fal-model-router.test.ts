@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { selectFalVideoModel, describeFalTierForRun } from "@/services/video-factory/fal/model-router";
-import { getDefaultFalVideoModel } from "@/services/video-factory/fal/model-catalog";
+import { selectFalVideoModel, selectFalImageModel, describeFalTierForRun } from "@/services/video-factory/fal/model-router";
+import { getDefaultFalVideoModel, getDefaultFalImageModel } from "@/services/video-factory/fal/model-catalog";
 
 describe("selectFalVideoModel", () => {
   beforeEach(() => {
@@ -79,6 +79,17 @@ describe("selectFalVideoModel", () => {
     expect(selected.modelId).toBe("bytedance/seedance-2.0/fast/text-to-video");
   });
 
+  it("prefers I2V when fal_image asset URL is present", () => {
+    const selected = selectFalVideoModel({
+      falRenderMode: "cinematic",
+      scenePurpose: "mechanism",
+      falImageAssetUrl: "https://cdn.example.com/frame.png",
+      durationSeconds: 5,
+    });
+    expect(selected.mode).toBe("image_to_video");
+    expect(selected.modelId).toBe("bytedance/seedance-2.0/image-to-video");
+  });
+
   it("clamps duration to model max", () => {
     const selected = selectFalVideoModel({
       falRenderMode: "cinematic",
@@ -86,6 +97,44 @@ describe("selectFalVideoModel", () => {
       durationSeconds: 30,
     });
     expect(selected.duration).toBe(12);
+  });
+});
+
+describe("selectFalImageModel", () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("picks fast flux for fast render mode", () => {
+    const selected = selectFalImageModel({
+      falRenderMode: "fast",
+      scenePurpose: "hook",
+    });
+    expect(selected.tier).toBe("fast");
+    expect(selected.modelId).toBe(getDefaultFalImageModel("fast").id);
+  });
+
+  it("picks cinematic flux for hook scenes in cinematic mode", () => {
+    const selected = selectFalImageModel({
+      falRenderMode: "cinematic",
+      scenePurpose: "hook",
+    });
+    expect(selected.tier).toBe("cinematic");
+    expect(selected.modelId).toBe("fal-ai/flux-pro/v1.1-ultra");
+  });
+
+  it("respects env override for cinematic image model", () => {
+    vi.stubEnv("AUTOSCALE_FAL_IMAGE_MODEL", "fal-ai/flux/dev");
+    const selected = selectFalImageModel({
+      falRenderMode: "cinematic",
+      falModelTier: "cinematic",
+      scenePurpose: "hook",
+    });
+    expect(selected.modelId).toBe("fal-ai/flux/dev");
   });
 });
 

@@ -51,6 +51,16 @@ describe("production format resolution", () => {
     expect(resolved.productionFormat).toBe("pain_led");
     expect(resolved.audioMode).toBe("music_only");
   });
+
+  it("defaults fal_render_mode to cinematic when fal is configured", () => {
+    const resolved = resolveProductionOptions({ falConfigured: true });
+    expect(resolved.falRenderMode).toBe("cinematic");
+  });
+
+  it("defaults fal_render_mode to fast when fal is not configured", () => {
+    const resolved = resolveProductionOptions({ falConfigured: false });
+    expect(resolved.falRenderMode).toBe("fast");
+  });
 });
 
 describe("audio mode routing", () => {

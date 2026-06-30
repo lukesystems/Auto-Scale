@@ -13,6 +13,7 @@ import {
   AudioModeSchema,
   FalRenderModeSchema,
   FalModelTierSchema,
+  VisualPipelineSchema,
 } from "@/services/video-factory/production-options";
 import { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
 import {
@@ -371,6 +372,8 @@ export const GrowthRunOptionsSchema = z.object({
   fal_render_mode: FalRenderModeSchema.optional(),
   /** Override fal model tier; auto derives from render mode + scene purpose */
   fal_model_tier: FalModelTierSchema.optional(),
+  /** Per-scene visual pipeline: slide | t2v | image_to_video */
+  visual_pipeline: VisualPipelineSchema.optional(),
   /** User acknowledged low-evidence render for this run */
   low_evidence_acknowledged: z.boolean().optional(),
 });

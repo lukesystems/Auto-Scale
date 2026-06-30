@@ -4,8 +4,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   ProductionFormatSchema,
   AudioModeSchema,
+  VisualPipelineSchema,
   type ProductionFormat,
   type AudioMode,
+  type VisualPipeline,
 } from "@/services/video-factory/production-options";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 
@@ -17,6 +19,7 @@ export interface GrowthRunFormDefaults {
   formatHypothesisCount: number;
   productionFormat: ProductionFormat;
   audioMode: AudioMode;
+  visualPipeline: VisualPipeline | "auto";
 }
 
 const FALLBACK: GrowthRunFormDefaults = {
@@ -27,6 +30,7 @@ const FALLBACK: GrowthRunFormDefaults = {
   formatHypothesisCount: 1,
   productionFormat: "slide",
   audioMode: "voiceover",
+  visualPipeline: "auto",
 };
 
 export async function loadGrowthRunFormDefaults(
@@ -47,6 +51,7 @@ export async function loadGrowthRunFormDefaults(
       ...FALLBACK,
       productionFormat: settings.production_format,
       audioMode: settings.audio_mode,
+      visualPipeline: "auto",
     };
   }
 
@@ -87,5 +92,11 @@ export async function loadGrowthRunFormDefaults(
     audioMode: AudioModeSchema.parse(
       typeof options.audio_mode === "string" ? options.audio_mode : FALLBACK.audioMode
     ),
+    visualPipeline:
+      typeof options.visual_pipeline === "string"
+        ? VisualPipelineSchema.safeParse(options.visual_pipeline).success
+          ? VisualPipelineSchema.parse(options.visual_pipeline)
+          : "auto"
+        : "auto",
   };
 }

@@ -4,20 +4,18 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { renderSlidePng, sceneToSlideInput } from "./slide-renderer";
 import { synthesizeVoiceoverWithMeta } from "./voiceover";
-import { buildBrollVisualPrompt, brandSafetyCheckPrompt } from "./broll-prompt";
-import { upsertPlatformVariants } from "./platform-variants";
 import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { buildSrtFromScenes } from "./subtitles";
 import { assembleVideoToBuffer } from "./assembler";
-import { generateSeedanceClip, downloadRemoteVideo } from "./fal/seedance";
-import { selectFalVideoModel } from "./fal/model-router";
-import { isFalConfigured } from "@/services/media/fal-config";
 import { uploadGrowthMedia } from "./storage";
 import { getRenderProfile } from "./render-profiles";
+import { upsertPlatformVariants } from "./platform-variants";
 import { checkSlideQuality } from "./slide-quality";
-import { scoreVideo } from "@/services/video-quality/score";
+import { deriveSceneDurationsFromAlignment } from "./scene-timing";
+import { scoreVideo, passesQualityGate } from "@/services/video-quality/score";
+import type { VideoQualityScore } from "@/services/video-quality/score";
+import { isVoiceoverTtsConfigured } from "@/services/voiceover/provider";
 import { persistVideoQualityScore } from "@/services/video-quality/persist";
 import type { SceneContract } from "./scene-contract";
 import { roleToPurpose } from "./scene-contract";
@@ -31,18 +29,19 @@ import {
   selectBackgroundMusicPath,
   shouldDuckMusicUnderVoice,
 } from "./audio-mix";
-import { resolveScreenDemo } from "./screen-demo";
 import { createCaptionPages, charsToTimedWords, wordsFromSceneDurations } from "./captions/paging";
 import { formatAssCaptions, pagesToSrt } from "./captions/export-ass";
 import { saveRenderCheckpoint } from "./production-job";
 import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import { renderSceneVisual } from "./scene-render";
+import { isFalConfigured } from "@/services/media/fal-config";
 
 /**
- * Render one concept end-to-end: scene assets → voiceover → subtitles → MP4.
- * Updates generated_assets rows and flips videos.status to "ready" on success.
+ * Render one concept end-to-end: voiceover → scene assets → subtitles → MP4.
+ * Sets videos.status to "ready" only when quality gate and render checks pass.
  */
-/** Hard cap on Seedance fal generations per growth run across all concepts. */
-const FAL_CALLS_PER_RUN_CAP = 3;
+/** Max Seedance fal generations per concept (not per run). */
+const FAL_SCENES_PER_CONCEPT_CAP = 3;
 
 export async function renderConceptVideo(opts: {
   projectId: string;
@@ -52,9 +51,13 @@ export async function renderConceptVideo(opts: {
   finalAssetId: string;
   jobId?: string;
   demoClipUrl?: string | null;
-  /** Running count of fal calls already made in this run; mutated in-place. */
-  falCallCount?: { value: number };
-}): Promise<{ publicUrl: string; partialFailures?: string[] }> {
+}): Promise<{
+  publicUrl: string;
+  partialFailures?: string[];
+  qualityPassed: boolean;
+  qualityScore?: VideoQualityScore;
+  qualityBlockReason?: string | null;
+}> {
   const ffmpeg = checkFfmpegHealth();
   if (!ffmpeg.available) {
     throw new Error(ffmpeg.message + (ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""));
@@ -81,11 +84,13 @@ export async function renderConceptVideo(opts: {
     runOptionsRaw && typeof runOptionsRaw === "object" && !Array.isArray(runOptionsRaw)
       ? GrowthRunOptionsSchema.partial().parse(runOptionsRaw)
       : {};
-  const { audioMode, productionFormat, falRenderMode, falModelTier } = resolveProductionOptions({
+  const { audioMode, productionFormat, falRenderMode, falModelTier, visualPipeline } = resolveProductionOptions({
     productionFormat: runOptions.production_format ?? null,
     audioMode: runOptions.audio_mode ?? null,
     falRenderMode: runOptions.fal_render_mode ?? null,
     falModelTier: runOptions.fal_model_tier ?? null,
+    visualPipeline: runOptions.visual_pipeline ?? null,
+    falConfigured: isFalConfigured(),
   });
 
   const brandConstraintsObj =
@@ -121,13 +126,15 @@ export async function renderConceptVideo(opts: {
   const sceneFiles: Array<{ filePath: string; kind: "image" | "video"; durationSeconds: number }> = [];
   const partialFailures: string[] = [];
 
-  const checkpoint = async (phase: "assets" | "audio" | "subs" | "assemble" | "upload", extra?: Record<string, unknown>) => {
+  const checkpoint = async (phase: Parameters<typeof saveRenderCheckpoint>[1], extra?: Record<string, unknown>) => {
     if (!opts.jobId) return;
     await saveRenderCheckpoint(opts.jobId, phase === "upload" ? "done" : phase, {
       conceptId: opts.conceptId,
       ...extra,
     });
   };
+
+  const timingSource = { value: "storyboard" as "alignment" | "storyboard" };
 
   const { data: brief } = await supabase
     .from("product_briefs")
@@ -145,293 +152,36 @@ export async function renderConceptVideo(opts: {
     : "";
 
   try {
-    await checkpoint("assets", { sceneCount: scenes.length });
-    for (const scene of scenes) {
-      const duration = Math.max(0.5, Number(scene.duration_seconds));
-      const scenePath = join(workDir, `scene-${scene.scene_index}`);
-
-      const scenePurpose =
-        (scene.purpose as SceneContract["purpose"] | null) ?? roleToPurpose(scene.role);
-      const visualMethod = scene.visual_method as string | null;
-      const isScreenDemo =
-        scene.asset_method === "screen_demo" ||
-        visualMethod === "screen_recording" ||
-        scenePurpose === "demo";
-
-      if (isScreenDemo) {
-        const demoUrl =
-          opts.demoClipUrl ??
-          (concept.demo_clip_url as string | null) ??
-          null;
-        const demo = await resolveScreenDemo(
-          {
-            sourceUrl: demoUrl,
-            aspectRatio: storyboard.aspect_ratio,
-            durationSeconds: duration,
-          },
-          workDir
-        );
-        if (demo.isPlaceholder) {
-          partialFailures.push(`Scene ${scene.scene_index}: demo clip missing — placeholder used`);
-        }
-        sceneFiles.push({
-          filePath: demo.filePath,
-          kind: demo.kind === "video" ? "video" : "image",
-          durationSeconds: duration,
-        });
-        await supabase
-          .from("storyboard_scenes")
-          .update({
-            status: "ready",
-            error: demo.isPlaceholder ? "demo_placeholder" : null,
-          } as never)
-          .eq("id", scene.id);
-        continue;
-      }
-
-      const falCount = opts.falCallCount ?? { value: 0 };
-      const useBroll =
-        scene.asset_method === "fal_clip" ||
-        scene.visual_method === "ai_broll";
-
-      if (useBroll && falCount.value >= FAL_CALLS_PER_RUN_CAP) {
-        console.log(
-          `[render] fal cap reached (${FAL_CALLS_PER_RUN_CAP}), falling back to slide for scene ${scene.scene_index}`
-        );
-        partialFailures.push(
-          `Scene ${scene.scene_index}: fal cap (${FAL_CALLS_PER_RUN_CAP}) reached — rendered as slide`
-        );
-      }
-
-      if (useBroll && falCount.value < FAL_CALLS_PER_RUN_CAP) {
-        const { data: existingAsset } = await supabase
-          .from("generated_assets")
-          .select("public_url")
-          .eq("concept_id", opts.conceptId)
-          .eq("scene_id", scene.id)
-          .eq("kind", "fal_clip")
-          .eq("status", "succeeded")
-          .maybeSingle();
-
-        if (existingAsset?.public_url) {
-          try {
-            const videoBuf = await downloadRemoteVideo(existingAsset.public_url);
-            const mp4Path = `${scenePath}.mp4`;
-            await writeFile(mp4Path, videoBuf);
-            sceneFiles.push({ filePath: mp4Path, kind: "video", durationSeconds: duration });
-            await supabase
-              .from("storyboard_scenes")
-              .update({ status: "ready" } as never)
-              .eq("id", scene.id);
-            continue;
-          } catch {
-            partialFailures.push(`Scene ${scene.scene_index}: cached fal clip download failed — re-generating`);
-          }
-        }
-        const rawPrompt = scene.asset_prompt as string | null;
-      const isRawPromptTooShort = !rawPrompt || rawPrompt.length < 40;
-      const prompt = isRawPromptTooShort
-        ? buildBrollVisualPrompt({
-            productSummary: brief?.product_summary ?? "SaaS product",
-            scenePurpose: String(scene.purpose ?? scene.role),
-            hook: concept.hook,
-            audience: brief?.target_customer ?? "founders",
-            tone: "professional",
-            trendInference,
-            overlayText: scene.overlay_text ?? scene.on_screen_text ?? undefined,
-            durationSeconds: duration,
-            aspectRatio: storyboard.aspect_ratio,
-          })
-        : buildBrollVisualPrompt({
-            productSummary: brief?.product_summary ?? "SaaS product",
-            scenePurpose: String(scene.purpose ?? scene.role),
-            hook: concept.hook,
-            audience: brief?.target_customer ?? "founders",
-            tone: "professional",
-            trendInference,
-            overlayText: rawPrompt,
-            durationSeconds: duration,
-            aspectRatio: storyboard.aspect_ratio,
-          });
-        const safety = brandSafetyCheckPrompt(prompt);
-        if (!safety.ok) {
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              status: "skipped",
-              error: safety.reason,
-              metadata: { fallback_reason: safety.reason } as never,
-            } as never)
-            .eq("id", scene.id);
-        } else {
-        try {
-          falCount.value++;
-
-          const demoClipUrl =
-            opts.demoClipUrl ?? (concept.demo_clip_url as string | null) ?? null;
-          let referenceImageUrl = resolveStaticReferenceImageUrl({
-            demoClipUrl,
-            productScreenshotUrl,
-            scenePurpose,
-            visualMethod: scene.visual_method as string | null,
-          });
-
-          if (!referenceImageUrl && scenePurpose === "hook" && falRenderMode === "cinematic") {
-            const hookSlide = await renderSlidePng(
-              sceneToSlideInput(
-                {
-                  purpose: scenePurpose,
-                  role: scene.role,
-                  voiceover_text: scene.voiceover_line ?? "",
-                  subtitle_text: scene.subtitle_text ?? scene.voiceover_line ?? "",
-                  overlay_text: scene.overlay_text ?? scene.on_screen_text ?? "",
-                  visual_prompt: scene.asset_prompt ?? scene.visual_intent,
-                },
-                { aspectRatio: storyboard.aspect_ratio, brandColor: brandColor as string | null }
-              )
-            );
-            const { publicUrl: hookSlideUrl } = await uploadGrowthMedia({
-              projectId: opts.projectId,
-              growthRunId: opts.growthRunId,
-              conceptId: opts.conceptId,
-              filename: `scene-${scene.scene_index}-hook-frame.png`,
-              body: hookSlide,
-              contentType: "image/png",
-            });
-            referenceImageUrl = hookSlideUrl;
-          }
-
-          const selectedModel = selectFalVideoModel({
-            falRenderMode,
-            falModelTier,
-            scenePurpose,
-            referenceImageUrl,
-            durationSeconds: duration,
-            aspectRatio: storyboard.aspect_ratio,
-          });
-
-          const clip = await generateSeedanceClip({
-            prompt,
-            durationSeconds: selectedModel.duration,
-            aspectRatio: storyboard.aspect_ratio,
-            generateAudio: !audioModeUsesVoiceover(audioMode),
-            imageUrl: referenceImageUrl ?? undefined,
-            modelId: selectedModel.modelId,
-            resolution: selectedModel.resolution,
-          });
-          const videoBuf = await downloadRemoteVideo(clip.videoUrl);
-          const mp4Path = `${scenePath}.mp4`;
-          await writeFile(mp4Path, videoBuf);
-          sceneFiles.push({ filePath: mp4Path, kind: "video", durationSeconds: duration });
-
-          await supabase
-            .from("generated_assets")
-            .update({
-              status: "succeeded",
-              provider: "fal_seedance",
-              provider_request_id: clip.requestId ?? null,
-              public_url: clip.videoUrl,
-              metadata: {
-                source: "fal_clip",
-                prompt,
-                model: clip.model,
-                mode: clip.mode,
-                tier: selectedModel.tier,
-                resolution: clip.resolution,
-                reference_image_url: referenceImageUrl ?? null,
-                seed: clip.seed,
-              } as never,
-            } as never)
-            .eq("concept_id", opts.conceptId)
-            .eq("scene_id", scene.id)
-            .eq("kind", "fal_clip");
-
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              status: "ready",
-              visual_method: "ai_broll",
-              asset_prompt: prompt,
-            } as never)
-            .eq("id", scene.id);
-          continue;
-        } catch (brollErr) {
-          const reason = brollErr instanceof Error ? brollErr.message : String(brollErr);
-          partialFailures.push(`Scene ${scene.scene_index} fal fallback: ${reason}`);
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              metadata: { fallback_reason: reason } as never,
-            } as never)
-            .eq("id", scene.id);
-          // Fall through to slide render.
-        }
-        }
-      }
-
-      const willHaveAssCaptions = audioModeUsesVoiceover(audioMode);
-      const png = await renderSlidePng(
-        sceneToSlideInput(
-          {
-            purpose: (scene.purpose as SceneContract["purpose"]) ?? roleToPurpose(scene.role),
-            role: scene.role,
-            voiceover_text: scene.voiceover_line ?? "",
-            subtitle_text: willHaveAssCaptions ? "" : (scene.subtitle_text ?? scene.voiceover_line ?? ""),
-            overlay_text: scene.overlay_text ?? scene.on_screen_text ?? "",
-            visual_prompt: scene.asset_prompt ?? scene.visual_intent,
-          },
-          { aspectRatio: storyboard.aspect_ratio, brandColor: brandColor as string | null }
-        )
-      );
-      const pngPath = `${scenePath}.png`;
-      await writeFile(pngPath, png);
-      sceneFiles.push({ filePath: pngPath, kind: "image", durationSeconds: duration });
-
-      const { storagePath, publicUrl } = await uploadGrowthMedia({
-        projectId: opts.projectId,
-        growthRunId: opts.growthRunId,
-        conceptId: opts.conceptId,
-        filename: `scene-${scene.scene_index}.png`,
-        body: png,
-        contentType: "image/png",
-      });
-
-      await supabase
-        .from("generated_assets")
-        .update({
-          status: "succeeded",
-          storage_path: storagePath,
-          public_url: publicUrl,
-        })
-        .eq("concept_id", opts.conceptId)
-        .eq("scene_id", scene.id)
-        .eq("kind", "slide_image");
-
-      await supabase
-        .from("storyboard_scenes")
-        .update({ status: "ready", asset_id: null })
-        .eq("id", scene.id);
-    }
-
-    const totalDuration = Math.max(
-      1,
-      Math.round(
-        audioModeUsesVoiceover(audioMode) && script?.voiceover_full
-          ? scenes.reduce((s, sc) => s + Number(sc.duration_seconds), 0)
-          : scenes.reduce((s, sc) => s + Number(sc.duration_seconds), 0) ||
-              storyboard.total_duration_seconds
-      )
-    );
-
-    await checkpoint("audio");
+    let sceneDurations = scenes.map((sc) => Math.max(0.5, Number(sc.duration_seconds)));
+    const storyboardDuration = sceneDurations.reduce((sum, d) => sum + d, 0);
     let voiceResult: Awaited<ReturnType<typeof synthesizeVoiceoverWithMeta>> | null = null;
     let voicePath: string | undefined;
 
+    await checkpoint("audio");
     if (audioModeUsesVoiceover(audioMode)) {
+      if (!isVoiceoverTtsConfigured()) {
+        throw new Error(
+          "Voiceover required but no TTS provider configured — set ELEVENLABS_API_KEY or OPENAI_API_KEY"
+        );
+      }
       voiceResult = await synthesizeVoiceoverWithMeta({
         scriptText: script?.voiceover_full ?? "",
-        durationSeconds: totalDuration,
+        durationSeconds: Math.max(1, Math.round(storyboardDuration)),
       });
+      if (voiceResult.isSilent) {
+        throw new Error(
+          `Voiceover synthesis returned silent audio — ${formatVoiceoverAttemptSummary(voiceResult.attemptLog)}`
+        );
+      }
+
+      if (voiceResult.alignment) {
+        const derived = deriveSceneDurationsFromAlignment(scenes, voiceResult.alignment);
+        if (derived) {
+          sceneDurations = derived;
+          timingSource.value = "alignment";
+        }
+      }
+
       const voiceBuf = voiceResult.buffer;
       voicePath = join(workDir, "voiceover.m4a");
       await writeFile(voicePath, voiceBuf);
@@ -451,14 +201,13 @@ export async function renderConceptVideo(opts: {
           storage_path: voiceStorage,
           public_url: voiceUrl,
           provider: voiceResult.provider,
-          error: voiceResult.isSilent
-            ? `Silent fallback — ${formatVoiceoverAttemptSummary(voiceResult.attemptLog)}`
-            : null,
+          error: null,
           metadata: {
-            is_silent: voiceResult.isSilent,
+            is_silent: false,
             quality_penalty: voiceResult.qualityPenalty,
             attempt_log: voiceResult.attemptLog,
             audio_mode: audioMode,
+            timing_source: voiceResult.alignment ? "alignment" : "storyboard",
           } as never,
         })
         .eq("concept_id", opts.conceptId)
@@ -475,6 +224,72 @@ export async function renderConceptVideo(opts: {
         .eq("concept_id", opts.conceptId)
         .eq("kind", "voiceover");
     }
+
+    const audioSynced = audioModeUsesVoiceover(audioMode) && Boolean(voiceResult && !voiceResult.isSilent);
+    for (const scene of scenes) {
+      const existingMeta =
+        scene.metadata && typeof scene.metadata === "object" && !Array.isArray(scene.metadata)
+          ? (scene.metadata as Record<string, unknown>)
+          : {};
+      await supabase
+        .from("storyboard_scenes")
+        .update({
+          metadata: {
+            ...existingMeta,
+            audio_synced: audioSynced,
+            duration_source: timingSource.value,
+          } as never,
+        } as never)
+        .eq("id", scene.id);
+    }
+
+    const demoClipUrl = opts.demoClipUrl ?? (concept.demo_clip_url as string | null) ?? null;
+    const sceneRenderCtx = {
+      supabase,
+      projectId: opts.projectId,
+      growthRunId: opts.growthRunId,
+      conceptId: opts.conceptId,
+      workDir,
+      aspectRatio: storyboard.aspect_ratio as string,
+      brandColor: brandColor as string | null,
+      hook: concept.hook,
+      productSummary: brief?.product_summary ?? "SaaS product",
+      targetCustomer: brief?.target_customer ?? "founders",
+      trendInference,
+      demoClipUrl,
+      productScreenshotUrl,
+      audioMode,
+      falRenderMode,
+      falModelTier,
+      visualPipeline,
+      falCount: { value: 0 },
+      falScenesCap: FAL_SCENES_PER_CONCEPT_CAP,
+      checkpoint: opts.jobId
+        ? async (phase: string, extra?: Record<string, unknown>) => {
+            await saveRenderCheckpoint(opts.jobId!, phase as Parameters<typeof saveRenderCheckpoint>[1], {
+              conceptId: opts.conceptId,
+              ...extra,
+            });
+          }
+        : undefined,
+    };
+
+    await checkpoint("assets", { sceneCount: scenes.length, visualPipeline });
+    for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+      const scene = scenes[sceneIdx]!;
+      const duration = sceneDurations[sceneIdx] ?? Math.max(0.5, Number(scene.duration_seconds));
+      const { sceneFile, partialFailure } = await renderSceneVisual(sceneRenderCtx, scene, duration);
+      sceneFiles.push(sceneFile);
+      if (partialFailure) {
+        console.log(`[render] ${partialFailure}`);
+        partialFailures.push(partialFailure);
+      }
+    }
+
+    const totalDuration = Math.max(
+      1,
+      Math.round(sceneDurations.reduce((sum, d) => sum + d, 0) || storyboard.total_duration_seconds)
+    );
 
     await checkpoint("subs");
     let srt: string;
@@ -497,9 +312,9 @@ export async function renderConceptVideo(opts: {
     } else {
       srt = buildSrtFromScenes(scenes);
       const sceneWords = wordsFromSceneDurations(
-        scenes.map((sc) => ({
+        scenes.map((sc, idx) => ({
           text: (sc.subtitle_text ?? sc.voiceover_line ?? "") as string,
-          durationSeconds: Number(sc.duration_seconds),
+          durationSeconds: sceneDurations[idx] ?? Number(sc.duration_seconds),
         }))
       );
       const pages = createCaptionPages(sceneWords);
@@ -563,15 +378,7 @@ export async function renderConceptVideo(opts: {
       })
       .eq("id", opts.finalAssetId);
 
-    await supabase
-      .from("videos")
-      .update({
-        status: "ready",
-        duration_seconds: totalDuration,
-      })
-      .eq("id", opts.videoId);
-
-    const sceneContracts: SceneContract[] = scenes.map((sc) => ({
+    const sceneContracts: SceneContract[] = scenes.map((sc, idx) => ({
       order: sc.scene_index,
       scene_type: String(sc.scene_type ?? concept.production_mode ?? "fast_slides"),
       purpose: (sc.purpose as SceneContract["purpose"]) ?? roleToPurpose(sc.role),
@@ -580,7 +387,7 @@ export async function renderConceptVideo(opts: {
       subtitle_text: sc.subtitle_text ?? sc.voiceover_line ?? "",
       overlay_text: sc.overlay_text ?? sc.on_screen_text ?? "",
       visual_prompt: sc.asset_prompt ?? sc.visual_intent ?? "",
-      duration_seconds: Number(sc.duration_seconds),
+      duration_seconds: sceneDurations[idx] ?? Number(sc.duration_seconds),
       status: "ready",
     }));
 
@@ -618,6 +425,39 @@ export async function renderConceptVideo(opts: {
       voiceQualityPenalty: voiceResult?.qualityPenalty ?? (audioMode === "music_only" ? 0 : 0.25),
     });
 
+    const qualityPassed =
+      passesQualityGate(quality) && partialFailures.length === 0;
+    const qualityBlockReason = qualityPassed
+      ? null
+      : partialFailures.length
+        ? `Partial render failures: ${partialFailures.join("; ")}`
+        : quality.block_reason;
+
+    if (qualityPassed) {
+      await supabase
+        .from("videos")
+        .update({
+          status: "ready",
+          duration_seconds: totalDuration,
+        })
+        .eq("id", opts.videoId);
+    } else {
+      await supabase
+        .from("videos")
+        .update({
+          status: "failed",
+          duration_seconds: totalDuration,
+        })
+        .eq("id", opts.videoId);
+      await supabase
+        .from("generated_assets")
+        .update({
+          status: "failed",
+          error: qualityBlockReason ?? "Quality gate failed",
+        })
+        .eq("id", opts.finalAssetId);
+    }
+
     const { data: runRow } = await supabase
       .from("growth_runs")
       .select("target_platforms")
@@ -650,7 +490,13 @@ export async function renderConceptVideo(opts: {
       score: quality,
     });
 
-    return { publicUrl, partialFailures: partialFailures.length ? partialFailures : undefined };
+    return {
+      publicUrl,
+      partialFailures: partialFailures.length ? partialFailures : undefined,
+      qualityPassed,
+      qualityScore: quality,
+      qualityBlockReason,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await supabase
@@ -670,31 +516,4 @@ function formatVoiceoverAttemptSummary(
   const failed = attemptLog.filter((entry) => !entry.ok);
   if (!failed.length) return "no provider errors";
   return failed.map((entry) => `${entry.provider}: ${entry.error ?? "failed"}`).join("; ");
-}
-
-function isImageUrl(url: string): boolean {
-  return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
-}
-
-function resolveStaticReferenceImageUrl(input: {
-  demoClipUrl?: string | null;
-  productScreenshotUrl?: string | null;
-  scenePurpose: SceneContract["purpose"];
-  visualMethod?: string | null;
-}): string | undefined {
-  const demo = input.demoClipUrl?.trim();
-  if (demo && isImageUrl(demo)) return demo;
-
-  const screenshot = input.productScreenshotUrl?.trim();
-  if (
-    screenshot &&
-    screenshot.startsWith("http") &&
-    (input.scenePurpose === "proof" ||
-      input.scenePurpose === "demo" ||
-      input.visualMethod === "screenshot")
-  ) {
-    return screenshot;
-  }
-
-  return undefined;
 }

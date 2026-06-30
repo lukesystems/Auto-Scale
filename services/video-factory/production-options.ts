@@ -51,6 +51,51 @@ export const FAL_MODEL_TIERS = ["auto", "fast", "standard", "cinematic"] as cons
 export type FalModelTier = (typeof FAL_MODEL_TIERS)[number];
 export const FalModelTierSchema = z.enum(FAL_MODEL_TIERS);
 
+/** Per-scene visual generation pipeline for ai_broll scenes. */
+export const VISUAL_PIPELINES = ["slide", "t2v", "image_to_video"] as const;
+export type VisualPipeline = (typeof VISUAL_PIPELINES)[number];
+export const VisualPipelineSchema = z.enum(VISUAL_PIPELINES);
+
+export interface VisualPipelineSpec {
+  pipeline: VisualPipeline;
+  label: string;
+  description: string;
+  requiresFal: boolean;
+}
+
+export const VISUAL_PIPELINE_SPECS: Record<VisualPipeline, VisualPipelineSpec> = {
+  slide: {
+    pipeline: "slide",
+    label: "Static slides only",
+    description: "Fastest, lowest cost — Sharp/SVG slides for every scene. No Fal calls.",
+    requiresFal: false,
+  },
+  t2v: {
+    pipeline: "t2v",
+    label: "Direct text-to-video",
+    description: "One Fal Seedance call per b-roll scene. Good balance of speed and motion quality.",
+    requiresFal: true,
+  },
+  image_to_video: {
+    pipeline: "image_to_video",
+    label: "Image → video (I2V)",
+    description:
+      "Two Fal calls per scene (flux frame, then Seedance I2V). Best visual consistency for ai_broll shorts.",
+    requiresFal: true,
+  },
+};
+
+export function describeVisualPipeline(
+  pipeline: VisualPipeline | null | undefined,
+  resolved?: VisualPipeline
+): string {
+  if (!pipeline) {
+    const auto = resolved ?? "t2v";
+    return `Auto (${VISUAL_PIPELINE_SPECS[auto].label.toLowerCase()})`;
+  }
+  return VISUAL_PIPELINE_SPECS[pipeline].label;
+}
+
 export interface ProductionFormatSpec {
 
   format: ProductionFormat;
@@ -372,6 +417,11 @@ export function resolveProductionOptions(input: {
 
   falModelTier?: FalModelTier | null;
 
+  visualPipeline?: VisualPipeline | null;
+
+  /** When true and no explicit fal_render_mode, default to cinematic. */
+  falConfigured?: boolean;
+
   projectDefaults?: {
 
     production_format?: ProductionFormat | null;
@@ -381,6 +431,8 @@ export function resolveProductionOptions(input: {
     fal_render_mode?: FalRenderMode | null;
 
     fal_model_tier?: FalModelTier | null;
+
+    visual_pipeline?: VisualPipeline | null;
 
   };
 
@@ -393,6 +445,8 @@ export function resolveProductionOptions(input: {
   falRenderMode: FalRenderMode;
 
   falModelTier: FalModelTier;
+
+  visualPipeline: VisualPipeline;
 
 } {
 
@@ -414,7 +468,7 @@ export function resolveProductionOptions(input: {
 
     input.projectDefaults?.fal_render_mode ??
 
-    "fast";
+    (input.falConfigured ? "cinematic" : "fast");
 
   const falModelTier =
 
@@ -423,6 +477,14 @@ export function resolveProductionOptions(input: {
     input.projectDefaults?.fal_model_tier ??
 
     "auto";
+
+  const visualPipeline = resolveVisualPipeline({
+    visualPipeline:
+      input.visualPipeline ?? input.projectDefaults?.visual_pipeline ?? null,
+    productionFormat: ProductionFormatSchema.parse(productionFormat),
+    falRenderMode: FalRenderModeSchema.parse(falRenderMode),
+    falConfigured: input.falConfigured ?? false,
+  });
 
   return {
 
@@ -434,8 +496,32 @@ export function resolveProductionOptions(input: {
 
     falModelTier: FalModelTierSchema.parse(falModelTier),
 
+    visualPipeline: VisualPipelineSchema.parse(visualPipeline),
+
   };
 
+}
+
+
+
+/** Resolve per-scene visual pipeline with safe backward-compatible defaults. */
+export function resolveVisualPipeline(input: {
+  visualPipeline?: VisualPipeline | null;
+  productionFormat: ProductionFormat;
+  falRenderMode: FalRenderMode;
+  falConfigured: boolean;
+}): VisualPipeline {
+  if (input.visualPipeline) {
+    return VisualPipelineSchema.parse(input.visualPipeline);
+  }
+  if (
+    input.productionFormat === "ai_broll_short" &&
+    input.falRenderMode === "cinematic" &&
+    input.falConfigured
+  ) {
+    return "image_to_video";
+  }
+  return "t2v";
 }
 
 

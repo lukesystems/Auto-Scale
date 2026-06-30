@@ -159,3 +159,97 @@ export const FAL_VIDEO_TIER_LABELS: Record<FalVideoModelTier, string> = {
   standard: "Standard (Seedance 1.5 Pro)",
   cinematic: "Cinematic (Seedance 2.0)",
 };
+
+export type FalImageModelTier = "fast" | "standard" | "cinematic";
+
+export interface FalImageModelSpec {
+  id: string;
+  tier: FalImageModelTier;
+  label: string;
+  description: string;
+  deprecated?: boolean;
+}
+
+/** Curated fal image models for I2V frame generation. */
+export const FAL_IMAGE_MODEL_CATALOG: FalImageModelSpec[] = [
+  {
+    id: "fal-ai/flux/schnell",
+    tier: "fast",
+    label: "Flux Schnell",
+    description: "Fast frame generation for budget I2V pipeline.",
+  },
+  {
+    id: "fal-ai/flux/dev",
+    tier: "standard",
+    label: "Flux Dev",
+    description: "Balanced quality for proof and CTA frames.",
+  },
+  {
+    id: "fal-ai/flux-pro/v1.1",
+    tier: "standard",
+    label: "Flux Pro v1.1",
+    description: "Higher fidelity standard tier frames.",
+  },
+  {
+    id: "fal-ai/flux-pro/v1.1-ultra",
+    tier: "cinematic",
+    label: "Flux Pro Ultra",
+    description: "Cinematic hook and mechanism frames for I2V.",
+  },
+];
+
+const IMAGE_CATALOG_BY_ID = new Map(FAL_IMAGE_MODEL_CATALOG.map((m) => [m.id, m]));
+
+export function getFalImageModelById(id: string): FalImageModelSpec | undefined {
+  return IMAGE_CATALOG_BY_ID.get(id);
+}
+
+export function getFalImageModelsForTier(tier: FalImageModelTier): FalImageModelSpec[] {
+  return FAL_IMAGE_MODEL_CATALOG.filter((m) => m.tier === tier && !m.deprecated);
+}
+
+export function getDefaultFalImageModel(tier: FalImageModelTier): FalImageModelSpec {
+  const matches = getFalImageModelsForTier(tier);
+  if (!matches.length) {
+    throw new Error(`No fal image model for tier=${tier}`);
+  }
+  return matches[0]!;
+}
+
+export function resolveEnvImageModelOverride(
+  envValue: string | undefined,
+  fallbackTier: FalImageModelTier
+): FalImageModelSpec {
+  const trimmed = envValue?.trim();
+  if (trimmed) {
+    const known = getFalImageModelById(trimmed);
+    if (known) return known;
+    return {
+      id: trimmed,
+      tier: fallbackTier,
+      label: trimmed,
+      description: "Custom image model from environment override.",
+    };
+  }
+  return getDefaultFalImageModel(fallbackTier);
+}
+
+export function getEnvDefaultImageModel(): FalImageModelSpec {
+  return resolveEnvImageModelOverride(
+    typeof process !== "undefined" ? process.env.AUTOSCALE_FAL_IMAGE_MODEL : undefined,
+    "cinematic"
+  );
+}
+
+export function getEnvDefaultFastImageModel(): FalImageModelSpec {
+  return resolveEnvImageModelOverride(
+    typeof process !== "undefined" ? process.env.AUTOSCALE_FAL_IMAGE_FAST_MODEL : undefined,
+    "fast"
+  );
+}
+
+export const FAL_IMAGE_TIER_LABELS: Record<FalImageModelTier, string> = {
+  fast: "Fast (Flux Schnell)",
+  standard: "Standard (Flux Dev / Pro)",
+  cinematic: "Cinematic (Flux Pro Ultra)",
+};

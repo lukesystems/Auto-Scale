@@ -49,7 +49,7 @@ function preferFalForConcept(
 }
 
 async function loadRunFalRenderMode(growthRunId?: string): Promise<"cinematic" | "fast"> {
-  if (!growthRunId) return "fast";
+  if (!growthRunId) return isFalConfigured() ? "cinematic" : "fast";
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
     .from("growth_runs")
@@ -57,10 +57,13 @@ async function loadRunFalRenderMode(growthRunId?: string): Promise<"cinematic" |
     .eq("id", growthRunId)
     .maybeSingle();
   if (!data?.options || typeof data.options !== "object" || Array.isArray(data.options)) {
-    return "fast";
+    return isFalConfigured() ? "cinematic" : "fast";
   }
   const opts = GrowthRunOptionsSchema.partial().parse(data.options);
-  return opts.fal_render_mode === "cinematic" ? "cinematic" : "fast";
+  if (opts.fal_render_mode === "cinematic" || opts.fal_render_mode === "fast") {
+    return opts.fal_render_mode;
+  }
+  return isFalConfigured() ? "cinematic" : "fast";
 }
 
 async function loadRunProductionFormat(growthRunId: string): Promise<ProductionFormat | null> {
@@ -180,7 +183,6 @@ export async function renderVideosForRun(opts: {
 
   const videoIds: string[] = [];
   const failures: Array<{ conceptId: string; error: string }> = [];
-  const falCallCount = { value: 0 };
 
   for (const conceptId of opts.conceptIds) {
     try {
@@ -212,22 +214,6 @@ export async function renderVideosForRun(opts: {
         .order("scene_index");
       if (scErr) throw new Error(`scenes load: ${scErr.message}`);
 
-      for (const scene of scenes ?? []) {
-        await generateSceneAsset({
-          projectId: opts.projectId,
-          growthRunId: opts.growthRunId,
-          conceptId,
-          sceneId: scene.id,
-          role: scene.role,
-          assetMethod: scene.asset_method,
-          assetPrompt: scene.asset_prompt,
-          onScreenText: scene.on_screen_text,
-          voiceoverLine: scene.voiceover_line,
-          durationSeconds: Number(scene.duration_seconds),
-          aspectRatio: storyboard.aspect_ratio as string,
-        });
-      }
-
       const { data: scriptRow } = await supabase
         .from("video_scripts")
         .select("voiceover_full, hook_line, body_lines, cta_line, estimated_duration_seconds")
@@ -243,10 +229,13 @@ export async function renderVideosForRun(opts: {
         runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
           ? GrowthRunOptionsSchema.partial().parse(runRow.options)
           : {};
-      const { audioMode } = resolveProductionOptions({
+      const { audioMode, productionFormat, visualPipeline } = resolveProductionOptions({
         productionFormat: runOpts.production_format ?? null,
         audioMode: runOpts.audio_mode ?? null,
         falRenderMode: runOpts.fal_render_mode ?? null,
+        falModelTier: runOpts.fal_model_tier ?? null,
+        visualPipeline: runOpts.visual_pipeline ?? null,
+        falConfigured: isFalConfigured(),
       });
 
       const { data: receipt } = await supabase
@@ -270,6 +259,8 @@ export async function renderVideosForRun(opts: {
           targetLengthSeconds: concept.target_length_seconds,
           sceneDurationsSeconds: (scenes ?? []).map((s) => Number(s.duration_seconds)),
           audioMode,
+          productionFormat,
+          demoClipUrl: (conceptRow?.demo_clip_url as string | null) ?? null,
           trendConfidence: receipt?.confidence != null ? Number(receipt.confidence) : null,
           lowEvidenceAcknowledged: runOpts.low_evidence_acknowledged ?? false,
         });
@@ -296,6 +287,23 @@ export async function renderVideosForRun(opts: {
         scriptText: voiceoverText,
       });
 
+      for (const scene of scenes ?? []) {
+        await generateSceneAsset({
+          projectId: opts.projectId,
+          growthRunId: opts.growthRunId,
+          conceptId,
+          sceneId: scene.id,
+          role: scene.role,
+          assetMethod: scene.asset_method,
+          assetPrompt: scene.asset_prompt,
+          onScreenText: scene.on_screen_text,
+          voiceoverLine: scene.voiceover_line,
+          durationSeconds: Number(scene.duration_seconds),
+          aspectRatio: storyboard.aspect_ratio as string,
+          visualPipeline,
+        });
+      }
+
       const { videoId, assetId: finalAssetId } = await queueFinalAssembly({
         projectId: opts.projectId,
         growthRunId: opts.growthRunId,
@@ -314,11 +322,13 @@ export async function renderVideosForRun(opts: {
       });
       await linkStoryboardToJob(storyboardId, jobId);
       await setProductionJobStage(jobId, "planning", "storyboard");
-      await setProductionJobStage(jobId, "generating_assets", "scene_assets");
+      await setProductionJobStage(jobId, "generating_audio", "voiceover_queue");
+      await setProductionJobStage(jobId, "generating_assets", "scene_asset_stubs");
 
       if (isFfmpegAvailable()) {
         try {
-          await setProductionJobStage(jobId, "generating_assets", "scene_assets");
+          await setProductionJobStage(jobId, "generating_audio", "render_audio");
+          await setProductionJobStage(jobId, "generating_assets", "render_scenes");
           await setProductionJobStage(jobId, "assembling", "render");
           const renderResult = await renderConceptVideo({
             projectId: opts.projectId,
@@ -328,15 +338,24 @@ export async function renderVideosForRun(opts: {
             finalAssetId,
             jobId,
             demoClipUrl: (conceptRow?.demo_clip_url as string | null) ?? null,
-            falCallCount,
           });
           await tagAssetsWithJob(conceptId, jobId);
-          await setProductionJobStage(
-            jobId,
-            renderResult.partialFailures?.length ? "partial" : "quality_check",
-            renderResult.partialFailures?.length ? "partial_success" : "quality_gate",
-            renderResult.partialFailures?.join("; ") ?? null
-          );
+
+          if (!renderResult.qualityPassed) {
+            await setProductionJobStage(
+              jobId,
+              "quality_check",
+              "quality_gate_failed",
+              renderResult.qualityBlockReason ?? "Quality gate failed"
+            );
+            failures.push({
+              conceptId,
+              error: renderResult.qualityBlockReason ?? "Video failed quality gate",
+            });
+            continue;
+          }
+
+          await setProductionJobStage(jobId, "quality_check", "quality_gate");
           await setProductionJobStage(jobId, "ready", "ready");
         } catch (renderErr) {
           await setProductionJobStage(

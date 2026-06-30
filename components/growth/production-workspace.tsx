@@ -71,6 +71,7 @@ export interface ProductionWorkspaceVideo {
     durationSeconds: number;
     status: string;
     error: string | null;
+    metadata?: Record<string, unknown> | null;
   }>;
   assets: Array<{
     id: string;
@@ -279,17 +280,46 @@ function SceneTimeline({ scenes }: { scenes: ProductionWorkspaceVideo["scenes"] 
     <div className="rounded-lg border bg-background p-3">
       <h3 className="font-semibold text-sm mb-2">Scene timeline</h3>
       <ol className="space-y-1 text-xs">
-        {sorted.map((s) => (
-          <li key={s.id} className="grid grid-cols-[5rem_1fr_auto] gap-2 items-start border-l-2 border-primary/30 pl-2">
-            <span className="font-medium capitalize">{s.purpose ?? s.role}</span>
-            <span className="text-muted-foreground truncate">
-              {s.overlayText || s.voiceoverLine || "—"} · {s.visualMethod ?? "slide"}
-            </span>
-            <span className={s.status === "ready" ? "text-green-600" : "text-muted-foreground"}>{s.status}</span>
-          </li>
-        ))}
+        {sorted.map((s) => {
+          const meta = s.metadata ?? {};
+          const visualsReady = meta.visuals_ready === true;
+          const audioSynced = meta.audio_synced === true;
+          const durationSource = meta.duration_source as string | undefined;
+          return (
+            <li key={s.id} className="grid grid-cols-[5rem_1fr_auto] gap-2 items-start border-l-2 border-primary/30 pl-2">
+              <span className="font-medium capitalize">{s.purpose ?? s.role}</span>
+              <span className="text-muted-foreground truncate">
+                {s.overlayText || s.voiceoverLine || "—"} · {s.visualMethod ?? "slide"}
+                {durationSource ? ` · ${durationSource} timing` : ""}
+              </span>
+              <span className="flex flex-col items-end gap-0.5">
+                <span className={s.status === "ready" ? "text-green-600" : "text-muted-foreground"}>
+                  {s.status}
+                </span>
+                <span className="flex gap-1">
+                  <SceneBadge label="Visuals" ready={visualsReady} />
+                  <SceneBadge label="Audio" ready={audioSynced} />
+                </span>
+              </span>
+            </li>
+          );
+        })}
       </ol>
     </div>
+  );
+}
+
+function SceneBadge({ label, ready }: { label: string; ready: boolean }) {
+  return (
+    <span
+      className={`rounded px-1 py-0.5 text-[10px] font-medium ${
+        ready
+          ? "bg-green-500/15 text-green-700 dark:text-green-300"
+          : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {label} {ready ? "✓" : "…"}
+    </span>
   );
 }
 
@@ -315,7 +345,10 @@ function AssetPipeline({
   const voice = assets.find((a) => a.kind === "voiceover");
   const final = assets.find((a) => a.kind === "final_mp4");
   const slides = assets.filter((a) => a.kind === "slide_image");
+  const falImages = assets.filter((a) => a.kind === "fal_image");
+  const falClips = assets.filter((a) => a.kind === "fal_clip");
   const voiceSilent = voice?.metadata?.is_silent === true;
+  const timingSource = voice?.metadata?.timing_source as string | undefined;
   const voiceAttempts = Array.isArray(voice?.metadata?.attempt_log)
     ? (voice.metadata.attempt_log as Array<{ provider: string; ok: boolean; error?: string }>)
     : [];
@@ -325,12 +358,20 @@ function AssetPipeline({
       <h3 className="font-semibold text-sm">Asset pipeline</h3>
       <PipelineRow label="Slide scenes" status={`${slides.filter((s) => s.status === "succeeded").length}/${slides.length}`} />
       <PipelineRow
+        label="Fal images (I2V)"
+        status={`${falImages.filter((s) => s.status === "succeeded").length}/${falImages.length}`}
+      />
+      <PipelineRow
+        label="Fal clips"
+        status={`${falClips.filter((s) => s.status === "succeeded").length}/${falClips.length}`}
+      />
+      <PipelineRow
         label="Voiceover"
         status={
           voice?.status === "skipped"
             ? "skipped (music only)"
             : voice?.provider
-              ? `${voice.status} · ${voice.provider}${voiceSilent ? " (silent fallback)" : ""}`
+              ? `${voice.status} · ${voice.provider}${voiceSilent ? " (silent fallback)" : ""}${timingSource ? ` · ${timingSource} timing` : ""}`
               : voice?.status ?? "pending"
         }
       />

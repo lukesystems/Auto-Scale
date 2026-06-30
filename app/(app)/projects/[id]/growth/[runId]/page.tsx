@@ -87,6 +87,8 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     audioMode: storedRunOptions.audio_mode ?? null,
     falRenderMode: storedRunOptions.fal_render_mode ?? null,
     falModelTier: storedRunOptions.fal_model_tier ?? null,
+    visualPipeline: storedRunOptions.visual_pipeline ?? null,
+    falConfigured: getManagedProviderConfig().fal.configured,
     projectDefaults: {
       production_format: projectGrowthSettings.production_format,
       audio_mode: projectGrowthSettings.audio_mode,
@@ -175,7 +177,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     storyboardIds.length
       ? supabase
           .from("storyboard_scenes")
-          .select("id, storyboard_id, scene_index, purpose, role, visual_method, overlay_text, voiceover_line, duration_seconds, status, error")
+          .select("id, storyboard_id, scene_index, purpose, role, visual_method, overlay_text, voiceover_line, duration_seconds, status, error, metadata")
           .in("storyboard_id", storyboardIds)
           .order("scene_index")
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
@@ -277,6 +279,10 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             durationSeconds: s.duration_seconds as number,
             status: s.status as string,
             error: (s.error as string | null) ?? null,
+            metadata:
+              s.metadata && typeof s.metadata === "object" && !Array.isArray(s.metadata)
+                ? (s.metadata as Record<string, unknown>)
+                : null,
           }))
       : [];
     const jobRow = jobByVideo.get(v.id);
@@ -526,6 +532,10 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             summary={stageGateSummary}
             productionFormat={runProductionOptions.productionFormat}
             audioMode={runProductionOptions.audioMode}
+            falRenderMode={runProductionOptions.falRenderMode}
+            visualPipeline={
+              storedRunOptions.visual_pipeline ?? "auto"
+            }
             providerStatus={productionProviderStatus}
           />
         ) : (
@@ -667,6 +677,8 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             audioMode={runProductionOptions.audioMode}
             falRenderMode={runProductionOptions.falRenderMode}
             falModelTier={runProductionOptions.falModelTier}
+            visualPipeline={storedRunOptions.visual_pipeline ?? null}
+            resolvedVisualPipeline={runProductionOptions.visualPipeline}
             providerStatus={productionProviderStatus}
             approvedCount={
               workspaceVideos.filter(

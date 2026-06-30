@@ -26,8 +26,8 @@ describe("pre-render gate", () => {
       cta: SCRIPT.cta_line,
       script: SCRIPT,
       targetLengthSeconds: 22,
-      sceneDurationsSeconds: [2.5, 3, 3, 3, 3],
-      audioMode: "voiceover",
+      sceneDurationsSeconds: [4, 4, 5, 5, 4],
+      audioMode: "music_only",
       trendConfidence: 0.55,
     });
     expect(result.passed).toBe(true);
@@ -92,6 +92,47 @@ describe("pre-render gate", () => {
       isFirstRun: false,
     });
     expect(result.autoApproveEligible).toBe(true);
+  });
+
+  it("blocks demo_short without uploaded demo clip", () => {
+    const result = runPreRenderGate({
+      hook: SCRIPT.hook_line,
+      cta: SCRIPT.cta_line,
+      script: SCRIPT,
+      targetLengthSeconds: 22,
+      sceneDurationsSeconds: [2.5, 3, 3, 3, 3],
+      audioMode: "voiceover",
+      productionFormat: "demo_short",
+      demoClipUrl: null,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.blockReasons.some((r) => r.includes("demo clip"))).toBe(true);
+  });
+
+  it("blocks voiceover WPM outside 140–170 range", () => {
+    const result = runPreRenderGate({
+      hook: SCRIPT.hook_line,
+      cta: SCRIPT.cta_line,
+      script: { ...SCRIPT, voiceover_full: "short" },
+      targetLengthSeconds: 22,
+      sceneDurationsSeconds: [10, 10],
+      audioMode: "voiceover",
+    });
+    expect(result.passed).toBe(false);
+    expect(result.blockReasons.some((r) => r.includes("WPM"))).toBe(true);
+  });
+
+  it("blocks duration mismatch for voiceover modes", () => {
+    const result = runPreRenderGate({
+      hook: SCRIPT.hook_line,
+      cta: SCRIPT.cta_line,
+      script: SCRIPT,
+      targetLengthSeconds: 22,
+      sceneDurationsSeconds: [5, 5, 5, 5, 5, 5, 5, 5],
+      audioMode: "voiceover",
+    });
+    expect(result.passed).toBe(false);
+    expect(result.blockReasons.some((r) => r.includes("duration"))).toBe(true);
   });
 });
 

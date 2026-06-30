@@ -1,9 +1,11 @@
 import {
   AUDIO_MODE_SPECS,
   PRODUCTION_FORMAT_SPECS,
+  describeVisualPipeline,
   type AudioMode,
   type FalModelTier,
   type ProductionFormat,
+  type VisualPipeline,
 } from "@/services/video-factory/production-options";
 import { describeFalTierForRun } from "@/services/video-factory/fal/model-router";
 import { ProductionProviderBar, type ProductionProviderStatus } from "./production-provider-bar";
@@ -19,6 +21,8 @@ interface ProductionCommandCenterProps {
   audioMode?: AudioMode;
   falRenderMode?: "cinematic" | "fast";
   falModelTier?: FalModelTier;
+  visualPipeline?: VisualPipeline | null;
+  resolvedVisualPipeline?: VisualPipeline;
   providerStatus: ProductionProviderStatus;
   approvedCount?: number;
   totalCount?: number;
@@ -32,6 +36,8 @@ export function ProductionCommandCenter({
   audioMode,
   falRenderMode = "fast",
   falModelTier = "auto",
+  visualPipeline = null,
+  resolvedVisualPipeline,
   providerStatus,
   approvedCount = 0,
   totalCount = 0,
@@ -77,6 +83,10 @@ export function ProductionCommandCenter({
             {productionFormat || audioMode ? " · " : null}
             <span className="font-medium text-foreground">
               {describeFalTierForRun({ falRenderMode, falModelTier })}
+            </span>
+            {" · "}
+            <span className="font-medium text-foreground">
+              {describeVisualPipeline(visualPipeline, resolvedVisualPipeline)}
             </span>
           </p>
         )}

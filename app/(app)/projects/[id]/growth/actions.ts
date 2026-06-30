@@ -48,6 +48,7 @@ import {
   AudioModeSchema,
   FalRenderModeSchema,
   FalModelTierSchema,
+  VisualPipelineSchema,
 } from "@/services/video-factory/production-options";
 
 function parseGrowthRunOptions(raw: unknown) {
@@ -112,6 +113,7 @@ const StartRunSchema = z.object({
   formatHypothesisCount: z.coerce.number().int().min(1).max(2).default(1),
   productionFormat: ProductionFormatSchema.optional(),
   audioMode: AudioModeSchema.optional(),
+  visualPipeline: z.union([VisualPipelineSchema, z.literal("auto")]).optional(),
   distributionPreference: z
     .enum(["all_accounts", "selected", "export_only"])
     .optional(),
@@ -162,6 +164,9 @@ async function buildGrowthRunStartContext(
     distribution_mode: distributionMode,
     production_format: parsed.productionFormat ?? settings.production_format,
     audio_mode: parsed.audioMode ?? settings.audio_mode,
+    ...(parsed.visualPipeline && parsed.visualPipeline !== "auto"
+      ? { visual_pipeline: parsed.visualPipeline }
+      : {}),
     brand_constraints: {
       primary_cta_label: cta.label,
       primary_cta_url: cta.url,
@@ -191,6 +196,7 @@ export async function startGrowthRunAction(formData: FormData) {
     formatHypothesisCount: formData.get("formatHypothesisCount") ?? undefined,
     productionFormat: formData.get("productionFormat") ?? undefined,
     audioMode: formData.get("audioMode") ?? undefined,
+    visualPipeline: formData.get("visualPipeline") ?? undefined,
   });
   if (!parsed.success) {
     throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
@@ -872,6 +878,7 @@ const ContinueStageSchema = z.object({
   audioMode: AudioModeSchema.optional(),
   falRenderMode: FalRenderModeSchema.optional(),
   falModelTier: FalModelTierSchema.optional(),
+  visualPipeline: z.union([VisualPipelineSchema, z.literal("auto")]).optional(),
 });
 
 export type ContinueGrowthRunStageResult =
@@ -902,7 +909,13 @@ export async function continueGrowthRunStageAction(
     return { ok: false, error: "Growth run not found." };
   }
 
-  if (parsed.productionFormat || parsed.audioMode || parsed.falRenderMode || parsed.falModelTier) {
+  if (
+    parsed.productionFormat ||
+    parsed.audioMode ||
+    parsed.falRenderMode ||
+    parsed.falModelTier ||
+    parsed.visualPipeline
+  ) {
     const { data: runRow } = await supabase
       .from("growth_runs")
       .select("options")
@@ -921,6 +934,9 @@ export async function continueGrowthRunStageAction(
           ...(parsed.audioMode ? { audio_mode: parsed.audioMode } : {}),
           ...(parsed.falRenderMode ? { fal_render_mode: parsed.falRenderMode } : {}),
           ...(parsed.falModelTier ? { fal_model_tier: parsed.falModelTier } : {}),
+          ...(parsed.visualPipeline && parsed.visualPipeline !== "auto"
+            ? { visual_pipeline: parsed.visualPipeline }
+            : {}),
         },
       })
       .eq("id", parsed.growthRunId);
