@@ -118,6 +118,18 @@ export async function enqueueRenderJobsForRun(opts: {
 
   for (const conceptId of opts.conceptIds) {
     try {
+      const { data: reusableVideo } = await supabase
+        .from("videos")
+        .select("id, final_asset_id")
+        .eq("growth_run_id", opts.growthRunId)
+        .eq("concept_id", conceptId)
+        .eq("status", "ready")
+        .maybeSingle();
+      if (reusableVideo?.id && reusableVideo.final_asset_id) {
+        videoIds.push(reusableVideo.id);
+        continue;
+      }
+
       const existingJob = await findExistingQueuedRenderJob(supabase, opts.growthRunId, conceptId);
       if (existingJob) {
         jobIds.push(existingJob.jobId);

@@ -238,36 +238,39 @@ export async function renderConceptVideo(opts: {
         }
       }
 
-      const voiceBuf = voiceResult.buffer;
-      voicePath = join(workDir, "voiceover.m4a");
-      await writeFile(voicePath, voiceBuf);
+      if (voiceResult) {
+        const voiceBuf = voiceResult.buffer;
+        voicePath = join(workDir, "voiceover.m4a");
+        await writeFile(voicePath, voiceBuf);
 
-      const { storagePath: voiceStorage, publicUrl: voiceUrl } = await uploadGrowthMedia({
-        projectId: opts.projectId,
-        growthRunId: opts.growthRunId,
-        conceptId: opts.conceptId,
-        filename: "voiceover.m4a",
-        body: voiceBuf,
-        contentType: "audio/mp4",
-      });
-      await supabase
-        .from("generated_assets")
-        .update({
-          status: "succeeded",
-          storage_path: voiceStorage,
-          public_url: voiceUrl,
-          provider: voiceResult.provider,
-          error: null,
-          metadata: {
-            is_silent: false,
-            quality_penalty: voiceResult.qualityPenalty,
-            attempt_log: voiceResult.attemptLog,
-            audio_mode: audioMode,
-            timing_source: voiceResult.alignment ? "alignment" : "storyboard",
-          } as never,
-        })
-        .eq("concept_id", opts.conceptId)
-        .eq("kind", "voiceover");
+        const { storagePath: voiceStorage, publicUrl: voiceUrl } = await uploadGrowthMedia({
+          projectId: opts.projectId,
+          growthRunId: opts.growthRunId,
+          conceptId: opts.conceptId,
+          filename: "voiceover.m4a",
+          body: voiceBuf,
+          contentType: "audio/mp4",
+        });
+        await supabase
+          .from("generated_assets")
+          .update({
+            status: "succeeded",
+            storage_path: voiceStorage,
+            public_url: voiceUrl,
+            provider: voiceResult.provider,
+            error: null,
+            metadata: {
+              is_silent: false,
+              quality_penalty: voiceResult.qualityPenalty,
+              attempt_log: voiceResult.attemptLog,
+              audio_mode: audioMode,
+              timing_source: voiceResult.alignment ? "alignment" : "storyboard",
+              script_hash: scriptHash,
+            } as never,
+          })
+          .eq("concept_id", opts.conceptId)
+          .eq("kind", "voiceover");
+      }
     } else {
       await supabase
         .from("generated_assets")
@@ -281,7 +284,9 @@ export async function renderConceptVideo(opts: {
         .eq("kind", "voiceover");
     }
 
-    const audioSynced = audioModeUsesVoiceover(audioMode) && Boolean(voiceResult && !voiceResult.isSilent);
+    const audioSynced =
+      audioModeUsesVoiceover(audioMode) &&
+      (reusedVoiceover || Boolean(voiceResult && !voiceResult.isSilent));
     for (const scene of scenes) {
       const existingMeta =
         scene.metadata && typeof scene.metadata === "object" && !Array.isArray(scene.metadata)
@@ -503,7 +508,8 @@ export async function renderConceptVideo(opts: {
         : [],
       slideQualityPassed: slideQc?.passed ?? null,
       silentVoiceover: voiceResult?.isSilent ?? false,
-      voiceQualityPenalty: voiceResult?.qualityPenalty ?? (audioMode === "music_only" ? 0 : 0.25),
+      voiceQualityPenalty:
+        voiceResult?.qualityPenalty ?? (reusedVoiceover || audioMode === "music_only" ? 0 : 0.25),
     });
 
     const qualityPassed =

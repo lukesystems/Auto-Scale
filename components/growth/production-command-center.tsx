@@ -42,7 +42,7 @@ export function ProductionCommandCenter({
   videos,
   videoOutputMode,
   creativeFormat,
-  qualityTier = "cinematic",
+  qualityTier = "standard",
   audioMode,
   falRenderMode = "fast",
   falModelTier = "auto",
