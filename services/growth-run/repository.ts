@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordGrowthRunSlaEvent } from "./sla";
 
 type SupabaseClientType = SupabaseClient<Database>;
 type Phase = Database["public"]["Tables"]["growth_runs"]["Row"]["phase"];
@@ -115,6 +116,15 @@ export async function markPhaseStatus(
     ...details,
   };
   await client.from("growth_runs").update({ phase_status: existing as never }).eq("id", runId);
+  await recordGrowthRunSlaEvent({
+    client,
+    growthRunId: runId,
+    phase,
+    status,
+    details,
+  }).catch((err) => {
+    console.warn("[growth_run_sla_events] write failed", err);
+  });
 }
 
 export async function completeRun(

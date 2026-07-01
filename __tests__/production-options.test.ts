@@ -47,12 +47,12 @@ describe("production format resolution", () => {
     expect(PRODUCTION_FORMAT_SPECS.comparison.implemented).toBe(true);
   });
 
-  it("resolves hybrid cinematic as default preset", () => {
+  it("resolves kinetic text as the fast first-pass default preset", () => {
     const resolved = resolveProductionOptions({ falConfigured: true });
-    expect(resolved.videoOutputMode).toBe("hybrid_cinematic");
-    expect(resolved.renderStyle).toBe("hybrid_quality");
-    expect(resolved.qualityTier).toBe("cinematic");
-    expect(resolved.maxFalScenes).toBe(3);
+    expect(resolved.videoOutputMode).toBe("kinetic_text_ad");
+    expect(resolved.renderStyle).toBe("slides_only");
+    expect(resolved.qualityTier).toBe("standard");
+    expect(resolved.maxFalScenes).toBe(0);
     expect(resolved.audioMode).toBe("voiceover_bgm");
   });
 

@@ -494,6 +494,8 @@ export async function runRenderWorkerUntilIdle(opts?: {
 }
 
 function resolveWorkerBaseUrl(): string | null {
+  const externalWorker = process.env.AUTOSCALE_RENDER_WORKER_URL?.trim();
+  if (externalWorker) return externalWorker.replace(/\/$/, "");
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (appUrl) return appUrl.replace(/\/$/, "");
@@ -503,6 +505,7 @@ function resolveWorkerBaseUrl(): string | null {
 
 function resolveCronSecret(): string | null {
   return (
+    process.env.AUTOSCALE_RENDER_WORKER_SECRET?.trim() ||
     process.env.AUTOSCALE_CRON_SECRET?.trim() ||
     process.env.CRON_SECRET?.trim() ||
     null
@@ -523,7 +526,8 @@ export function kickRenderWorker(growthRunId?: string): void {
     return;
   }
 
-  const url = new URL("/api/cron/render-worker", base);
+  const externalWorker = Boolean(process.env.AUTOSCALE_RENDER_WORKER_URL?.trim());
+  const url = new URL(externalWorker ? "/run" : "/api/cron/render-worker", base);
   if (growthRunId) url.searchParams.set("growthRunId", growthRunId);
 
   void fetch(url.toString(), {

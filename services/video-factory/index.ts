@@ -1,5 +1,6 @@
 import "server-only";
 
+import { mapWithConcurrency } from "@/lib/async-pool";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateScriptForConcept } from "./script";
 import { generateStoryboardForConcept } from "./storyboard";
@@ -15,6 +16,19 @@ import {
   enqueueRenderJobsForRun,
   waitForRenderJobsTerminal,
 } from "./render-worker";
+
+function envPositiveInt(name: string, fallback: number, max: number): number {
+  const raw = process.env[name]?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+const SCRIPT_STORYBOARD_CONCURRENCY = envPositiveInt(
+  "AUTOSCALE_SCRIPT_STORYBOARD_CONCURRENCY",
+  3,
+  8
+);
 
 function preferFalForConcept(
   productionMode: ReturnType<typeof resolveProductionMode>,
@@ -91,7 +105,10 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
   const runFalRenderMode = runProduction?.resolved.falRenderMode ?? (isFalConfigured() ? "cinematic" : "fast");
   const resolvedProduction = runProduction?.resolved;
 
-  for (const conceptId of opts.conceptIds) {
+  const results = await mapWithConcurrency(
+    opts.conceptIds,
+    SCRIPT_STORYBOARD_CONCURRENCY,
+    async (conceptId): Promise<{ conceptId: string; ok: true } | { conceptId: string; ok: false; error: string }> => {
     try {
       const { data: existingBoard } = await supabase
         .from("storyboards")
@@ -99,8 +116,7 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
         .eq("concept_id", conceptId)
         .maybeSingle();
       if (existingBoard) {
-        completedConceptIds.push(conceptId);
-        continue;
+        return { conceptId, ok: true };
       }
 
       const { concept, productionMode } = await loadConcept(conceptId);
@@ -136,12 +152,21 @@ export async function buildScriptsAndStoryboardsForRun(opts: {
             }, runFalRenderMode),
       });
 
-      completedConceptIds.push(conceptId);
+      return { conceptId, ok: true };
     } catch (err) {
-      failures.push({
+      return {
         conceptId,
+        ok: false,
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+    }
+  });
+
+  for (const result of results) {
+    if (result.ok) {
+      completedConceptIds.push(result.conceptId);
+    } else {
+      failures.push({ conceptId: result.conceptId, error: result.error });
     }
   }
 

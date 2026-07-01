@@ -1222,6 +1222,34 @@ export interface Database {
         Relationships: [];
       };
 
+      growth_run_sla_events: {
+        Row: {
+          id: string;
+          project_id: string;
+          growth_run_id: string;
+          stage_id: number | null;
+          phase: string;
+          status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+          queued_at: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          duration_ms: number | null;
+          provider_latency_ms: number | null;
+          retry_count: number;
+          details: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["growth_run_sla_events"]["Row"]> & {
+          project_id: string;
+          growth_run_id: string;
+          phase: string;
+          status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+        };
+        Update: Partial<Database["public"]["Tables"]["growth_run_sla_events"]["Row"]>;
+        Relationships: [];
+      };
+
       video_trend_reports: {
         Row: {
           id: string;
