@@ -254,8 +254,18 @@ export async function rejectGrowthRunPhaseAction(input: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  await rejectGrowthRunPhase({ growthRunId: input.growthRunId });
-  revalidatePath(`/projects/${input.projectId}`);
-  revalidatePath(`/projects/${input.projectId}/growth/${input.growthRunId}`);
-  return { ok: true };
+  try {
+    await rejectGrowthRunPhase({
+      growthRunId: input.growthRunId,
+      projectId: input.projectId,
+    });
+    revalidatePath(`/projects/${input.projectId}`);
+    revalidatePath(`/projects/${input.projectId}/growth/${input.growthRunId}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to cancel run.",
+    };
+  }
 }

@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { generateObject } from "@/services/ai/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { z } from "zod";
@@ -24,9 +26,10 @@ export async function generateCaptionsForVideo(opts: {
   conceptId: string;
   projectId: string;
   accounts: Array<{ id: string; platform: "tiktok" | "instagram" | "youtube"; handle: string; persona: string | null }>;
+  client?: SupabaseClient<Database>;
 }): Promise<{ captionIds: string[] }> {
   if (!opts.accounts.length) return { captionIds: [] };
-  const supabase = createSupabaseServerClient();
+  const supabase = opts.client ?? createSupabaseServerClient();
 
   const { data: concept, error } = await supabase
     .from("video_concepts")

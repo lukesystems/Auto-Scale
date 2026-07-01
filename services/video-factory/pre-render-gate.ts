@@ -10,7 +10,6 @@ export interface PreRenderGateInput {
   sceneDurationsSeconds: number[];
   audioMode: AudioMode;
   productionFormat?: ProductionFormat | null;
-  demoClipUrl?: string | null;
   /** Other hook variants in the same controlled experiment (body lock). */
   siblingHooks?: string[];
   /** Trend receipt confidence 0–1 */
@@ -65,11 +64,19 @@ export function scanBannedClaims(text: string): string[] {
   return hits;
 }
 
+/** Ideal short-form voiceover pace; warn above, block only when extreme. */
+const WPM_WARN_MAX = 170;
+const WPM_BLOCK_MAX = 200;
+
+function voiceoverWordCount(script: VideoScript): number {
+  const text =
+    script.voiceover_full?.trim() ||
+    [script.hook_line, ...script.body_lines, script.cta_line].filter(Boolean).join(" ");
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
 function estimateWpm(script: VideoScript, totalSeconds: number): number {
-  const text = [script.hook_line, ...script.body_lines, script.cta_line, script.voiceover_full]
-    .filter(Boolean)
-    .join(" ");
-  const words = text.split(/\s+/).filter(Boolean).length;
+  const words = voiceoverWordCount(script);
   const minutes = Math.max(totalSeconds / 60, 0.1);
   return Math.round(words / minutes);
 }
@@ -98,16 +105,13 @@ export function runPreRenderGate(input: PreRenderGateInput): PreRenderGateResult
   }
 
   const wpm = estimateWpm(input.script, totalDuration);
-  checks.wpm_in_range = !audioModeUsesVoiceover(input.audioMode) || (wpm >= 140 && wpm <= 170);
-  if (audioModeUsesVoiceover(input.audioMode) && !checks.wpm_in_range) {
-    blockReasons.push(`Voiceover pace ${wpm} WPM outside 140–170 range`);
-  }
-
-  if (input.productionFormat === "demo_short") {
-    checks.demo_clip_present = Boolean(input.demoClipUrl?.trim());
-    if (!checks.demo_clip_present) {
-      blockReasons.push("demo_short requires an uploaded demo clip before render");
-    }
+  checks.wpm_in_range = !audioModeUsesVoiceover(input.audioMode) || wpm <= WPM_BLOCK_MAX;
+  if (audioModeUsesVoiceover(input.audioMode) && wpm > WPM_BLOCK_MAX) {
+    blockReasons.push(
+      `Voiceover pace ${wpm} WPM exceeds ${WPM_BLOCK_MAX} — script too dense for scene durations`
+    );
+  } else if (audioModeUsesVoiceover(input.audioMode) && wpm > WPM_WARN_MAX) {
+    warnings.push(`Voiceover pace ${wpm} WPM is fast — ideal range is ~140–${WPM_WARN_MAX}`);
   }
 
   const claimText = [input.hook, input.cta, ...input.script.body_lines, input.script.voiceover_full].join(" ");

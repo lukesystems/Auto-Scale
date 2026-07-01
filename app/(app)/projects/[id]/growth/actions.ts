@@ -12,11 +12,14 @@ import {
 import {
   continueGrowthRunStage,
   rejectGrowthRunPhase,
+  rerunGrowthRunStage3,
   runGrowthRunStage,
   runGrowthRunStageOnly,
   startGrowthRun,
   finalizeStageOnlyRun,
 } from "@/services/growth-run/orchestrator";
+import { cancelGrowthRun } from "@/services/growth-run/cancel-run";
+import { syncStage3RunPhase } from "@/services/growth-run/sync-stage3";
 import {
   projectHasRepeatRunEligibility,
   validateStagePreconditions,
@@ -49,7 +52,13 @@ import {
   FalRenderModeSchema,
   FalModelTierSchema,
   VisualPipelineSchema,
+  VideoOutputModeSchema,
+  QualityTierSchema,
+  resolveProductionOptions,
+  DEFAULT_PRODUCTION_QUALITY_OPTIONS,
+  coerceFallbackOnBadAiScene,
 } from "@/services/video-factory/production-options";
+import { isFalConfigured } from "@/services/media/fal-config";
 
 function parseGrowthRunOptions(raw: unknown) {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -261,6 +270,15 @@ export async function executeGrowthRunAction(
 
   if (!run) {
     return { ok: false, error: "Growth run not found." };
+  }
+
+  if (run.status === "cancelled") {
+    return {
+      ok: true,
+      growthRunId: parsed.growthRunId,
+      status: run.status,
+      skipped: true,
+    };
   }
 
   if (run.status !== "pending") {
@@ -723,6 +741,9 @@ export async function continueStage3ToScheduleAction(formData: FormData) {
     growthRunId: formData.get("growthRunId"),
   });
 
+  const supabase = createSupabaseServerClient();
+  await syncStage3RunPhase(supabase, parsed.growthRunId, user.id);
+
   try {
     await continueGrowthRunStage({
       growthRunId: parsed.growthRunId,
@@ -864,6 +885,8 @@ export async function saveGrowthSettingsAction(formData: FormData) {
     max_active_runs: 1,
     onboarding_completed: parsed.onboardingCompleted ?? true,
     production_format: existingSettings.production_format,
+    video_output_mode: existingSettings.video_output_mode,
+    quality_tier: existingSettings.quality_tier,
     audio_mode: existingSettings.audio_mode,
   });
 
@@ -875,6 +898,8 @@ const ContinueStageSchema = z.object({
   projectId: z.string().uuid(),
   growthRunId: z.string().uuid(),
   productionFormat: ProductionFormatSchema.optional(),
+  videoOutputMode: VideoOutputModeSchema.optional(),
+  qualityTier: QualityTierSchema.optional(),
   audioMode: AudioModeSchema.optional(),
   falRenderMode: FalRenderModeSchema.optional(),
   falModelTier: FalModelTierSchema.optional(),
@@ -911,6 +936,8 @@ export async function continueGrowthRunStageAction(
 
   if (
     parsed.productionFormat ||
+    parsed.videoOutputMode ||
+    parsed.qualityTier ||
     parsed.audioMode ||
     parsed.falRenderMode ||
     parsed.falModelTier ||
@@ -925,17 +952,49 @@ export async function continueGrowthRunStageAction(
       runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
         ? (runRow.options as Record<string, unknown>)
         : {};
+
+    const resolved = resolveProductionOptions({
+      productionFormat: parsed.productionFormat ?? null,
+      videoOutputMode: parsed.videoOutputMode ?? null,
+      qualityTier: parsed.qualityTier ?? null,
+      audioMode: parsed.audioMode ?? null,
+      falRenderMode: parsed.falRenderMode ?? null,
+      falModelTier: parsed.falModelTier ?? null,
+      visualPipeline:
+        parsed.visualPipeline && parsed.visualPipeline !== "auto"
+          ? parsed.visualPipeline
+          : null,
+      falConfigured: isFalConfigured(),
+    });
+
     await supabase
       .from("growth_runs")
       .update({
         options: {
           ...existing,
-          ...(parsed.productionFormat ? { production_format: parsed.productionFormat } : {}),
-          ...(parsed.audioMode ? { audio_mode: parsed.audioMode } : {}),
-          ...(parsed.falRenderMode ? { fal_render_mode: parsed.falRenderMode } : {}),
-          ...(parsed.falModelTier ? { fal_model_tier: parsed.falModelTier } : {}),
+          production_format: resolved.productionFormat,
+          video_output_mode: resolved.videoOutputMode,
+          creative_format: resolved.creativeFormat,
+          render_style: resolved.renderStyle,
+          quality_tier: resolved.qualityTier,
+          max_fal_scenes: resolved.maxFalScenes,
+          max_ai_video_scenes: resolved.maxFalScenes,
+          require_scene_review:
+            typeof existing.require_scene_review === "boolean"
+              ? existing.require_scene_review
+              : DEFAULT_PRODUCTION_QUALITY_OPTIONS.requireSceneReview,
+          fallback_on_bad_ai_scene: coerceFallbackOnBadAiScene(
+            typeof existing.fallback_on_bad_ai_scene === "string"
+              ? existing.fallback_on_bad_ai_scene
+              : DEFAULT_PRODUCTION_QUALITY_OPTIONS.fallbackOnBadAiScene
+          ),
+          ...(parsed.audioMode ? { audio_mode: resolved.audioMode } : {}),
+          ...(parsed.falRenderMode || parsed.qualityTier || parsed.videoOutputMode
+            ? { fal_render_mode: resolved.falRenderMode }
+            : {}),
+          ...(parsed.falModelTier ? { fal_model_tier: resolved.falModelTier } : {}),
           ...(parsed.visualPipeline && parsed.visualPipeline !== "auto"
-            ? { visual_pipeline: parsed.visualPipeline }
+            ? { visual_pipeline: resolved.visualPipeline }
             : {}),
         },
       })
@@ -972,9 +1031,48 @@ export async function rejectGrowthRunStageAction(
   await requireUser();
   const parsed = ContinueStageSchema.parse(input);
 
-  await rejectGrowthRunPhase({ growthRunId: parsed.growthRunId });
-  revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
-  return { ok: true };
+  try {
+    await rejectGrowthRunPhase({
+      growthRunId: parsed.growthRunId,
+      projectId: parsed.projectId,
+    });
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to cancel run.",
+    };
+  }
+}
+
+const CancelRunSchema = z.object({
+  projectId: z.string().uuid(),
+  growthRunId: z.string().uuid(),
+});
+
+export async function cancelGrowthRunAction(
+  input: z.infer<typeof CancelRunSchema>
+): Promise<{ ok: boolean; error?: string }> {
+  await requireUser();
+  const parsed = CancelRunSchema.parse(input);
+
+  try {
+    await cancelGrowthRun({
+      growthRunId: parsed.growthRunId,
+      projectId: parsed.projectId,
+    });
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${parsed.growthRunId}`);
+    revalidatePath(`/projects/${parsed.projectId}/runs`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to cancel run.",
+    };
+  }
 }
 
 const StageRunSchema = z.object({
@@ -1092,7 +1190,6 @@ const RunStageOnlySchema = z.object({
 
 export type RunStageOnlyResult = ExecuteGrowthRunResult;
 
-/** Execute a single macro stage on an existing run. */
 export async function runStageOnlyAction(
   input: z.infer<typeof RunStageOnlySchema>
 ): Promise<RunStageOnlyResult> {
@@ -1141,6 +1238,62 @@ export async function runStageOnlyAction(
       ok: false,
       growthRunId: parsed.growthRunId,
       error: error instanceof Error ? error.message : "Stage run failed.",
+    };
+  }
+}
+
+const RerunStage3Schema = z.object({
+  projectId: z.string().uuid(),
+  growthRunId: z.string().uuid(),
+});
+
+export type RerunStage3Result = ExecuteGrowthRunResult;
+
+/** Reset Stage 3 artifacts on this run and re-render from assets. */
+export async function rerunStage3Action(
+  input: z.infer<typeof RerunStage3Schema>
+): Promise<RerunStage3Result> {
+  const user = await requireUser();
+  const parsed = RerunStage3Schema.parse(input);
+
+  const ffmpeg = checkFfmpegHealth();
+  if (!ffmpeg.available) {
+    return {
+      ok: false,
+      error: `${ffmpeg.message}${ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""}`,
+    };
+  }
+
+  try {
+    const result = await rerunGrowthRunStage3({
+      growthRunId: parsed.growthRunId,
+      ownerId: user.id,
+    });
+
+    revalidatePath(`/projects/${parsed.projectId}/growth`);
+    revalidatePath(`/projects/${parsed.projectId}/growth/${result.growthRunId}`);
+
+    return {
+      ok: true,
+      growthRunId: result.growthRunId,
+      status: result.status,
+      pausedAtPhase: result.pausedAtPhase,
+    };
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      (error as { name?: unknown }).name === "GrowthRunExecutionError" &&
+      typeof (error as { growthRunId?: unknown }).growthRunId === "string"
+    ) {
+      const growthRunId = (error as { growthRunId: string }).growthRunId;
+      revalidatePath(`/projects/${parsed.projectId}/growth/${growthRunId}`);
+      return { ok: true, growthRunId, status: "failed" };
+    }
+    return {
+      ok: false,
+      growthRunId: parsed.growthRunId,
+      error: error instanceof Error ? error.message : "Stage 3 rerun failed.",
     };
   }
 }

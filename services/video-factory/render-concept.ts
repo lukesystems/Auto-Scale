@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -22,8 +23,11 @@ import { roleToPurpose } from "./scene-contract";
 import {
   audioModeUsesMusic,
   audioModeUsesVoiceover,
-  resolveProductionOptions,
 } from "./production-options";
+import {
+  loadRunProductionContext,
+  type RunProductionContext,
+} from "./load-run-production-context";
 import {
   backgroundMusicVolumeForMode,
   selectBackgroundMusicPath,
@@ -31,10 +35,11 @@ import {
 } from "./audio-mix";
 import { createCaptionPages, charsToTimedWords, wordsFromSceneDurations } from "./captions/paging";
 import { formatAssCaptions, pagesToSrt } from "./captions/export-ass";
+import { mapWithConcurrency } from "@/lib/async-pool";
 import { saveRenderCheckpoint } from "./production-job";
-import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { renderSceneVisual } from "./scene-render";
-import { isFalConfigured } from "@/services/media/fal-config";
 
 /**
  * Render one concept end-to-end: voiceover → scene assets → subtitles → MP4.
@@ -43,6 +48,34 @@ import { isFalConfigured } from "@/services/media/fal-config";
 /** Max Seedance fal generations per concept (not per run). */
 const FAL_SCENES_PER_CONCEPT_CAP = 3;
 
+/** Max slide scenes rendered in parallel within one concept. */
+const SLIDE_SCENE_CONCURRENCY = 4;
+/** Max Fal-backed scenes in flight per concept (shared falCount mutex). */
+const FAL_SCENE_CONCURRENCY = 2;
+
+async function downloadRemoteAudio(url: string): Promise<Buffer> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) throw new Error(`voiceover download failed: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function sceneUsesFalBroll(scene: {
+  asset_method?: string | null;
+  visual_method?: string | null;
+  purpose?: string | null;
+  role?: string | null;
+}): boolean {
+  if (
+    scene.asset_method === "screen_demo" ||
+    scene.visual_method === "screen_recording" ||
+    scene.purpose === "demo" ||
+    scene.role === "demo"
+  ) {
+    return false;
+  }
+  return scene.asset_method === "fal_clip" || scene.visual_method === "ai_broll";
+}
+
 export async function renderConceptVideo(opts: {
   projectId: string;
   growthRunId: string;
@@ -50,7 +83,8 @@ export async function renderConceptVideo(opts: {
   videoId: string;
   finalAssetId: string;
   jobId?: string;
-  demoClipUrl?: string | null;
+  productionContext?: RunProductionContext;
+  client?: SupabaseClient<Database>;
 }): Promise<{
   publicUrl: string;
   partialFailures?: string[];
@@ -63,10 +97,10 @@ export async function renderConceptVideo(opts: {
     throw new Error(ffmpeg.message + (ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""));
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = opts.client ?? createSupabaseServerClient();
   const { data: concept } = await supabase
     .from("video_concepts")
-    .select("id, platform, video_type, target_length_seconds, hook, cta, production_mode, growth_run_id, demo_clip_url, render_approved")
+    .select("id, platform, video_type, target_length_seconds, hook, cta, production_mode, growth_run_id, render_approved")
     .eq("id", opts.conceptId)
     .single();
   if (!concept) throw new Error("concept not found");
@@ -79,19 +113,12 @@ export async function renderConceptVideo(opts: {
     .select("brand_constraints, options")
     .eq("id", opts.growthRunId)
     .maybeSingle();
-  const runOptionsRaw = brandConstraints.data?.options;
-  const runOptions =
-    runOptionsRaw && typeof runOptionsRaw === "object" && !Array.isArray(runOptionsRaw)
-      ? GrowthRunOptionsSchema.partial().parse(runOptionsRaw)
-      : {};
-  const { audioMode, productionFormat, falRenderMode, falModelTier, visualPipeline } = resolveProductionOptions({
-    productionFormat: runOptions.production_format ?? null,
-    audioMode: runOptions.audio_mode ?? null,
-    falRenderMode: runOptions.fal_render_mode ?? null,
-    falModelTier: runOptions.fal_model_tier ?? null,
-    visualPipeline: runOptions.visual_pipeline ?? null,
-    falConfigured: isFalConfigured(),
-  });
+
+  const runProduction =
+    opts.productionContext ??
+    (await loadRunProductionContext(opts.growthRunId, opts.projectId, supabase));
+  const { audioMode, productionFormat, falRenderMode, falModelTier, visualPipeline, creativeFormat, renderStyle, qualityTier, fallbackOnBadAiScene } =
+    runProduction.resolved;
 
   const brandConstraintsObj =
     (brandConstraints.data?.brand_constraints as Record<string, unknown> | null) ?? null;
@@ -156,6 +183,7 @@ export async function renderConceptVideo(opts: {
     const storyboardDuration = sceneDurations.reduce((sum, d) => sum + d, 0);
     let voiceResult: Awaited<ReturnType<typeof synthesizeVoiceoverWithMeta>> | null = null;
     let voicePath: string | undefined;
+    let reusedVoiceover = false;
 
     await checkpoint("audio");
     if (audioModeUsesVoiceover(audioMode)) {
@@ -164,17 +192,45 @@ export async function renderConceptVideo(opts: {
           "Voiceover required but no TTS provider configured — set ELEVENLABS_API_KEY or OPENAI_API_KEY"
         );
       }
-      voiceResult = await synthesizeVoiceoverWithMeta({
-        scriptText: script?.voiceover_full ?? "",
-        durationSeconds: Math.max(1, Math.round(storyboardDuration)),
-      });
-      if (voiceResult.isSilent) {
+      const scriptText = script?.voiceover_full ?? "";
+      const scriptHash = createHash("sha256").update(scriptText).digest("hex");
+      const { data: existingVoiceover } = await supabase
+        .from("generated_assets")
+        .select("public_url, metadata")
+        .eq("concept_id", opts.conceptId)
+        .eq("kind", "voiceover")
+        .eq("status", "succeeded")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const existingVoiceoverMeta =
+        existingVoiceover?.metadata &&
+        typeof existingVoiceover.metadata === "object" &&
+        !Array.isArray(existingVoiceover.metadata)
+          ? (existingVoiceover.metadata as Record<string, unknown>)
+          : {};
+
+      if (
+        existingVoiceover?.public_url &&
+        existingVoiceoverMeta.script_hash === scriptHash
+      ) {
+        voicePath = join(workDir, "voiceover.m4a");
+        await writeFile(voicePath, await downloadRemoteAudio(existingVoiceover.public_url));
+        reusedVoiceover = true;
+        await checkpoint("audio", { reused: true });
+      } else {
+        voiceResult = await synthesizeVoiceoverWithMeta({
+          scriptText,
+          durationSeconds: Math.max(1, Math.round(storyboardDuration)),
+        });
+      }
+      if (voiceResult?.isSilent) {
         throw new Error(
           `Voiceover synthesis returned silent audio — ${formatVoiceoverAttemptSummary(voiceResult.attemptLog)}`
         );
       }
 
-      if (voiceResult.alignment) {
+      if (voiceResult?.alignment) {
         const derived = deriveSceneDurationsFromAlignment(scenes, voiceResult.alignment);
         if (derived) {
           sceneDurations = derived;
@@ -243,7 +299,6 @@ export async function renderConceptVideo(opts: {
         .eq("id", scene.id);
     }
 
-    const demoClipUrl = opts.demoClipUrl ?? (concept.demo_clip_url as string | null) ?? null;
     const sceneRenderCtx = {
       supabase,
       projectId: opts.projectId,
@@ -256,14 +311,18 @@ export async function renderConceptVideo(opts: {
       productSummary: brief?.product_summary ?? "SaaS product",
       targetCustomer: brief?.target_customer ?? "founders",
       trendInference,
-      demoClipUrl,
+      productionFormat,
       productScreenshotUrl,
       audioMode,
       falRenderMode,
       falModelTier,
       visualPipeline,
       falCount: { value: 0 },
-      falScenesCap: FAL_SCENES_PER_CONCEPT_CAP,
+      falScenesCap: runProduction.resolved.maxFalScenes ?? FAL_SCENES_PER_CONCEPT_CAP,
+      creativeFormat,
+      renderStyle,
+      qualityTier,
+      fallbackOnBadAiScene,
       checkpoint: opts.jobId
         ? async (phase: string, extra?: Record<string, unknown>) => {
             await saveRenderCheckpoint(opts.jobId!, phase as Parameters<typeof saveRenderCheckpoint>[1], {
@@ -275,15 +334,37 @@ export async function renderConceptVideo(opts: {
     };
 
     await checkpoint("assets", { sceneCount: scenes.length, visualPipeline });
+
+    const slideIndices: number[] = [];
+    const falIndices: number[] = [];
     for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+      if (sceneUsesFalBroll(scenes[sceneIdx]!)) falIndices.push(sceneIdx);
+      else slideIndices.push(sceneIdx);
+    }
+
+    const orderedSceneFiles: Array<{
+      filePath: string;
+      kind: "image" | "video";
+      durationSeconds: number;
+    } | null> = new Array(scenes.length).fill(null);
+
+    const renderSceneAt = async (sceneIdx: number) => {
       const scene = scenes[sceneIdx]!;
       const duration = sceneDurations[sceneIdx] ?? Math.max(0.5, Number(scene.duration_seconds));
       const { sceneFile, partialFailure } = await renderSceneVisual(sceneRenderCtx, scene, duration);
-      sceneFiles.push(sceneFile);
+      orderedSceneFiles[sceneIdx] = sceneFile;
       if (partialFailure) {
         console.log(`[render] ${partialFailure}`);
         partialFailures.push(partialFailure);
       }
+    };
+
+    await mapWithConcurrency(slideIndices, SLIDE_SCENE_CONCURRENCY, renderSceneAt);
+    await mapWithConcurrency(falIndices, FAL_SCENE_CONCURRENCY, renderSceneAt);
+
+    for (const sceneFile of orderedSceneFiles) {
+      if (!sceneFile) throw new Error("scene render incomplete");
+      sceneFiles.push(sceneFile);
     }
 
     const totalDuration = Math.max(
@@ -426,7 +507,8 @@ export async function renderConceptVideo(opts: {
     });
 
     const qualityPassed =
-      passesQualityGate(quality) && partialFailures.length === 0;
+      passesQualityGate(quality) &&
+      !partialFailures.some((f) => !f.includes("AI fallback"));
     const qualityBlockReason = qualityPassed
       ? null
       : partialFailures.length

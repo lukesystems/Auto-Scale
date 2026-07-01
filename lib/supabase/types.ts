@@ -1624,6 +1624,11 @@ export interface Database {
           current_stage: string | null;
           error: string | null;
           metadata: Json;
+          queued_at: string | null;
+          stage_started_at: string | null;
+          render_started_at: string | null;
+          render_completed_at: string | null;
+          render_duration_ms: number | null;
           created_at: string;
           updated_at: string;
         };

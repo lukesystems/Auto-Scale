@@ -9,11 +9,17 @@ import { generateSeedanceClip, downloadRemoteVideo } from "./fal/seedance";
 import { generateFalImage } from "./fal/image-gen";
 import { selectFalImageModel, selectFalVideoModel } from "./fal/model-router";
 import { uploadGrowthMedia } from "./storage";
-import { resolveScreenDemo } from "./screen-demo";
 import type { SceneContract } from "./scene-contract";
 import { roleToPurpose } from "./scene-contract";
-import type { AudioMode, FalModelTier, FalRenderMode, VisualPipeline } from "./production-options";
-import { audioModeUsesVoiceover } from "./production-options";
+import type { AudioMode, FalModelTier, FalRenderMode, ProductionFormat, VisualPipeline } from "./production-options";
+import type { CreativeFormat, FallbackOnBadAiScene, QualityTier, RenderStyle } from "./scene-render-plan";
+import {
+  audioModeUsesVoiceover,
+  shouldUseAiBrollForScene,
+  buildSceneRenderPlan,
+  sceneRenderMethodToSlideStyle,
+} from "./production-options";
+import { isFalConfigured } from "@/services/media/fal-config";
 import { sceneVisualCheckpoint } from "./production-job";
 
 export interface SceneRow {
@@ -45,7 +51,7 @@ export interface SceneRenderContext {
   productSummary: string;
   targetCustomer: string;
   trendInference: string;
-  demoClipUrl: string | null;
+  productionFormat: ProductionFormat;
   productScreenshotUrl: string | null;
   audioMode: AudioMode;
   falRenderMode: FalRenderMode;
@@ -53,6 +59,10 @@ export interface SceneRenderContext {
   visualPipeline: VisualPipeline;
   falCount: { value: number };
   falScenesCap: number;
+  creativeFormat: CreativeFormat;
+  renderStyle: RenderStyle;
+  qualityTier: QualityTier;
+  fallbackOnBadAiScene: FallbackOnBadAiScene;
   checkpoint?: (phase: string, extra?: Record<string, unknown>) => Promise<void>;
 }
 
@@ -68,19 +78,20 @@ export interface SceneRenderOutput {
   sceneMetadata: Record<string, unknown>;
 }
 
-function isImageUrl(url: string): boolean {
-  return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+function isLegacyDemoScene(scene: SceneRow): boolean {
+  return (
+    scene.asset_method === "screen_demo" ||
+    scene.visual_method === "screen_recording" ||
+    scene.purpose === "demo" ||
+    scene.role === "demo"
+  );
 }
 
 function resolveStaticReferenceImageUrl(input: {
-  demoClipUrl?: string | null;
   productScreenshotUrl?: string | null;
   scenePurpose: SceneContract["purpose"];
   visualMethod?: string | null;
 }): string | undefined {
-  const demo = input.demoClipUrl?.trim();
-  if (demo && isImageUrl(demo)) return demo;
-
   const screenshot = input.productScreenshotUrl?.trim();
   if (
     screenshot &&
@@ -119,7 +130,8 @@ async function renderSlideScene(
   scene: SceneRow,
   duration: number,
   scenePath: string,
-  willHaveAssCaptions: boolean
+  willHaveAssCaptions: boolean,
+  slideStyle: "default" | "kinetic" | "metric" | "motion" = "default"
 ): Promise<SceneFileResult> {
   const png = await renderSlidePng(
     sceneToSlideInput(
@@ -131,7 +143,7 @@ async function renderSlideScene(
         overlay_text: scene.overlay_text ?? scene.on_screen_text ?? "",
         visual_prompt: scene.asset_prompt ?? scene.visual_intent ?? "",
       },
-      { aspectRatio: ctx.aspectRatio, brandColor: ctx.brandColor }
+      { aspectRatio: ctx.aspectRatio, brandColor: ctx.brandColor, slideStyle }
     )
   );
   const pngPath = `${scenePath}.png`;
@@ -158,6 +170,64 @@ async function renderSlideScene(
     .eq("kind", "slide_image");
 
   return { filePath: pngPath, kind: "image", durationSeconds: duration };
+}
+
+function slideStyleForScene(
+  ctx: SceneRenderContext,
+  scene: SceneRow,
+  override?: "default" | "kinetic" | "metric" | "motion"
+): "default" | "kinetic" | "metric" | "motion" {
+  if (override) return override;
+  const purpose = (scene.purpose as SceneContract["purpose"] | null) ?? roleToPurpose(scene.role);
+  const plan = buildSceneRenderPlan({
+    creativeFormat: ctx.creativeFormat,
+    renderStyle: ctx.renderStyle,
+    qualityTier: ctx.qualityTier,
+    falConfigured: isFalConfigured(),
+  });
+  const entry = plan.find((e) => e.purpose === purpose);
+  return entry ? sceneRenderMethodToSlideStyle(entry.method) : "default";
+}
+
+async function renderSlideFallback(
+  ctx: SceneRenderContext,
+  scene: SceneRow,
+  duration: number,
+  scenePath: string,
+  willHaveAssCaptions: boolean,
+  reason: string
+): Promise<SceneRenderOutput> {
+  const slideStyle =
+    ctx.fallbackOnBadAiScene === "replace_with_motion_slide"
+      ? "motion"
+      : slideStyleForScene(ctx, scene);
+  const sceneFile = await renderSlideScene(
+    ctx,
+    scene,
+    duration,
+    scenePath,
+    willHaveAssCaptions,
+    slideStyle
+  );
+  await ctx.supabase
+    .from("storyboard_scenes")
+    .update({
+      status: "ready",
+      asset_method: "slide",
+      visual_method: "slide",
+      metadata: {
+        visuals_ready: true,
+        fallback_reason: reason,
+        slide_style: slideStyle,
+        visual_pipeline: "slide",
+      } as never,
+    } as never)
+    .eq("id", scene.id);
+  return {
+    sceneFile,
+    partialFailure: `Scene ${scene.scene_index} AI fallback → ${slideStyle} slide: ${reason}`,
+    sceneMetadata: { visuals_ready: true, visual_pipeline: "slide", slide_style: slideStyle },
+  };
 }
 
 async function tryFalBroll(
@@ -207,7 +277,6 @@ async function tryFalBroll(
 
   let falImageAssetId: string | null = null;
   let referenceImageUrl = resolveStaticReferenceImageUrl({
-    demoClipUrl: ctx.demoClipUrl,
     productScreenshotUrl: ctx.productScreenshotUrl,
     scenePurpose,
     visualMethod: scene.visual_method as string | null,
@@ -380,67 +449,56 @@ export async function renderSceneVisual(
   const scenePath = join(ctx.workDir, `scene-${scene.scene_index}`);
   await ctx.checkpoint?.(sceneVisualCheckpoint(scene.id), { sceneIndex: scene.scene_index });
 
-  const scenePurpose =
-    (scene.purpose as SceneContract["purpose"] | null) ?? roleToPurpose(scene.role);
-  const visualMethod = scene.visual_method as string | null;
-  const isScreenDemo =
-    scene.asset_method === "screen_demo" ||
-    visualMethod === "screen_recording" ||
-    scenePurpose === "demo";
+  const willHaveAssCaptions = audioModeUsesVoiceover(ctx.audioMode);
 
-  if (isScreenDemo) {
-    if (!ctx.demoClipUrl?.trim()) {
-      throw new Error(
-        `Scene ${scene.scene_index}: demo clip required for demo format — upload before render`
-      );
-    }
-    const demo = await resolveScreenDemo(
-      {
-        sourceUrl: ctx.demoClipUrl,
-        aspectRatio: ctx.aspectRatio,
-        durationSeconds: duration,
-      },
-      ctx.workDir
+  // Legacy storyboards may still have removed screen-demo beats — render as
+  // mechanism (screenshot/slide), never as problem AI b-roll (wrong scene + slow Fal).
+  if (isLegacyDemoScene(scene)) {
+    const slideStyle = slideStyleForScene(ctx, { ...scene, purpose: "mechanism" });
+    const sceneFile = await renderSlideScene(
+      ctx,
+      scene,
+      duration,
+      scenePath,
+      willHaveAssCaptions,
+      slideStyle
     );
-    if (demo.isPlaceholder) {
-      throw new Error(
-        `Scene ${scene.scene_index}: demo clip could not be loaded — check upload URL`
-      );
-    }
     await ctx.supabase
       .from("storyboard_scenes")
       .update({
         status: "ready",
-        error: demo.isPlaceholder ? "demo_placeholder" : null,
-        metadata: { visuals_ready: true } as never,
+        asset_method: "slide",
+        visual_method: "slide",
+        metadata: {
+          visuals_ready: true,
+          legacy_demo_migrated: "mechanism_slide",
+          slide_style: slideStyle,
+          visual_pipeline: "slide",
+        } as never,
       } as never)
       .eq("id", scene.id);
-
     return {
-      sceneFile: {
-        filePath: demo.filePath,
-        kind: demo.kind === "video" ? "video" : "image",
-        durationSeconds: duration,
+      sceneFile,
+      sceneMetadata: {
+        visuals_ready: true,
+        legacy_demo_migrated: "mechanism_slide",
+        visual_pipeline: "slide",
       },
-      sceneMetadata: { visuals_ready: true },
     };
   }
 
   const useBroll =
     scene.asset_method === "fal_clip" || scene.visual_method === "ai_broll";
-  const willHaveAssCaptions = audioModeUsesVoiceover(ctx.audioMode);
 
   if (useBroll && ctx.falCount.value >= ctx.falScenesCap) {
-    const partialFailure = `Scene ${scene.scene_index}: fal cap (${ctx.falScenesCap}) reached — rendered as slide`;
-    const sceneFile = await renderSlideScene(ctx, scene, duration, scenePath, willHaveAssCaptions);
-    await ctx.supabase
-      .from("storyboard_scenes")
-      .update({
-        status: "ready",
-        metadata: { visuals_ready: true, fallback_reason: "fal_cap" } as never,
-      } as never)
-      .eq("id", scene.id);
-    return { sceneFile, partialFailure, sceneMetadata: { visuals_ready: true } };
+    return renderSlideFallback(
+      ctx,
+      scene,
+      duration,
+      scenePath,
+      willHaveAssCaptions,
+      `fal cap (${ctx.falScenesCap}) reached`
+    );
   }
 
   if (useBroll && ctx.falCount.value < ctx.falScenesCap) {
@@ -452,8 +510,14 @@ export async function renderSceneVisual(
       if (falResult) {
         return { sceneFile: falResult, sceneMetadata: { visuals_ready: true } };
       }
+      if (ctx.fallbackOnBadAiScene === "fail_render") {
+        throw new Error(`Scene ${scene.scene_index}: AI b-roll generation failed`);
+      }
     } catch (brollErr) {
       const reason = brollErr instanceof Error ? brollErr.message : String(brollErr);
+      if (ctx.fallbackOnBadAiScene === "fail_render") {
+        throw brollErr instanceof Error ? brollErr : new Error(reason);
+      }
 
       if (pipeline === "image_to_video") {
         try {
@@ -467,27 +531,35 @@ export async function renderSceneVisual(
           }
         } catch (t2vErr) {
           const t2vReason = t2vErr instanceof Error ? t2vErr.message : String(t2vErr);
-          await ctx.supabase
-            .from("storyboard_scenes")
-            .update({ metadata: { fallback_reason: t2vReason } as never } as never)
-            .eq("id", scene.id);
+          return renderSlideFallback(
+            ctx,
+            scene,
+            duration,
+            scenePath,
+            willHaveAssCaptions,
+            t2vReason
+          );
         }
-      } else {
-        await ctx.supabase
-          .from("storyboard_scenes")
-          .update({ metadata: { fallback_reason: reason } as never } as never)
-          .eq("id", scene.id);
       }
+      return renderSlideFallback(ctx, scene, duration, scenePath, willHaveAssCaptions, reason);
     }
   }
 
-  const sceneFile = await renderSlideScene(ctx, scene, duration, scenePath, willHaveAssCaptions);
+  const slideStyle = slideStyleForScene(ctx, scene);
+  const sceneFile = await renderSlideScene(
+    ctx,
+    scene,
+    duration,
+    scenePath,
+    willHaveAssCaptions,
+    slideStyle
+  );
   await ctx.supabase
     .from("storyboard_scenes")
     .update({
       status: "ready",
       asset_id: null,
-      metadata: { visuals_ready: true, visual_pipeline: "slide" } as never,
+      metadata: { visuals_ready: true, visual_pipeline: "slide", slide_style: slideStyle } as never,
     } as never)
     .eq("id", scene.id);
 

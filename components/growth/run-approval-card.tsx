@@ -2,15 +2,13 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { Loader2, Play, Settings2, X } from "lucide-react";
+import { Loader2, Play, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
-import {
-  continueGrowthRunStageAction,
-  rejectGrowthRunPhaseAction,
-} from "@/app/(app)/unified-run/actions";
+import { continueGrowthRunStageAction } from "@/app/(app)/projects/[id]/growth/actions";
+import { CancelGrowthRunButton } from "@/components/growth/cancel-growth-run-button";
 
 export function RunApprovalCard({
   projectId,
@@ -42,18 +40,6 @@ export function RunApprovalCard({
     });
   }
 
-  function onCancel() {
-    startTransition(async () => {
-      const result = await rejectGrowthRunPhaseAction({ projectId, growthRunId });
-      if (!result.ok) {
-        toast.error(result.error ?? "Failed to cancel.");
-        return;
-      }
-      toast.info("Run cancelled.");
-      window.location.reload();
-    });
-  }
-
   return (
     <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
       <div>
@@ -77,10 +63,11 @@ export function RunApprovalCard({
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           Continue run
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={pending}>
-          <X className="h-4 w-4" />
-          Cancel run
-        </Button>
+        <CancelGrowthRunButton
+          projectId={projectId}
+          growthRunId={growthRunId}
+          runStatus="awaiting_user_input"
+        />
       </div>
     </div>
   );

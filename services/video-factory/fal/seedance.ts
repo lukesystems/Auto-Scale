@@ -85,14 +85,34 @@ export async function generateSeedanceClip(
   }
 
   const deadline = Date.now() + 180_000;
+  let lastStatus = "unknown";
+  let pollCount = 0;
   while (Date.now() < deadline) {
     await sleep(3_000);
+    pollCount++;
     const statusRes = await fetch(statusUrl, {
       headers: { Authorization: `Key ${falKey}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (!statusRes.ok) continue;
     const status = (await statusRes.json()) as { status?: string };
+    lastStatus = status.status ?? "unknown";
+    // #region agent log
+    if (pollCount === 1 || pollCount % 10 === 0 || lastStatus === "FAILED" || lastStatus === "COMPLETED") {
+      fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6d5496" },
+        body: JSON.stringify({
+          sessionId: "6d5496",
+          hypothesisId: "H1",
+          location: "seedance.ts:poll",
+          message: "fal seedance poll",
+          data: { model, mode, lastStatus, pollCount, requestId: queued.request_id },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
+    // #endregion
     if (status.status === "FAILED") {
       throw new Error("fal Seedance generation failed");
     }
@@ -121,7 +141,21 @@ export async function generateSeedanceClip(
       resolution,
     };
   }
-  throw new Error("fal Seedance timed out");
+  // #region agent log
+  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6d5496" },
+    body: JSON.stringify({
+      sessionId: "6d5496",
+      hypothesisId: "H1",
+      location: "seedance.ts:timeout",
+      message: "fal seedance timed out",
+      data: { model, mode, lastStatus, pollCount, requestId: queued.request_id },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  throw new Error(`fal Seedance timed out (last status: ${lastStatus}, polls: ${pollCount})`);
 }
 
 export async function downloadRemoteVideo(url: string): Promise<Buffer> {

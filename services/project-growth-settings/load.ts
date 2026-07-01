@@ -5,7 +5,7 @@ import {
   ProjectGrowthSettingsSchema,
   type ProjectGrowthSettings,
 } from "./schema";
-import { ProductionFormatSchema, AudioModeSchema } from "@/services/video-factory/production-options";
+import { ProductionFormatSchema, AudioModeSchema, VideoOutputModeSchema } from "@/services/video-factory/production-options";
 
 const DEFAULTS: Omit<ProjectGrowthSettings, "project_id"> = {
   operation_mode: "manual",
@@ -24,8 +24,10 @@ const DEFAULTS: Omit<ProjectGrowthSettings, "project_id"> = {
   run_cooldown_hours: 24,
   max_active_runs: 1,
   onboarding_completed: false,
-  production_format: "slide",
-  audio_mode: "voiceover",
+  production_format: "pain_led",
+  video_output_mode: "hybrid_cinematic",
+  quality_tier: "cinematic",
+  audio_mode: "voiceover_bgm",
 };
 
 export async function loadProjectGrowthSettings(
@@ -66,10 +68,14 @@ export async function loadProjectGrowthSettings(
     max_active_runs: data.max_active_runs,
     onboarding_completed: data.onboarding_completed,
     production_format: ProductionFormatSchema.parse(
-      (data as { production_format?: string }).production_format ?? "slide"
+      (data as { production_format?: string }).production_format ?? "pain_led"
     ),
+    video_output_mode: VideoOutputModeSchema.parse(
+      (data as { video_output_mode?: string }).video_output_mode ?? "hybrid_cinematic"
+    ),
+    quality_tier: (data as { quality_tier?: string }).quality_tier ?? "cinematic",
     audio_mode: AudioModeSchema.parse(
-      (data as { audio_mode?: string }).audio_mode ?? "voiceover"
+      (data as { audio_mode?: string }).audio_mode ?? "voiceover_bgm"
     ),
   });
 }

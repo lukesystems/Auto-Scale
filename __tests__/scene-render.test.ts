@@ -16,7 +16,17 @@ const PROMPT_INPUT = {
 };
 
 describe("visual pipeline resolution", () => {
-  it("defaults to t2v for backward compatibility", () => {
+  it("defaults to slide for slide deck format", () => {
+    expect(
+      resolveVisualPipeline({
+        productionFormat: "slide",
+        falRenderMode: "cinematic",
+        falConfigured: true,
+      })
+    ).toBe("slide");
+  });
+
+  it("defaults to t2v for pain_led with cinematic fal", () => {
     expect(
       resolveVisualPipeline({
         productionFormat: "pain_led",

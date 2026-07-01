@@ -1,6 +1,60 @@
 import { z } from "zod";
 
 import type { ProductionMode } from "./production-modes";
+import {
+  coerceCreativeFormat,
+  coerceQualityTier,
+  coerceRenderStyle,
+  coerceVideoOutputMode,
+  DEFAULT_PRODUCTION_PRESET,
+  DEFAULT_PRODUCTION_QUALITY_OPTIONS,
+  deriveLegacyProductionFormat,
+  legacyProductionFormatToCreative,
+  maxFalScenesForTier,
+  maxAiVideoScenesForTier,
+  qualityTierToFalRenderMode,
+  resolveVideoOutputMode,
+  shouldUseAiBrollForScene,
+  coerceFallbackOnBadAiScene,
+  sceneRenderMethodToSlideStyle,
+  type CreativeFormat,
+  type QualityTier,
+  type RenderStyle,
+  type VideoOutputMode,
+} from "./scene-render-plan";
+export {
+  CREATIVE_FORMATS,
+  CreativeFormatSchema,
+  RENDER_STYLES,
+  RenderStyleSchema,
+  QUALITY_TIERS,
+  QualityTierSchema,
+  VIDEO_OUTPUT_MODES,
+  VideoOutputModeSchema,
+  VIDEO_OUTPUT_MODE_SPECS,
+  DEFAULT_PRODUCTION_PRESET,
+  DEFAULT_PRODUCTION_QUALITY_OPTIONS,
+  buildSceneRenderPlan,
+  shouldUseAiBrollForScene,
+  sceneRenderMethodToVisualMethod,
+  sceneRenderMethodToSlideStyle,
+  maxFalScenesForTier,
+  maxAiVideoScenesForTier,
+  resolveVideoOutputMode,
+  legacyProductionFormatToCreative,
+  deriveLegacyProductionFormat,
+  coerceCreativeFormat,
+  coerceRenderStyle,
+  coerceQualityTier,
+  coerceVideoOutputMode,
+  coerceFallbackOnBadAiScene,
+  type CreativeFormat,
+  type RenderStyle,
+  type QualityTier,
+  type VideoOutputMode,
+  type SceneRenderPlanEntry,
+  type VideoOutputModeSpec,
+} from "./scene-render-plan";
 
 
 
@@ -17,8 +71,6 @@ export const PRODUCTION_FORMATS = [
   "objection",
 
   "comparison",
-
-  "demo_short",
 
 ] as const;
 
@@ -172,11 +224,11 @@ export const PRODUCTION_FORMAT_SPECS: Record<ProductionFormat, ProductionFormatS
 
     format: "ai_broll_short",
 
-    label: "AI B-roll short",
+    label: "AI video (Fal)",
 
     description:
 
-      "Slide hook + Seedance T2V middle scenes + slide CTA. Requires FAL_KEY for cinematic b-roll.",
+      "Real AI-generated video clips (Fal image → video) + hook/CTA slides. No screen recording upload.",
 
     implemented: true,
 
@@ -236,31 +288,16 @@ export const PRODUCTION_FORMAT_SPECS: Record<ProductionFormat, ProductionFormatS
 
   },
 
-  demo_short: {
-
-    format: "demo_short",
-
-    label: "Demo short",
-
-    description:
-
-      "Hook + problem + screen demo + proof + CTA. Upload a product screen recording or use a placeholder slide.",
-
-    implemented: true,
-
-    requiresFal: false,
-
-    requiresUpload: true,
-
-    fallbackFormat: "pain_led",
-
-    defaultAudioModes: ["voiceover", "voiceover_bgm", "music_only"],
-
-    defaultBgmMood: "tech",
-
-  },
-
 };
+
+
+
+/** Legacy runs may still store demo_short — always map to AI video. */
+export function coerceProductionFormat(raw: string | null | undefined): ProductionFormat {
+  if (raw === "demo_short") return "ai_broll_short";
+  const parsed = ProductionFormatSchema.safeParse(raw);
+  return parsed.success ? parsed.data : "slide";
+}
 
 
 
@@ -340,10 +377,6 @@ export function resolveProductionModeFromFormat(format: ProductionFormat): Produ
 
       return "ai_broll_short";
 
-    case "demo_short":
-
-      return "demo_short";
-
     default:
 
       return "fast_slides";
@@ -355,14 +388,18 @@ export function resolveProductionModeFromFormat(format: ProductionFormat): Produ
 
 
 /** Whether middle scenes should prefer fal/ai_broll for this format. */
-/** Pass `falConfigured` from server (`isFalConfigured()`); client code must not call this without it. */
+/** @deprecated Use shouldUseAiBrollForScene with renderStyle + qualityTier. */
 export function preferAiBrollForFormat(
   format: ProductionFormat,
   falRenderMode: FalRenderMode = "cinematic",
   falConfigured = false
 ): boolean {
+  const legacy = legacyProductionFormatToCreative(format);
   if (falRenderMode === "fast" || !falConfigured) return false;
-  return format === "ai_broll_short" || format === "pain_led";
+  return (
+    shouldUseAiBrollForScene("problem", legacy.renderStyle, legacy.qualityTier, falConfigured) ||
+    shouldUseAiBrollForScene("mechanism", legacy.renderStyle, legacy.qualityTier, falConfigured)
+  );
 }
 
 
@@ -373,7 +410,7 @@ export function productionFormatToVideoType(
 
   format: ProductionFormat
 
-): "slide" | "pain_led" | "ai_broll" | "objection" | "comparison" | "demo" {
+): "slide" | "pain_led" | "ai_broll" | "objection" | "comparison" {
 
   switch (format) {
 
@@ -397,10 +434,6 @@ export function productionFormatToVideoType(
 
       return "comparison";
 
-    case "demo_short":
-
-      return "demo";
-
   }
 
 }
@@ -408,98 +441,127 @@ export function productionFormatToVideoType(
 
 
 export function resolveProductionOptions(input: {
-
   productionFormat?: ProductionFormat | null;
-
+  videoOutputMode?: VideoOutputMode | string | null;
+  creativeFormat?: CreativeFormat | string | null;
+  renderStyle?: RenderStyle | string | null;
+  qualityTier?: QualityTier | string | null;
   audioMode?: AudioMode | null;
-
   falRenderMode?: FalRenderMode | null;
-
   falModelTier?: FalModelTier | null;
-
   visualPipeline?: VisualPipeline | null;
-
+  maxFalScenes?: number | null;
   /** When true and no explicit fal_render_mode, default to cinematic. */
   falConfigured?: boolean;
-
   projectDefaults?: {
-
     production_format?: ProductionFormat | null;
-
+    video_output_mode?: VideoOutputMode | string | null;
+    creative_format?: CreativeFormat | string | null;
+    render_style?: RenderStyle | string | null;
+    quality_tier?: QualityTier | string | null;
     audio_mode?: AudioMode | null;
-
     fal_render_mode?: FalRenderMode | null;
-
     fal_model_tier?: FalModelTier | null;
-
     visual_pipeline?: VisualPipeline | null;
-
+    max_fal_scenes?: number | null;
   };
-
 }): {
-
   productionFormat: ProductionFormat;
-
+  videoOutputMode: VideoOutputMode;
+  creativeFormat: CreativeFormat;
+  renderStyle: RenderStyle;
+  qualityTier: QualityTier;
   audioMode: AudioMode;
-
   falRenderMode: FalRenderMode;
-
   falModelTier: FalModelTier;
-
   visualPipeline: VisualPipeline;
-
+  maxFalScenes: number;
 } {
+  const falConfigured = input.falConfigured ?? false;
 
-  const productionFormat =
+  const videoOutputModeRaw =
+    input.videoOutputMode ?? input.projectDefaults?.video_output_mode ?? null;
 
-    input.productionFormat ??
+  let videoOutputMode = coerceVideoOutputMode(
+    typeof videoOutputModeRaw === "string" ? videoOutputModeRaw : null
+  );
+  let creativeFormat = coerceCreativeFormat(
+    input.creativeFormat ?? input.projectDefaults?.creative_format ?? null
+  );
+  let renderStyle = coerceRenderStyle(
+    input.renderStyle ?? input.projectDefaults?.render_style ?? null
+  );
+  let qualityTier = coerceQualityTier(
+    input.qualityTier ?? input.projectDefaults?.quality_tier ?? null
+  );
 
-    input.projectDefaults?.production_format ??
+  if (videoOutputModeRaw) {
+    const preset = resolveVideoOutputMode(videoOutputModeRaw);
+    creativeFormat = preset.creativeFormat;
+    renderStyle = preset.renderStyle;
+    qualityTier = preset.qualityTier;
+    videoOutputMode = preset.mode;
+  } else if (
+    input.productionFormat ||
+    input.projectDefaults?.production_format
+  ) {
+    const legacy = legacyProductionFormatToCreative(
+      coerceProductionFormat(
+        input.productionFormat ?? input.projectDefaults?.production_format ?? "pain_led"
+      )
+    );
+    creativeFormat = legacy.creativeFormat;
+    renderStyle = legacy.renderStyle;
+    qualityTier = legacy.qualityTier;
+    videoOutputMode = legacy.videoOutputMode;
+  } else if (!input.creativeFormat && !input.renderStyle && !input.qualityTier) {
+    const preset = DEFAULT_PRODUCTION_PRESET;
+    creativeFormat = preset.creativeFormat;
+    renderStyle = preset.renderStyle;
+    qualityTier = preset.qualityTier;
+    videoOutputMode = preset.mode;
+  }
 
-    "slide";
+  const productionFormat = deriveLegacyProductionFormat({ creativeFormat, renderStyle });
 
   const audioMode =
-
-    input.audioMode ?? input.projectDefaults?.audio_mode ?? "voiceover";
+    input.audioMode ?? input.projectDefaults?.audio_mode ?? "voiceover_bgm";
 
   const falRenderMode =
-
     input.falRenderMode ??
-
     input.projectDefaults?.fal_render_mode ??
-
-    (input.falConfigured ? "cinematic" : "fast");
+    (falConfigured ? qualityTierToFalRenderMode(qualityTier) : "fast");
 
   const falModelTier =
+    input.falModelTier ?? input.projectDefaults?.fal_model_tier ?? "auto";
 
-    input.falModelTier ??
-
-    input.projectDefaults?.fal_model_tier ??
-
-    "auto";
+  const maxFalScenes =
+    input.maxFalScenes ??
+    input.projectDefaults?.max_fal_scenes ??
+    maxFalScenesForTier(qualityTier, renderStyle);
 
   const visualPipeline = resolveVisualPipeline({
     visualPipeline:
       input.visualPipeline ?? input.projectDefaults?.visual_pipeline ?? null,
-    productionFormat: ProductionFormatSchema.parse(productionFormat),
+    productionFormat,
+    renderStyle,
+    qualityTier,
     falRenderMode: FalRenderModeSchema.parse(falRenderMode),
-    falConfigured: input.falConfigured ?? false,
+    falConfigured,
   });
 
   return {
-
     productionFormat: ProductionFormatSchema.parse(productionFormat),
-
+    videoOutputMode,
+    creativeFormat,
+    renderStyle,
+    qualityTier,
     audioMode: AudioModeSchema.parse(audioMode),
-
     falRenderMode: FalRenderModeSchema.parse(falRenderMode),
-
     falModelTier: FalModelTierSchema.parse(falModelTier),
-
     visualPipeline: VisualPipelineSchema.parse(visualPipeline),
-
+    maxFalScenes,
   };
-
 }
 
 
@@ -508,17 +570,34 @@ export function resolveProductionOptions(input: {
 export function resolveVisualPipeline(input: {
   visualPipeline?: VisualPipeline | null;
   productionFormat: ProductionFormat;
+  renderStyle?: RenderStyle;
+  qualityTier?: QualityTier;
   falRenderMode: FalRenderMode;
   falConfigured: boolean;
 }): VisualPipeline {
   if (input.visualPipeline) {
     return VisualPipelineSchema.parse(input.visualPipeline);
   }
+  const renderStyle =
+    input.renderStyle ?? legacyProductionFormatToCreative(input.productionFormat).renderStyle;
+  const qualityTier =
+    input.qualityTier ?? legacyProductionFormatToCreative(input.productionFormat).qualityTier;
+
   if (
-    input.productionFormat === "ai_broll_short" &&
-    input.falRenderMode === "cinematic" &&
+    renderStyle === "slides_only" ||
+    qualityTier === "draft" ||
+    !input.falConfigured ||
+    input.falRenderMode === "fast"
+  ) {
+    return "slide";
+  }
+  if (
+    (renderStyle === "hybrid_quality" || renderStyle === "full_ai_video") &&
     input.falConfigured
   ) {
+    return "image_to_video";
+  }
+  if (input.productionFormat === "ai_broll_short" && input.falConfigured) {
     return "image_to_video";
   }
   return "t2v";

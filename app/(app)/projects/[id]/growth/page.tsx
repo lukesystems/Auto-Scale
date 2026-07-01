@@ -8,7 +8,7 @@ import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
 import { StageOnlyRunButtons } from "@/components/growth/stage-only-run-buttons";
 import { ProviderReadinessChip } from "@/components/growth/provider-readiness-chip";
-import { ProductionFormatPicker, VisualPipelinePicker } from "@/components/growth/production-format-picker";
+import { VideoOutputModePicker, VisualPipelinePicker } from "@/components/growth/production-format-picker";
 import { AudioModePicker } from "@/components/growth/audio-mode-picker";
 import { ProductionProviderBar } from "@/components/growth/production-provider-bar";
 import { getProductionProviderStatus } from "@/lib/production-provider-status";
@@ -186,7 +186,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
 
           <div className="sm:col-span-2 space-y-4">
             <ProductionProviderBar status={productionProviderStatus} />
-            <ProductionFormatPicker defaultValue={formDefaults.productionFormat} />
+            <VideoOutputModePicker defaultValue={formDefaults.videoOutputMode} />
             <VisualPipelinePicker
               defaultValue={formDefaults.visualPipeline}
               falConfigured={productionProviderStatus.fal.ok}

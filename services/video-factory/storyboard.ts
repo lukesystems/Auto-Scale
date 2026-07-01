@@ -18,7 +18,8 @@ import {
 } from "./scene-contract";
 import { isFalConfigured } from "@/services/media/fal-config";
 import type { ProductionFormat } from "./production-options";
-import { preferAiBrollForFormat } from "./production-options";
+import { shouldUseAiBrollForScene } from "./production-options";
+import type { CreativeFormat, QualityTier, RenderStyle } from "./scene-render-plan";
 
 function storyboardFromScenePlan(
   plan: ScenePlan,
@@ -46,7 +47,7 @@ function storyboardFromScenePlan(
  * Build a storyboard from a script. Storyboard is mandatory before video
  * generation per the direction: "do not just prompt Seedance randomly."
  * Each scene declares an asset_method so the factory knows whether to
- * render a slide, call fal/Seedance, or expect a screen-demo upload.
+ * render a slide, or call fal/Seedance for AI video.
  */
 export async function generateStoryboardForConcept(opts: {
   conceptId: string;
@@ -55,6 +56,9 @@ export async function generateStoryboardForConcept(opts: {
   videoType: string;
   productionMode?: ProductionMode | null;
   productionFormat?: ProductionFormat | null;
+  creativeFormat?: CreativeFormat | null;
+  renderStyle?: RenderStyle | null;
+  qualityTier?: QualityTier | null;
   falRenderMode?: "cinematic" | "fast" | null;
   hook?: string;
   cta?: string;
@@ -67,16 +71,22 @@ export async function generateStoryboardForConcept(opts: {
   const productionMode =
     opts.productionMode ?? resolveProductionMode(opts.videoType as never);
   const productionFormat = opts.productionFormat ?? undefined;
+  const creativeFormat = opts.creativeFormat ?? undefined;
+  const renderStyle = opts.renderStyle ?? undefined;
+  const qualityTier = opts.qualityTier ?? undefined;
   const falConfigured = isFalConfigured();
   const preferAiBroll =
     opts.preferFalForBroll ||
-    (productionFormat
-      ? preferAiBrollForFormat(productionFormat, opts.falRenderMode ?? "fast", falConfigured)
+    (renderStyle
+      ? shouldUseAiBrollForScene("problem", renderStyle, qualityTier ?? "standard", falConfigured)
       : false);
 
   const deterministicPlan = buildScenePlan({
     productionMode,
     productionFormat,
+    creativeFormat,
+    renderStyle,
+    qualityTier,
     falRenderMode: opts.falRenderMode ?? "fast",
     script: opts.script,
     hook: opts.hook ?? opts.script.hook_line,
@@ -89,6 +99,9 @@ export async function generateStoryboardForConcept(opts: {
   const prompt = [
     "You are AutoScale's Storyboard Agent.",
     `Concept type: ${opts.videoType}, target length: ${opts.targetLengthSeconds}s, platform: ${opts.platform}, aspect: ${aspect}.`,
+    productionFormat ? `Production format (legacy): ${productionFormat}.` : "",
+    renderStyle ? `Render style: ${renderStyle}.` : "",
+    creativeFormat ? `Creative format: ${creativeFormat}.` : "",
     "",
     "Script:",
     JSON.stringify(opts.script),
@@ -97,8 +110,7 @@ export async function generateStoryboardForConcept(opts: {
     "duration_seconds, visual_intent, on_screen_text (single STRING per scene, not an array), voiceover_line, asset_method, asset_prompt.",
     "",
     "Rules for asset_method:",
-    "- For 'slide' / 'pain_led' / 'founder_pov' / 'objection' / 'comparison' / 'demo' videos:",
-    "    use 'slide' for text-on-color scenes and 'screen_demo' for product UI moments.",
+    "- Never use 'screen_demo'. Use 'slide' or 'fal_clip' for all scenes.",
     opts.preferFalForBroll
       ? "- For 'ai_broll' / 'trend_remix' videos: prefer 'fal_clip' for visual scenes."
       : "- Avoid 'fal_clip' unless the scene specifically requires cinematic AI footage.",

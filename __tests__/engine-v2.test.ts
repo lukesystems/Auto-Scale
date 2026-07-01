@@ -26,7 +26,7 @@ describe("production mode schema", () => {
     expect(ProductionModeSchema.parse("fast_slides")).toBe("fast_slides");
     expect(PRODUCTION_MODE_SPECS.fast_slides.implemented).toBe(true);
     expect(PRODUCTION_MODE_SPECS.ai_broll_short.implemented).toBe(true);
-    expect(PRODUCTION_MODE_SPECS.demo_short.implemented).toBe(true);
+    expect(PRODUCTION_MODE_SPECS.demo_short.implemented).toBe(false);
   });
 });
 
@@ -46,15 +46,18 @@ describe("scene plan generation", () => {
     expect(plan.scenes.some((s) => s.purpose === "cta")).toBe(true);
   });
 
-  it("scaffolds demo_short with screen_recording scene", () => {
+  it("maps legacy demo_short production mode to ai b-roll scenes", () => {
     const plan = buildScenePlan({
       productionMode: "demo_short",
       script: SCRIPT,
       hook: SCRIPT.hook_line,
       cta: SCRIPT.cta_line,
       targetLengthSeconds: 28,
+      preferAiBroll: true,
+      falConfigured: true,
     });
-    expect(plan.scenes.some((s) => s.visual_method === "screen_recording")).toBe(true);
+    expect(plan.scenes.some((s) => s.visual_method === "ai_broll")).toBe(true);
+    expect(plan.scenes.some((s) => s.visual_method === "screen_recording")).toBe(false);
   });
 });
 

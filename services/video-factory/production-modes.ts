@@ -18,7 +18,6 @@ export const ProductionModeSchema = z.enum(PRODUCTION_MODES);
 export const IMPLEMENTED_MODES: ProductionMode[] = [
   "fast_slides",
   "ai_broll_short",
-  "demo_short",
 ];
 
 export const SCAFFOLD_MODES: ProductionMode[] = [];
@@ -29,7 +28,7 @@ export function resolveProductionMode(videoType: VideoType): ProductionMode {
   const map: Record<VideoType, ProductionMode> = {
     slide: "fast_slides",
     pain_led: "fast_slides",
-    demo: "demo_short",
+    demo: "fast_slides",
     ai_broll: "ai_broll_short",
     trend_remix: "reference_remix",
     founder_pov: "founder_pov",
@@ -40,10 +39,21 @@ export function resolveProductionMode(videoType: VideoType): ProductionMode {
   return map[videoType] ?? "fast_slides";
 }
 
+/** @deprecated Screen-demo removed — legacy DB rows map to ai_broll_short at runtime. */
+export function normalizeProductionMode(
+  mode: ProductionMode | string | null | undefined
+): ProductionMode {
+  if (mode === "demo_short") return "ai_broll_short";
+  if (mode && PRODUCTION_MODES.includes(mode as ProductionMode)) {
+    return mode as ProductionMode;
+  }
+  return "fast_slides";
+}
+
 export function productionModeToVideoType(mode: ProductionMode): VideoType {
   const map: Record<ProductionMode, VideoType> = {
     fast_slides: "slide",
-    demo_short: "demo",
+    demo_short: "ai_broll",
     ai_broll_short: "ai_broll",
     founder_pov: "founder_pov",
     reference_remix: "trend_remix",
@@ -84,17 +94,17 @@ export const PRODUCTION_MODE_SPECS: Record<ProductionMode, ProductionModeSpec> =
   },
   demo_short: {
     mode: "demo_short",
-    label: "Demo Short",
-    description: "Hook + problem + screen demo + proof + CTA. Screen recording or placeholder.",
-    implemented: true,
-    fallbackMode: "fast_slides",
+    label: "Demo Short (removed)",
+    description: "Deprecated — use AI B-Roll Short for generated video.",
+    implemented: false,
+    fallbackMode: "ai_broll_short",
     requiresFal: false,
     requiresFfmpeg: true,
-    requiresUpload: true,
+    requiresUpload: false,
     costCreditsEstimate: 2,
     targetSceneCount: [4, 6],
     defaultDurationSeconds: 28,
-    primaryVisualMethod: "screen_recording",
+    primaryVisualMethod: "ai_broll",
   },
   ai_broll_short: {
     mode: "ai_broll_short",

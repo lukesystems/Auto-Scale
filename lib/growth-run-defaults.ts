@@ -5,8 +5,12 @@ import {
   ProductionFormatSchema,
   AudioModeSchema,
   VisualPipelineSchema,
+  VideoOutputModeSchema,
+  coerceProductionFormat,
+  coerceVideoOutputMode,
   type ProductionFormat,
   type AudioMode,
+  type VideoOutputMode,
   type VisualPipeline,
 } from "@/services/video-factory/production-options";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
@@ -17,6 +21,7 @@ export interface GrowthRunFormDefaults {
   postingAggressiveness: "conservative" | "balanced" | "aggressive";
   durationDays: number;
   formatHypothesisCount: number;
+  videoOutputMode: VideoOutputMode;
   productionFormat: ProductionFormat;
   audioMode: AudioMode;
   visualPipeline: VisualPipeline | "auto";
@@ -28,8 +33,9 @@ const FALLBACK: GrowthRunFormDefaults = {
   postingAggressiveness: "conservative",
   durationDays: 1,
   formatHypothesisCount: 1,
-  productionFormat: "slide",
-  audioMode: "voiceover",
+  videoOutputMode: "hybrid_cinematic",
+  productionFormat: "pain_led",
+  audioMode: "voiceover_bgm",
   visualPipeline: "auto",
 };
 
@@ -47,8 +53,10 @@ export async function loadGrowthRunFormDefaults(
 
   if (!lastRun) {
     const settings = await loadProjectGrowthSettings(projectId);
+    const videoOutputMode = coerceVideoOutputMode(settings.video_output_mode);
     return {
       ...FALLBACK,
+      videoOutputMode,
       productionFormat: settings.production_format,
       audioMode: settings.audio_mode,
       visualPipeline: "auto",
@@ -86,7 +94,12 @@ export async function loadGrowthRunFormDefaults(
     durationDays:
       typeof options.duration_days === "number" ? options.duration_days : FALLBACK.durationDays,
     formatHypothesisCount,
-    productionFormat: ProductionFormatSchema.parse(
+    videoOutputMode: coerceVideoOutputMode(
+      typeof options.video_output_mode === "string"
+        ? options.video_output_mode
+        : FALLBACK.videoOutputMode
+    ),
+    productionFormat: coerceProductionFormat(
       typeof options.production_format === "string" ? options.production_format : FALLBACK.productionFormat
     ),
     audioMode: AudioModeSchema.parse(

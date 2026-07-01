@@ -1,5 +1,8 @@
 import type { FalRenderMode } from "../production-options";
 import type { FalModelTier } from "../production-options";
+import type { ProductionFormat } from "../production-options";
+import type { QualityTier, RenderStyle, VideoOutputMode } from "../scene-render-plan";
+import { PRODUCTION_FORMAT_SPECS } from "../production-options";
 import type { SceneContract } from "../scene-contract";
 import {
   getDefaultFalImageModel,
@@ -140,11 +143,29 @@ export function selectFalImageModel(input: SelectFalImageModelInput): SelectedFa
   };
 }
 
-/** UI helper: describe the dominant tier for a run at the storyboards gate. */
+/** UI helper: describe dominant tier for a run at the storyboards gate. */
 export function describeFalTierForRun(input: {
   falRenderMode: FalRenderMode;
   falModelTier?: FalModelTier;
+  productionFormat?: ProductionFormat;
+  renderStyle?: RenderStyle;
+  qualityTier?: QualityTier;
+  videoOutputMode?: VideoOutputMode;
 }): string {
+  if (
+    input.videoOutputMode === "kinetic_text_ad" ||
+    input.videoOutputMode === "proof_case_study"
+  ) {
+    return "Slides only (no Fal b-roll)";
+  }
+  if (input.renderStyle === "slides_only" || input.qualityTier === "draft") {
+    return "Slides only (no Fal b-roll)";
+  }
+  if (input.productionFormat && !PRODUCTION_FORMAT_SPECS[input.productionFormat].requiresFal) {
+    if (input.renderStyle !== "hybrid_quality" && input.renderStyle !== "full_ai_video") {
+      return "Slides only (no Fal b-roll)";
+    }
+  }
   if (input.falRenderMode === "fast" && (input.falModelTier ?? "auto") === "auto") {
     return "Fast — slides only (no fal b-roll)";
   }

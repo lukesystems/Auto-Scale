@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { executeGrowthRunAction } from "@/app/(app)/projects/[id]/growth/actions";
+import { CancelGrowthRunButton } from "@/components/growth/cancel-growth-run-button";
 
 export function RunPageAutoExecutor({
   projectId,
@@ -39,9 +40,18 @@ export function RunPageAutoExecutor({
   if (!autoExecute || initialStatus !== "pending") return null;
 
   return (
-    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center gap-3 text-sm">
-      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-      <span>Starting AutoScale run — progress updates live below.</span>
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
+      <div className="flex items-center gap-3 min-w-0">
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+        <span>Starting AutoScale run — progress updates live below.</span>
+      </div>
+      <CancelGrowthRunButton
+        projectId={projectId}
+        growthRunId={growthRunId}
+        runStatus={initialStatus}
+        variant="outline"
+        className="shrink-0"
+      />
     </div>
   );
 }

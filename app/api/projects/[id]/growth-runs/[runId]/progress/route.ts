@@ -4,6 +4,12 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { growthPhaseMessage, GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
 import { getNextStageCta, getStageByBoundaryPhase } from "@/lib/growth-run/stages";
+import { syncStage3RunPhase } from "@/services/growth-run/sync-stage3";
+import {
+  kickRenderWorker,
+  kickRenderWorkerInProcess,
+  runRenderWorkerUntilIdle,
+} from "@/services/video-factory/render-worker";
 
 export async function GET(
   _req: NextRequest,
@@ -41,6 +47,40 @@ export async function GET(
 
   if (!run) {
     return NextResponse.json({ error: "Growth run not found." }, { status: 404 });
+  }
+
+  if (run.status === "running" && ["assets", "videos", "captions"].includes(run.phase ?? "")) {
+    const { count: pendingJobs } = await supabase
+      .from("video_production_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("growth_run_id", run.id)
+      .eq("status", "queued")
+      .eq("current_stage", "awaiting_worker");
+
+    try {
+      if ((pendingJobs ?? 0) > 0) {
+        if (process.env.AUTOSCALE_CRON_SECRET || process.env.CRON_SECRET) {
+          kickRenderWorker(run.id);
+        } else {
+          kickRenderWorkerInProcess(run.id);
+        }
+      } else {
+        void runRenderWorkerUntilIdle({ growthRunId: run.id, maxBatches: 1 }).catch(() => undefined);
+      }
+    } catch {
+      // Worker may be unavailable without service role in local dev.
+    }
+
+    await syncStage3RunPhase(supabase, run.id, user.id);
+    const { data: refreshed } = await supabase
+      .from("growth_runs")
+      .select("id, status, phase, phase_status, error, started_at, completed_at, paused_at_phase, current_stage")
+      .eq("id", params.runId)
+      .eq("project_id", params.id)
+      .maybeSingle();
+    if (refreshed) {
+      Object.assign(run, refreshed);
+    }
   }
 
   const phaseStatus = (run.phase_status ?? {}) as Record<string, unknown>;

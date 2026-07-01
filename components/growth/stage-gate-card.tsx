@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { Loader2, Play, Settings2, X } from "lucide-react";
+import { Loader2, Play, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { GROWTH_RUN_PHASE_LABELS } from "@/lib/growth-run/phase-labels";
@@ -16,13 +16,14 @@ import {
 import { getNextGrowthRunPhase } from "@/lib/growth-run/next-phase";
 import {
   continueGrowthRunStageAction,
-  rejectGrowthRunStageAction,
   finalizeStageOnlyRunAction,
 } from "@/app/(app)/projects/[id]/growth/actions";
-import { ProductionFormatPicker, FalRenderModePicker, VisualPipelinePicker } from "@/components/growth/production-format-picker";
+import { CancelGrowthRunButton } from "@/components/growth/cancel-growth-run-button";
+import { VideoOutputModePicker, AdvancedProductionSettings } from "@/components/growth/production-format-picker";
 import { AudioModePicker } from "@/components/growth/audio-mode-picker";
 import { ProductionProviderBar, type ProductionProviderStatus } from "@/components/growth/production-provider-bar";
-import type { AudioMode, ProductionFormat, VisualPipeline } from "@/services/video-factory/production-options";
+import { Stage3RerunButton } from "@/components/growth/stage3-rerun-button";
+import type { AudioMode, QualityTier, VideoOutputMode, VisualPipeline } from "@/services/video-factory/production-options";
 
 export interface StageGateSummary {
   briefName?: string | null;
@@ -48,11 +49,12 @@ export function StageGateCard({
   executionMode,
   targetStage,
   summary,
-  productionFormat = "slide",
-  audioMode = "voiceover",
-  falRenderMode = "fast",
-  visualPipeline = "auto",
+  videoOutputMode = "kinetic_text_ad",
+  audioMode = "voiceover_bgm",
+  qualityTier = "standard",
+  visualPipeline = "slide",
   providerStatus,
+  canRerunStage3 = false,
 }: {
   projectId: string;
   growthRunId: string;
@@ -61,11 +63,12 @@ export function StageGateCard({
   executionMode?: "sequential_first" | "stage_only";
   targetStage?: number | null;
   summary: StageGateSummary;
-  productionFormat?: ProductionFormat;
+  videoOutputMode?: VideoOutputMode;
   audioMode?: AudioMode;
-  falRenderMode?: "cinematic" | "fast";
+  qualityTier?: QualityTier;
   visualPipeline?: VisualPipeline | "auto";
   providerStatus: ProductionProviderStatus;
+  canRerunStage3?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const isStageOnly = executionMode === "stage_only";
@@ -106,15 +109,15 @@ export function StageGateCard({
         return;
       }
 
-      const productionFormatValue = form
-        ? (new FormData(form).get("productionFormat") as ProductionFormat | null)
+      const videoOutputModeValue = form
+        ? (new FormData(form).get("videoOutputMode") as VideoOutputMode | null)
         : null;
       const audioModeValue = form
         ? (new FormData(form).get("audioMode") as AudioMode | null)
         : null;
 
-      const falRenderModeValue = form
-        ? (new FormData(form).get("falRenderMode") as "cinematic" | "fast" | null)
+      const qualityTierValue = form
+        ? (new FormData(form).get("qualityTier") as QualityTier | null)
         : null;
 
       const falModelTierValue = form
@@ -133,9 +136,9 @@ export function StageGateCard({
       const result = await continueGrowthRunStageAction({
         projectId,
         growthRunId,
-        ...(productionFormatValue ? { productionFormat: productionFormatValue } : {}),
+        ...(videoOutputModeValue ? { videoOutputMode: videoOutputModeValue } : {}),
         ...(audioModeValue ? { audioMode: audioModeValue } : {}),
-        ...(falRenderModeValue ? { falRenderMode: falRenderModeValue } : {}),
+        ...(qualityTierValue ? { qualityTier: qualityTierValue } : {}),
         ...(falModelTierValue ? { falModelTier: falModelTierValue } : {}),
         ...(visualPipelineValue ? { visualPipeline: visualPipelineValue } : {}),
       });
@@ -150,18 +153,6 @@ export function StageGateCard({
       } else {
         toast.success("Continuing AutoScale run…");
       }
-      window.location.reload();
-    });
-  }
-
-  function onCancel() {
-    startTransition(async () => {
-      const result = await rejectGrowthRunStageAction({ projectId, growthRunId });
-      if (!result.ok) {
-        toast.error(result.error ?? "Failed to cancel.");
-        return;
-      }
-      toast.info("Run cancelled.");
       window.location.reload();
     });
   }
@@ -220,13 +211,13 @@ export function StageGateCard({
           }}
         >
           <ProductionProviderBar status={providerStatus} />
-          <ProductionFormatPicker defaultValue={productionFormat} />
-          <FalRenderModePicker defaultValue={falRenderMode} />
-          <VisualPipelinePicker
-            defaultValue={visualPipeline}
+          <VideoOutputModePicker defaultValue={videoOutputMode} />
+          <AudioModePicker defaultValue={audioMode} />
+          <AdvancedProductionSettings
+            defaultQualityTier={qualityTier}
+            defaultVisualPipeline={visualPipeline}
             falConfigured={providerStatus.fal.ok}
           />
-          <AudioModePicker defaultValue={audioMode} />
         </form>
       ) : null}
 
@@ -246,10 +237,14 @@ export function StageGateCard({
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           {ctaLabel}
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={pending}>
-          <X className="h-4 w-4" />
-          Cancel run
-        </Button>
+        <CancelGrowthRunButton
+          projectId={projectId}
+          growthRunId={growthRunId}
+          runStatus="awaiting_user_input"
+        />
+        {canRerunStage3 && stageId === 3 ? (
+          <Stage3RerunButton projectId={projectId} growthRunId={growthRunId} />
+        ) : null}
       </div>
     </div>
   );
@@ -317,7 +312,7 @@ function StageSummary({
           value={`${summary.approvedVideoCount ?? 0} / ${summary.videoCount ?? 0}`}
         />
         <p className="sm:col-span-2 text-muted-foreground">
-          Approve each video in the production workspace, then continue to scheduling.
+          Approve each video in the Production Command Center, then continue to scheduling.
         </p>
       </div>
     );

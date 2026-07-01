@@ -9,9 +9,8 @@ import {
 } from "../actions";
 import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
 import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
-import type { ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
 import { ProductionCommandCenter } from "@/components/growth/production-command-center";
-import { Stage3GateCard } from "@/components/growth/stage3-gate-card";
+import { loadProductionReview } from "@/lib/growth-run/load-production-review";
 import {
   mapScheduleItemStatusToState,
   ScheduleStatusBadge,
@@ -23,21 +22,17 @@ import { loadProjectGrowthSettings } from "@/services/project-growth-settings/lo
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
-import { getDefaultVoiceIdHint } from "@/services/voiceover/provider";
 import { RunApprovalCard } from "@/components/growth/run-approval-card";
 import { StageGateCard } from "@/components/growth/stage-gate-card";
 import { RunRetryCard } from "@/components/growth/run-retry-card";
 import { StageProgress, RunPageLiveUpdater } from "@/components/growth/run-phase-timeline";
 import { RunPageAutoExecutor } from "@/components/growth/run-page-auto-executor";
+import { RunningGrowthRunBanner, CancelGrowthRunButton } from "@/components/growth/cancel-growth-run-button";
 import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
 import { RunBriefPanel } from "@/components/growth/run-brief-panel";
-import { isSilentVoiceoverAsset } from "@/lib/schedule-guard";
 import { isStageBoundaryPause, resolveRunStage, getStageById } from "@/lib/growth-run/stages";
 import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
 import { getProductionProviderStatus } from "@/lib/production-provider-status";
-import {
-  resolveProductionOptions,
-} from "@/services/video-factory/production-options";
 
 interface RunPageProps {
   params: { id: string; runId: string };
@@ -81,19 +76,6 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       ? run.options
       : {};
   const storedRunOptions = GrowthRunOptionsSchema.partial().parse(runOptionsRaw);
-  const projectGrowthSettings = await loadProjectGrowthSettings(projectId);
-  const runProductionOptions = resolveProductionOptions({
-    productionFormat: storedRunOptions.production_format ?? null,
-    audioMode: storedRunOptions.audio_mode ?? null,
-    falRenderMode: storedRunOptions.fal_render_mode ?? null,
-    falModelTier: storedRunOptions.fal_model_tier ?? null,
-    visualPipeline: storedRunOptions.visual_pipeline ?? null,
-    falConfigured: getManagedProviderConfig().fal.configured,
-    projectDefaults: {
-      production_format: projectGrowthSettings.production_format,
-      audio_mode: projectGrowthSettings.audio_mode,
-    },
-  });
 
   const publishingProviderLabel = getPublishingProviderLabel() as PublishingProviderLabel;
 
@@ -113,6 +95,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     videoEvidenceRes,
     patternsRes,
     projectRes,
+    productionReview,
   ] =
     await Promise.all([
       supabase.from("video_trend_reports").select("*").eq("growth_run_id", runId).maybeSingle(),
@@ -120,7 +103,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       supabase.from("posting_loadouts").select("*").eq("growth_run_id", runId).maybeSingle(),
       supabase
         .from("video_concepts")
-        .select("id, video_type, production_mode, platform, target_length_seconds, hook, angle, status")
+        .select("id, video_type, production_mode, platform, target_length_seconds, hook, angle, status, demo_clip_url")
         .eq("growth_run_id", runId)
         .order("video_type"),
       supabase
@@ -158,6 +141,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
       supabase.from("video_evidence").select("id, video_url, platform, title, source_confidence").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
       supabase.from("video_patterns").select("id, pattern_type, label, confidence").eq("project_id", projectId).order("confidence", { ascending: false }).limit(12),
       supabase.from("projects").select("product_url, ai_model_slug").eq("id", projectId).maybeSingle(),
+      loadProductionReview(supabase, projectId, runId),
     ]);
 
   const conceptIds = (conceptsRes.data ?? []).map((c) => c.id);
@@ -170,44 +154,11 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
   const { data: storyboards } = conceptIds.length
     ? await supabase.from("storyboards").select("id, concept_id, total_duration_seconds").in("concept_id", conceptIds)
     : { data: [] as Array<{ id: string; concept_id: string; total_duration_seconds: number }> };
-  const storyboardIds = (storyboards ?? []).map((s) => s.id);
-  const videoIds = (videosRes.data ?? []).map((v) => v.id);
 
-  const [sceneRes, jobsRes, assetsRes, qualityRes, captionsRes, accountsRes] = await Promise.all([
-    storyboardIds.length
-      ? supabase
-          .from("storyboard_scenes")
-          .select("id, storyboard_id, scene_index, purpose, role, visual_method, overlay_text, voiceover_line, duration_seconds, status, error, metadata")
-          .in("storyboard_id", storyboardIds)
-          .order("scene_index")
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    videoIds.length
-      ? supabase
-          .from("video_production_jobs")
-          .select("id, video_id, concept_id, status, current_stage, error, platform_profile, production_mode")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    supabase
-      .from("generated_assets")
-      .select("id, concept_id, scene_id, kind, status, public_url, error, provider, metadata")
-      .eq("growth_run_id", runId),
-    videoIds.length
-      ? supabase
-          .from("video_quality_scores")
-          .select("video_id, overall_score, block_reason, hook_strength, cta_strength, duplicate_risk, claim_risk, pass_reasons")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    videoIds.length
-      ? supabase
-          .from("video_captions")
-          .select("id, video_id, platform, caption, connected_account_id")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    supabase
-      .from("connected_accounts")
-      .select("id, handle")
-      .eq("project_id", projectId),
-  ]);
+  const runProductionOptions = productionReview.productionContext.resolved;
+  const workspaceVideos = productionReview.workspaceVideos;
+  const workspaceSummary = productionReview.workspaceSummary;
+  const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
 
   const scheduleItemIds = (scheduleRes.data ?? []).map((s) => s.id);
   const { data: metricsSnapshotRows } = scheduleItemIds.length
@@ -230,147 +181,6 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
     });
   }
 
-  const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
-  const boardByConcept = new Map((storyboards ?? []).map((b) => [b.concept_id, b]));
-  const jobByVideo = new Map((jobsRes.data ?? []).map((j) => [j.video_id as string, j]));
-  const qualityByVideo = new Map((qualityRes.data ?? []).map((q) => [q.video_id as string, q]));
-  const assetsByConcept = new Map<string, typeof assetsRes.data>();
-  for (const a of assetsRes.data ?? []) {
-    const cid = a.concept_id as string;
-    if (!cid) continue;
-    const list = assetsByConcept.get(cid) ?? [];
-    list.push(a);
-    assetsByConcept.set(cid, list);
-  }
-  const captionsByVideo = new Map<string, Array<{ id: string; platform: string; caption: string; handle: string | null }>>();
-  const accountById = new Map((accountsRes.data ?? []).map((a) => [a.id, a.handle]));
-  for (const c of captionsRes.data ?? []) {
-    const vid = c.video_id as string;
-    const list = captionsByVideo.get(vid) ?? [];
-    list.push({
-      id: c.id as string,
-      platform: c.platform as string,
-      caption: c.caption as string,
-      handle: c.connected_account_id ? (accountById.get(c.connected_account_id as string) ?? null) : null,
-    });
-    captionsByVideo.set(vid, list);
-  }
-  const receiptByConcept = new Map((receiptsRes.data ?? []).map((r) => [r.concept_id, r]));
-  const expByFingerprint = new Map(
-    (experimentsRes.data ?? []).map((e) => [e.format_fingerprint_id, e])
-  );
-  const fpById = new Map((fingerprintsRes.data ?? []).map((f) => [f.id, f]));
-  const sceneRows = sceneRes.data ?? [];
-
-  const workspaceVideos: ProductionWorkspaceVideo[] = (videosRes.data ?? []).map((v) => {
-    const concept = v.concept_id ? conceptsById.get(v.concept_id) : null;
-    const board = v.concept_id ? boardByConcept.get(v.concept_id) : undefined;
-    const scenes = board
-      ? sceneRows
-          .filter((s) => s.storyboard_id === board.id)
-          .map((s) => ({
-            id: s.id as string,
-            sceneIndex: s.scene_index as number,
-            purpose: (s.purpose as string | null) ?? null,
-            role: s.role as string,
-            visualMethod: (s.visual_method as string | null) ?? null,
-            overlayText: (s.overlay_text as string | null) ?? null,
-            voiceoverLine: (s.voiceover_line as string | null) ?? null,
-            durationSeconds: s.duration_seconds as number,
-            status: s.status as string,
-            error: (s.error as string | null) ?? null,
-            metadata:
-              s.metadata && typeof s.metadata === "object" && !Array.isArray(s.metadata)
-                ? (s.metadata as Record<string, unknown>)
-                : null,
-          }))
-      : [];
-    const jobRow = jobByVideo.get(v.id);
-    const receipt = v.concept_id ? receiptByConcept.get(v.concept_id) : undefined;
-    const fp = receipt?.format_fingerprint_id ? fpById.get(receipt.format_fingerprint_id) : undefined;
-    const exp = receipt?.format_fingerprint_id ? expByFingerprint.get(receipt.format_fingerprint_id) : undefined;
-    const quality = qualityByVideo.get(v.id);
-    const finalAsset = (assetsRes.data ?? []).find((a) => a.id === v.final_asset_id);
-    const observed = Array.isArray(receipt?.observed_evidence) ? (receipt!.observed_evidence as string[]) : [];
-    const inference = Array.isArray(receipt?.strategic_inference) ? (receipt!.strategic_inference as string[]) : [];
-    const missing = Array.isArray(receipt?.missing_evidence) ? (receipt!.missing_evidence as string[]) : [];
-    const hasEvidence =
-      observed.length > 0 ||
-      (Array.isArray(receipt?.evidence_video_ids) && (receipt!.evidence_video_ids as string[]).length > 0);
-
-    return {
-      id: v.id,
-      conceptId: v.concept_id ?? "",
-      status: v.status,
-      approvalStatus: v.approval_status,
-      durationSeconds: v.duration_seconds,
-      finalAssetUrl: (finalAsset?.public_url as string | null) ?? null,
-      hook: concept?.hook ?? "",
-      platform: concept?.platform ?? "tiktok",
-      videoType: concept?.video_type ?? "slide",
-      productionMode: concept?.production_mode ?? null,
-      job: jobRow
-        ? {
-            id: jobRow.id as string,
-            status: jobRow.status as string,
-            currentStage: (jobRow.current_stage as string | null) ?? null,
-            error: (jobRow.error as string | null) ?? null,
-            platformProfile: jobRow.platform_profile as string,
-          }
-        : null,
-      experiment: exp
-        ? {
-            testedVariable: exp.tested_variable,
-            audiencePain: exp.audience_pain,
-            fixedBody: exp.fixed_body,
-            fixedCta: exp.fixed_cta,
-            fixedAudience: exp.fixed_audience,
-            status: exp.status,
-          }
-        : null,
-      fingerprint: fp ? { name: fp.name, status: fp.status } : null,
-      receipt: receipt
-        ? {
-            observedEvidence: observed,
-            strategicInference: inference,
-            expectedSignal: receipt.expected_signal ?? "",
-            confidence: receipt.confidence ?? 0,
-            missingEvidence: missing,
-            hasEvidence,
-            reasoning: receipt.reasoning ?? "",
-          }
-        : null,
-      quality: quality
-        ? {
-            overallScore: quality.overall_score as number,
-            blockReason: (quality.block_reason as string | null) ?? null,
-            hookStrength: quality.hook_strength as number,
-            ctaStrength: quality.cta_strength as number,
-            duplicateRisk: quality.duplicate_risk as number,
-            claimRisk: quality.claim_risk as number,
-            passReasons: Array.isArray(quality.pass_reasons) ? (quality.pass_reasons as string[]) : [],
-            passed:
-              (quality.overall_score as number) >= 0.55 &&
-              !(quality.block_reason as string | null),
-          }
-        : null,
-      scenes,
-      assets: (v.concept_id ? assetsByConcept.get(v.concept_id) ?? [] : []).map((a) => ({
-        id: a.id as string,
-        kind: a.kind as string,
-        status: a.status as string,
-        publicUrl: (a.public_url as string | null) ?? null,
-        sceneId: (a.scene_id as string | null) ?? null,
-        error: (a.error as string | null) ?? null,
-        provider: (a.provider as string | null) ?? null,
-        metadata:
-          a.metadata && typeof a.metadata === "object" && !Array.isArray(a.metadata)
-            ? (a.metadata as Record<string, unknown>)
-            : null,
-      })),
-      captions: captionsByVideo.get(v.id) ?? [],
-    };
-  });
 
   const videosWithConcept = (videosRes.data ?? []).map((v) => ({
     ...v,
@@ -412,18 +222,11 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
         excerpt: voiceover.slice(0, 160) || concept?.angle || "Script saved",
       };
     }),
-    videoCount: videosRes.data?.length ?? 0,
-    approvedVideoCount: videosWithConcept.filter(
-      (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
-    ).length,
+    videoCount: productionReview.videoCount,
+    approvedVideoCount: productionReview.approvedVideoCount,
   };
 
-  const voiceIdHint = getDefaultVoiceIdHint();
-  const hasSilentVoiceover = (assetsRes.data ?? []).some(
-    (a) =>
-      a.kind === "voiceover" &&
-      isSilentVoiceoverAsset({ metadata: (a.metadata as Record<string, unknown> | null) ?? null })
-  );
+  const hasSilentVoiceover = productionReview.hasSilentVoiceover;
 
   let schedulePreview = null;
   const showScheduleStage =
@@ -471,9 +274,16 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
           </Link>{" "}
           / {runId.slice(0, 8)}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Growth Run — {new Date(run.created_at).toLocaleString()}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Growth Run — {new Date(run.created_at).toLocaleString()}
+          </h1>
+          <CancelGrowthRunButton
+            projectId={projectId}
+            growthRunId={runId}
+            runStatus={run.status}
+          />
+        </div>
         <p className="text-sm text-muted-foreground">
           status: <strong>{run.status}</strong> · phase: <strong>{run.phase}</strong> · trigger:{" "}
           {run.trigger}
@@ -514,6 +324,13 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
         autoExecute={searchParams?.autoExecute === "1"}
       />
 
+      <RunningGrowthRunBanner
+        projectId={projectId}
+        growthRunId={runId}
+        runStatus={run.status}
+        phase={run.phase}
+      />
+
       <RunPageLiveUpdater
         projectId={projectId}
         growthRunId={runId}
@@ -530,13 +347,14 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             executionMode={run.execution_mode}
             targetStage={run.target_stage}
             summary={stageGateSummary}
-            productionFormat={runProductionOptions.productionFormat}
+            videoOutputMode={runProductionOptions.videoOutputMode}
             audioMode={runProductionOptions.audioMode}
-            falRenderMode={runProductionOptions.falRenderMode}
+            qualityTier={runProductionOptions.qualityTier}
             visualPipeline={
               storedRunOptions.visual_pipeline ?? "auto"
             }
             providerStatus={productionProviderStatus}
+            canRerunStage3={run.paused_at_phase === "approval"}
           />
         ) : (
           <RunApprovalCard
@@ -656,38 +474,23 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
-      {(runStage >= 3 || workspaceVideos.length > 0) ? (
-        <>
-          <Stage3GateCard
-            projectId={projectId}
-            growthRunId={runId}
-            videoCount={workspaceVideos.length}
-            approvedVideoCount={
-              workspaceVideos.filter(
-                (v) => v.approvalStatus === "approved" || v.approvalStatus === "auto_approved"
-              ).length
-            }
-            readyVideoCount={workspaceVideos.filter((v) => v.status === "ready").length}
-          />
-          <ProductionCommandCenter
-            projectId={projectId}
-            runId={runId}
-            videos={workspaceVideos}
-            productionFormat={runProductionOptions.productionFormat}
-            audioMode={runProductionOptions.audioMode}
-            falRenderMode={runProductionOptions.falRenderMode}
-            falModelTier={runProductionOptions.falModelTier}
-            visualPipeline={storedRunOptions.visual_pipeline ?? null}
-            resolvedVisualPipeline={runProductionOptions.visualPipeline}
-            providerStatus={productionProviderStatus}
-            approvedCount={
-              workspaceVideos.filter(
-                (v) => v.approvalStatus === "approved" || v.approvalStatus === "auto_approved"
-              ).length
-            }
-            totalCount={workspaceVideos.length}
-          />
-        </>
+      {runStage >= 3 || workspaceVideos.length > 0 ? (
+        <ProductionCommandCenter
+          projectId={projectId}
+          runId={runId}
+          videos={workspaceVideos}
+          videoOutputMode={runProductionOptions.videoOutputMode}
+          creativeFormat={runProductionOptions.creativeFormat}
+          qualityTier={runProductionOptions.qualityTier}
+          audioMode={runProductionOptions.audioMode}
+          visualPipeline={storedRunOptions.visual_pipeline ?? null}
+          resolvedVisualPipeline={runProductionOptions.visualPipeline}
+          providerStatus={productionProviderStatus}
+          approvedCount={workspaceSummary.approved}
+          readyCount={workspaceSummary.ready}
+          totalCount={workspaceSummary.total}
+          canRerunStage3={run.status !== "running"}
+        />
       ) : null}
 
       {showScheduleStage && run.status === "awaiting_approval" ? (

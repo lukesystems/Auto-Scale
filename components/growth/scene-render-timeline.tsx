@@ -1,4 +1,4 @@
-import type { ProductionWorkspaceVideo } from "./production-workspace";
+import type { ProductionWorkspaceVideo } from "./production-workspace-types";
 
 const ORDER = ["hook", "problem", "mechanism", "demo", "proof", "cta", "outro"];
 

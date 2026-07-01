@@ -10,7 +10,7 @@ import type { SceneContract } from "@/services/video-factory/scene-contract";
 import { setProductionJobStage } from "@/services/video-factory/production-job";
 import { isFfmpegAvailable } from "@/services/video-factory/ffmpeg";
 import { isFalConfigured } from "@/services/media/fal-config";
-import { resolveProductionOptions } from "@/services/video-factory/production-options";
+import { resolveProductionOptions, coerceFallbackOnBadAiScene } from "@/services/video-factory/production-options";
 import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
 import { renderSceneVisual } from "@/services/video-factory/scene-render";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -102,18 +102,27 @@ export async function regenerateSceneVisual(opts: {
       runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
         ? GrowthRunOptionsSchema.partial().parse(runRow.options)
         : {};
-    const { falRenderMode, falModelTier, visualPipeline, audioMode } = resolveProductionOptions({
-      productionFormat: runOpts.production_format ?? null,
-      audioMode: runOpts.audio_mode ?? null,
-      falRenderMode: runOpts.fal_render_mode ?? null,
-      falModelTier: runOpts.fal_model_tier ?? null,
-      visualPipeline: runOpts.visual_pipeline ?? null,
-      falConfigured: true,
-    });
+    const { falRenderMode, falModelTier, visualPipeline, audioMode, productionFormat, creativeFormat, renderStyle, qualityTier, maxFalScenes } =
+      resolveProductionOptions({
+        productionFormat: runOpts.production_format ?? null,
+        videoOutputMode: runOpts.video_output_mode ?? null,
+        creativeFormat: runOpts.creative_format ?? null,
+        renderStyle: runOpts.render_style ?? null,
+        qualityTier: runOpts.quality_tier ?? null,
+        audioMode: runOpts.audio_mode ?? null,
+        falRenderMode: runOpts.fal_render_mode ?? null,
+        falModelTier: runOpts.fal_model_tier ?? null,
+        visualPipeline: runOpts.visual_pipeline ?? null,
+        maxFalScenes: runOpts.max_ai_video_scenes ?? runOpts.max_fal_scenes ?? null,
+        falConfigured: true,
+      });
+    const fallbackOnBadAiScene = coerceFallbackOnBadAiScene(
+      runOpts.fallback_on_bad_ai_scene ?? null
+    );
 
     const { data: concept } = await supabase
       .from("video_concepts")
-      .select("hook, demo_clip_url")
+      .select("hook")
       .eq("id", opts.conceptId)
       .single();
     const { data: storyboard } = await supabase
@@ -157,14 +166,18 @@ export async function regenerateSceneVisual(opts: {
           productSummary: brief?.product_summary ?? "SaaS product",
           targetCustomer: brief?.target_customer ?? "founders",
           trendInference: "",
-          demoClipUrl: (concept?.demo_clip_url as string | null) ?? null,
+          productionFormat,
           productScreenshotUrl,
           audioMode,
           falRenderMode,
           falModelTier,
           visualPipeline,
           falCount: { value: 0 },
-          falScenesCap: 3,
+          falScenesCap: maxFalScenes,
+          creativeFormat,
+          renderStyle,
+          qualityTier,
+          fallbackOnBadAiScene,
         },
         scene,
         Math.max(0.5, Number(scene.duration_seconds))

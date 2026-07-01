@@ -138,7 +138,7 @@ export async function generateVideoConcepts(opts: {
     "Do not generate unrelated video ideas. This is a controlled experiment.",
     "Separate observed evidence from strategic inference. Never invent metrics or source IDs.",
     "Use only evidence_video_ids and source_pattern_ids provided below. Leave arrays empty when support is missing.",
-    "Prefer SaaS-native formats: demo, pain-led slide, founder POV, objection, or comparison.",
+    "Prefer SaaS-native formats: pain-led slide, ai b-roll, founder POV, objection, or comparison. Do not propose demo or screen-recording formats.",
     canMakeCarousels
       ? "Carousel production is enabled: you may include one carousel format hypothesis (video_type: carousel, platform: instagram). Carousels are planned as slide sequences — rendered via the slide video path, not a separate carousel exporter."
       : "Do not propose carousel formats — production_constraints.can_make_carousels is false.",
@@ -196,23 +196,23 @@ export async function generateVideoConcepts(opts: {
       evaluation_window_days: 3,
       formats: [
         {
-          format_name: "Pain to product demo",
-          video_type: "demo",
+          format_name: "Pain to product walkthrough",
+          video_type: "pain_led",
           platform: "youtube",
           target_length_seconds: 24,
           hook_mechanism: "Call out wasted production time.",
-          visual_grammar: "Problem screen, rapid product demo, finished HUD reveal, CTA end card.",
+          visual_grammar: "Problem slide, product screenshot beats, result reveal, CTA end card.",
           script_structure: ["pain", "manual workflow", "product shortcut", "result", "cta"],
           cta_pattern: "Invite qualified creators to join the waitlist.",
-          business_hypothesis: "A concrete workflow demonstration will drive qualified product clicks.",
+          business_hypothesis: "A concrete workflow walkthrough will drive qualified product clicks.",
           transferability_score: 0.7,
           distortion_risk: "low",
           confidence: 0.6,
           missing_evidence: ["No linked source video performance metrics."],
           evidence_video_ids: [],
           source_pattern_ids: [],
-          observed_evidence: ["The supplied trend report recommends product demonstrations."],
-          strategic_inference: ["Showing the workflow should make the product promise tangible."],
+          observed_evidence: ["The supplied trend report recommends product walkthrough formats."],
+          strategic_inference: ["Showing the workflow via screenshots should make the product promise tangible."],
           variants: [
             { variant_label: "A", hook: "Still building every Roblox HUD from scratch?", angle: "Time cost", promise: "Move from idea to a production-ready direction faster.", hypothesis: "A time-loss hook will attract creators with urgent production pain.", expected_signal: "Qualified product link clicks." },
             { variant_label: "B", hook: "Your Roblox UI should not take an entire sprint.", angle: "Sprint delay", promise: "Shorten the path from concept to Studio handoff.", hypothesis: "A delivery-speed hook will attract small teams.", expected_signal: "Qualified product link clicks." },

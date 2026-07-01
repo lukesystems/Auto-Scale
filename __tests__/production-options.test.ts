@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   resolveProductionModeFromFormat,
   resolveProductionOptions,
+  coerceProductionFormat,
   audioModeUsesMusic,
   audioModeUsesVoiceover,
   PRODUCTION_FORMAT_SPECS,
@@ -32,16 +33,27 @@ describe("production format resolution", () => {
     expect(resolveProductionModeFromFormat("ai_broll_short")).toBe("ai_broll_short");
     expect(resolveProductionModeFromFormat("objection")).toBe("fast_slides");
     expect(resolveProductionModeFromFormat("comparison")).toBe("fast_slides");
-    expect(resolveProductionModeFromFormat("demo_short")).toBe("demo_short");
   });
 
-  it("marks all six formats as implemented", () => {
+  it("coerces removed demo_short format to ai_broll_short", () => {
+    expect(coerceProductionFormat("demo_short")).toBe("ai_broll_short");
+  });
+
+  it("marks five selectable formats as implemented", () => {
     expect(PRODUCTION_FORMAT_SPECS.slide.implemented).toBe(true);
     expect(PRODUCTION_FORMAT_SPECS.pain_led.implemented).toBe(true);
     expect(PRODUCTION_FORMAT_SPECS.ai_broll_short.implemented).toBe(true);
     expect(PRODUCTION_FORMAT_SPECS.objection.implemented).toBe(true);
     expect(PRODUCTION_FORMAT_SPECS.comparison.implemented).toBe(true);
-    expect(PRODUCTION_FORMAT_SPECS.demo_short.implemented).toBe(true);
+  });
+
+  it("resolves hybrid cinematic as default preset", () => {
+    const resolved = resolveProductionOptions({ falConfigured: true });
+    expect(resolved.videoOutputMode).toBe("hybrid_cinematic");
+    expect(resolved.renderStyle).toBe("hybrid_quality");
+    expect(resolved.qualityTier).toBe("cinematic");
+    expect(resolved.maxFalScenes).toBe(3);
+    expect(resolved.audioMode).toBe("voiceover_bgm");
   });
 
   it("resolves defaults from project settings", () => {
@@ -50,6 +62,7 @@ describe("production format resolution", () => {
     });
     expect(resolved.productionFormat).toBe("pain_led");
     expect(resolved.audioMode).toBe("music_only");
+    expect(resolved.renderStyle).toBe("hybrid_quality");
   });
 
   it("defaults fal_render_mode to cinematic when fal is configured", () => {
@@ -104,7 +117,7 @@ describe("scene plan per production format", () => {
     expect(plan.scenes.every((s) => s.visual_method === "slide")).toBe(true);
   });
 
-  it("pain_led uses ai_broll for middle scenes when fal is configured", () => {
+  it("pain_led uses ai_broll for problem when fal is configured", () => {
     const plan = buildScenePlan({
       productionMode: "fast_slides",
       productionFormat: "pain_led",
@@ -113,6 +126,7 @@ describe("scene plan per production format", () => {
       cta: SCRIPT.cta_line,
       targetLengthSeconds: 22,
       preferAiBroll: true,
+      falConfigured: true,
     });
     expect(plan.scenes[0]?.visual_method).toBe("slide");
     expect(plan.scenes.some((s) => s.visual_method === "ai_broll")).toBe(true);
@@ -129,6 +143,7 @@ describe("scene plan per production format", () => {
       cta: SCRIPT.cta_line,
       targetLengthSeconds: 24,
       preferAiBroll: true,
+      falConfigured: true,
     });
     expect(plan.scenes[0]?.visual_method).toBe("slide");
     expect(plan.scenes.at(-1)?.visual_method).toBe("slide");

@@ -14,7 +14,8 @@ import { runDiscoveryPhase } from "./run-discovery-phase";
 import { generateVideoTrendReport } from "@/services/videotrend/generate";
 import { generateVideoStrategy } from "@/services/video-strategy/generate";
 import { generateVideoConcepts } from "@/services/video-factory/concepts";
-import { buildScriptsAndStoryboardsForRun, renderVideosForRun } from "@/services/video-factory";
+import { buildScriptsAndStoryboardsForRun, enqueueRenderJobsForRun } from "@/services/video-factory";
+import { kickRenderWorker } from "@/services/video-factory/render-worker";
 import { runAutobriefPhase } from "./run-autobrief-phase";
 import { runTrendhopPhase } from "./run-trendhop-phase";
 import {
@@ -36,6 +37,13 @@ import {
 } from "@/lib/growth-run/stage-preconditions";
 import { getUserApprovalPolicy } from "@/lib/user-approval-settings";
 import { withProjectAIContext, getProjectAIModelSlug } from "@/services/ai/runtime";
+import { syncStage3RunPhase } from "./sync-stage3";
+import { resetStage3Production, canRerunStage3 } from "./reset-stage3";
+import {
+  RunCancelledError,
+  cancelGrowthRun,
+  throwIfRunCancelled,
+} from "./cancel-run";
 
 export type GrowthRunExecutionMode = "sequential_first" | "stage_only";
 
@@ -205,6 +213,7 @@ async function gate(
     policy: Awaited<ReturnType<typeof getUserApprovalPolicy>>;
   }
 ) {
+  await throwIfRunCancelled(input.client, input.growthRunId);
   await maybePauseForUserApproval(input);
 }
 
@@ -244,6 +253,8 @@ export async function startGrowthRun(
   const resumeAfter = input.resumeAfterPhase ?? null;
 
   if (input.existingRunId || input.resumeAfterPhase) {
+    await throwIfRunCancelled(supabase, runId);
+
     const nextStage =
       input.targetStage ??
       (input.resumeAfterPhase
@@ -313,6 +324,7 @@ export async function startGrowthRun(
 
       // --- autobrief ---
       if (unified && productUrl && shouldRunPhase("autobrief", resumeAfter, execCtx)) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "autobrief");
         await markPhaseStatus(supabase, runId, "autobrief", "running");
         const briefResult = await runAutobriefPhase({
@@ -341,11 +353,13 @@ export async function startGrowthRun(
 
       // --- discovery sub-phases ---
       if (shouldRunPhase("deep_discovery", resumeAfter, execCtx)) {
+        await throwIfRunCancelled(supabase, runId);
         discovery = await runDiscoveryPhase({
           projectId: input.projectId,
           growthRunId: runId,
           client: supabase,
           onSubPhase: async (phase, status, details) => {
+            await throwIfRunCancelled(supabase, runId);
             await setPhase(supabase, runId, phase);
             await markPhaseStatus(supabase, runId, phase, status, details);
             if (status === "succeeded") {
@@ -370,6 +384,7 @@ export async function startGrowthRun(
 
       // --- trendhop ---
       if (shouldRunPhase("trendhop", resumeAfter, execCtx)) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "trendhop");
         await markPhaseStatus(supabase, runId, "trendhop", "running");
         const hop = await runTrendhopPhase({
@@ -418,6 +433,7 @@ export async function startGrowthRun(
       // --- videotrend ---
       let justCompletedStage1 = false;
       if (shouldRunPhase("videotrend", resumeAfter, execCtx)) {
+        await throwIfRunCancelled(supabase, runId);
         if (discovery.evidenceCount === 0 && discovery.patternsMined === 0) {
           throw new Error(
             "Discovery did not produce video evidence or patterns. Add competitor sources on the Library page or retry the run after discovery completes."
@@ -471,6 +487,7 @@ export async function startGrowthRun(
 
       // --- strategy + loadout ---
       if (shouldRunPhase("strategy", resumeAfter, execCtx) && report) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "strategy");
         await markPhaseStatus(supabase, runId, "strategy", "running");
         const st = await generateVideoStrategy({
@@ -496,6 +513,7 @@ export async function startGrowthRun(
 
       // --- concepts ---
       if (shouldRunPhase("concepts", resumeAfter, execCtx) && report && strategy && loadout) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "concepts");
         await markPhaseStatus(supabase, runId, "concepts", "running");
         const concepts = await generateVideoConcepts({
@@ -539,6 +557,7 @@ export async function startGrowthRun(
       // --- scripts + storyboards (stage 2 tail) ---
       let justCompletedStage2 = false;
       if (shouldRunPhase("scripts", resumeAfter, execCtx) && conceptIds.length > 0) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "scripts");
         await markPhaseStatus(supabase, runId, "scripts", "running");
         const scripted = await buildScriptsAndStoryboardsForRun({
@@ -571,102 +590,54 @@ export async function startGrowthRun(
         });
       }
 
-      // --- render pipeline (stage 3) ---
+      // --- render pipeline (stage 3) — async worker queue ---
       let justCompletedStage3 = false;
       if (shouldRunPhase("assets", resumeAfter, execCtx) && conceptIds.length > 0) {
+        await throwIfRunCancelled(supabase, runId);
         await setPhase(supabase, runId, "assets");
         await markPhaseStatus(supabase, runId, "assets", "running");
-        const built = await renderVideosForRun({
+        const enqueued = await enqueueRenderJobsForRun({
           growthRunId: runId,
           projectId: input.projectId,
           conceptIds,
           connectedAccountIds: runOptions.connected_account_ids,
         });
-        videoIds = built.videoIds;
-        failures = built.failures;
-        const { data: renderedVideos } = videoIds.length
-          ? await supabase
-              .from("videos")
-              .select("id, status")
-              .in("id", videoIds)
-          : { data: [] };
-        const readyVideoIds = (renderedVideos ?? [])
-          .filter((video) => video.status === "ready")
-          .map((video) => video.id);
+        videoIds = enqueued.videoIds;
+        failures = enqueued.failures;
 
-        if (failures.length > 0 || readyVideoIds.length !== videoIds.length || videoIds.length === 0) {
-          const notReadyCount = Math.max(videoIds.length - readyVideoIds.length, 0);
+        if (enqueued.failures.length > 0 && enqueued.jobIds.length === 0) {
           const reason =
-            failures[0]?.error ??
-            (videoIds.length === 0
-              ? "No videos were rendered."
-              : `${notReadyCount} video(s) did not reach ready status.`);
+            enqueued.failures[0]?.error ?? "No render jobs could be enqueued for Stage 3.";
           await markPhaseStatus(supabase, runId, "assets", "failed", {
-            rendered: readyVideoIds.length,
+            rendered: 0,
             attempted: conceptIds.length,
-            failures: failures.length,
-            notReady: notReadyCount,
+            failures: enqueued.failures.length,
             error: reason,
           });
           await markPhaseStatus(supabase, runId, "videos", "failed", {
-            count: readyVideoIds.length,
-            attempted: videoIds.length,
+            count: 0,
+            attempted: conceptIds.length,
           });
           await markPhaseStatus(supabase, runId, "captions", "skipped", {
-            reason: "Video rendering did not complete.",
+            reason: "Video rendering did not start.",
           });
-          throw new Error(
-            `Video rendering failed for Stage 3: ${reason}`
-          );
+          throw new Error(`Video rendering failed for Stage 3: ${reason}`);
         }
 
-        await markPhaseStatus(supabase, runId, "assets", "succeeded", {
-          failures: 0,
-        });
-        await markPhaseStatus(supabase, runId, "videos", "succeeded", {
-          count: readyVideoIds.length,
-        });
-        await markPhaseStatus(supabase, runId, "captions", "succeeded");
-
-        await setPhase(supabase, runId, "approval", { status: "awaiting_approval" });
-
-        const autoApproveVideos =
-          approvalPolicy === "auto_approve_all" || runOptions.approval_mode === "autopilot";
-
-        if (autoApproveVideos) {
-          await supabase
-            .from("videos")
-            .update({
-              status: "approved",
-              approval_status: "auto_approved",
-              approved_at: new Date().toISOString(),
-            })
-            .eq("growth_run_id", runId)
-            .eq("status", "ready");
-        } else if (runOptions.approval_mode === "per_format") {
-          await supabase
-            .from("videos")
-            .update({
-              status: "approved",
-              approval_status: "auto_approved",
-              approved_at: new Date().toISOString(),
-            })
-            .eq("growth_run_id", runId)
-            .eq("status", "ready")
-            .in(
-              "concept_id",
-              (
-                await supabase
-                  .from("video_concepts")
-                  .select("id")
-                  .eq("growth_run_id", runId)
-                  .in("video_type", ["slide", "founder_pov", "pain_led"])
-              ).data?.map((r) => r.id) ?? []
-            );
+        if (enqueued.jobIds.length > 0) {
+          await markPhaseStatus(supabase, runId, "assets", "running", {
+            enqueued: enqueued.jobIds.length,
+            pending: enqueued.jobIds.length,
+            prepFailures: enqueued.failures.length,
+          });
+          kickRenderWorker(runId);
+          return {
+            growthRunId: runId,
+            status: "running",
+            videoIds,
+            failures,
+          };
         }
-
-        await markPhaseStatus(supabase, runId, "approval", "succeeded");
-        justCompletedStage3 = true;
       }
 
       if (justCompletedStage3) {
@@ -692,6 +663,15 @@ export async function startGrowthRun(
           videoIds,
           failures,
           pausedAtPhase: err.phase,
+        };
+      }
+
+      if (err instanceof RunCancelledError) {
+        return {
+          growthRunId: runId,
+          status: "cancelled",
+          videoIds,
+          failures,
         };
       }
 
@@ -984,8 +964,30 @@ export async function continueGrowthRunStage(input: {
     .single();
 
   if (!run) throw new Error("Growth run not found.");
-  if (run.status !== "awaiting_user_input" && run.status !== "failed") {
+  if (run.status === "cancelled") {
+    throw new Error("Run was cancelled.");
+  }
+  if (run.status !== "awaiting_user_input" && run.status !== "failed" && run.status !== "running") {
     throw new Error("Run is not waiting for user input or retry.");
+  }
+
+  if (run.status === "running") {
+    const sync = await syncStage3RunPhase(supabase, input.growthRunId, input.ownerId);
+    if (sync.synced) {
+      const { data: refreshed } = await supabase
+        .from("growth_runs")
+        .select(
+          "id, project_id, paused_at_phase, phase, options, status, current_stage, execution_mode, target_stage"
+        )
+        .eq("id", input.growthRunId)
+        .single();
+      if (refreshed) {
+        Object.assign(run, refreshed);
+      }
+    }
+    if (run.status === "running") {
+      throw new Error("Run is still producing videos. Wait for all videos to reach ready status.");
+    }
   }
 
   if (run.execution_mode === "stage_only") {
@@ -1051,6 +1053,60 @@ export async function continueGrowthRunStage(input: {
   });
 }
 
+/** Clear Stage 3 artifacts and re-render from assets on the same growth run. */
+export async function rerunGrowthRunStage3(input: {
+  growthRunId: string;
+  ownerId: string;
+}): Promise<StartGrowthRunResult> {
+  const supabase = createSupabaseServerClient();
+  const { data: run } = await supabase
+    .from("growth_runs")
+    .select(
+      "id, project_id, options, parent_run_id, execution_mode, target_stage, status, phase"
+    )
+    .eq("id", input.growthRunId)
+    .single();
+
+  if (!run) throw new Error("Growth run not found.");
+
+  if (!canRerunStage3(run.status)) {
+    throw new Error("Run is still executing. Wait for it to finish or cancel first.");
+  }
+
+  const pre = await validateStagePreconditions(supabase, run.project_id, 3, {
+    growthRunId: run.id,
+  });
+  if (!pre.ok) throw new Error(pre.error);
+
+  await resetStage3Production(supabase, run.id);
+
+  const stored = (run.options ?? {}) as Record<string, unknown>;
+  const opts = parseGrowthRunOptions(run.options);
+  const productUrl =
+    typeof stored.product_url === "string"
+      ? stored.product_url
+      : (
+          await supabase
+            .from("projects")
+            .select("product_url")
+            .eq("id", run.project_id)
+            .maybeSingle()
+        ).data?.product_url ?? undefined;
+
+  return startGrowthRun({
+    projectId: run.project_id,
+    ownerId: input.ownerId,
+    existingRunId: run.id,
+    resumeAfterPhase: "storyboards",
+    executionMode: (run.execution_mode ?? "sequential_first") as GrowthRunExecutionMode,
+    targetStage: (run.target_stage ?? undefined) as GrowthRunStageId | undefined,
+    unified: stored.unified === true,
+    productUrl,
+    crawlId: typeof stored.crawl_id === "string" ? stored.crawl_id : undefined,
+    options: opts,
+  });
+}
+
 function parseGrowthRunOptions(raw: unknown): Partial<GrowthRunOptions> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     return GrowthRunOptionsSchema.partial().parse(raw);
@@ -1060,14 +1116,11 @@ function parseGrowthRunOptions(raw: unknown): Partial<GrowthRunOptions> {
 
 export async function rejectGrowthRunPhase(input: {
   growthRunId: string;
+  projectId?: string;
 }): Promise<void> {
-  const supabase = createSupabaseServerClient();
-  await supabase
-    .from("growth_runs")
-    .update({
-      status: "cancelled",
-      completed_at: new Date().toISOString(),
-      notes: "Cancelled by user at approval gate.",
-    })
-    .eq("id", input.growthRunId);
+  await cancelGrowthRun({
+    growthRunId: input.growthRunId,
+    projectId: input.projectId,
+    notes: "Cancelled by user at approval gate.",
+  });
 }

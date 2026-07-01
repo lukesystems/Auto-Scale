@@ -15,6 +15,10 @@ import {
   FalModelTierSchema,
   VisualPipelineSchema,
 } from "@/services/video-factory/production-options";
+import {
+  FallbackOnBadAiSceneSchema,
+  VideoOutputModeSchema,
+} from "@/services/video-factory/scene-render-plan";
 import { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
 import {
   confidenceScoreField,
@@ -121,7 +125,7 @@ export const PlatformPatternSchema = z.object({
 
 export const RecommendedExperimentSchema = z.object({
   hypothesis: defaultStringField("Test whether this format drives qualified engagement."),
-  video_type: enumField(VIDEO_TYPES, "demo"),
+  video_type: enumField(VIDEO_TYPES, "pain_led"),
   platform: enumField(PLATFORMS, "tiktok"),
   ideal_length_seconds: z.preprocess(
     (value) => {
@@ -165,8 +169,8 @@ const DEFAULT_PLATFORM_PATTERN = {
 };
 
 const DEFAULT_EXPERIMENT = {
-  hypothesis: "Short demo video will drive product interest.",
-  video_type: "demo" as const,
+  hypothesis: "Pain-led short will drive product interest.",
+  video_type: "pain_led" as const,
   platform: "tiktok" as const,
   ideal_length_seconds: 22,
   estimated_variants: 3,
@@ -240,7 +244,7 @@ export const VideoStrategySchema = z.object({
       if (!Array.isArray(value) || value.length === 0) {
         return [
           {
-            hypothesis: "Pain-led demo will drive qualified product interest.",
+            hypothesis: "Pain-led shorts will drive qualified product interest.",
             metric_to_watch: "product_link_clicks",
           },
         ];
@@ -364,8 +368,17 @@ export const GrowthRunOptionsSchema = z.object({
   concept_target_count: z.number().int().min(1).max(40).default(3),
   /** Dev / emergency: allow scheduling videos with silent TTS fallback */
   allow_silent_voiceover: z.boolean().default(false),
-  /** User-selected production format for Stage 3 render */
+  /** User-selected production format for Stage 3 render (legacy — prefer video_output_mode) */
   production_format: ProductionFormatSchema.optional(),
+  /** User-facing video output preset at storyboards gate */
+  video_output_mode: z.string().optional(),
+  creative_format: z.string().optional(),
+  render_style: z.string().optional(),
+  quality_tier: z.string().optional(),
+  max_fal_scenes: z.number().int().min(0).max(6).optional(),
+  max_ai_video_scenes: z.number().int().min(0).max(6).optional(),
+  require_scene_review: z.boolean().optional(),
+  fallback_on_bad_ai_scene: FallbackOnBadAiSceneSchema.optional(),
   /** User-selected audio mode for Stage 3 render */
   audio_mode: AudioModeSchema.optional(),
   /** cinematic = fal middle scenes; fast = slides only */

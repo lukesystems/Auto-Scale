@@ -47,17 +47,17 @@ describe("scene plan Phase 2 formats", () => {
     expect(plan.scenes.some((s) => s.overlay_text?.startsWith("US|"))).toBe(true);
   });
 
-  it("demo_short centers screen_recording scene", () => {
+  it("legacy demo_short mode routes to ai b-roll template", () => {
     const plan = buildScenePlan({
       productionMode: "demo_short",
-      productionFormat: "demo_short",
       script: SCRIPT,
       hook: SCRIPT.hook_line,
       cta: SCRIPT.cta_line,
       targetLengthSeconds: 28,
+      preferAiBroll: true,
+      falConfigured: true,
     });
-    const demoScene = plan.scenes.find((s) => s.purpose === "demo");
-    expect(demoScene?.visual_method).toBe("screen_recording");
-    expect(demoScene?.duration_seconds).toBeGreaterThanOrEqual(6);
+    expect(plan.scenes.some((s) => s.visual_method === "ai_broll")).toBe(true);
+    expect(plan.scenes.find((s) => s.purpose === "demo")).toBeUndefined();
   });
 });

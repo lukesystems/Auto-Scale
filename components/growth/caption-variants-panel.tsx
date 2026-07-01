@@ -1,4 +1,4 @@
-import type { ProductionWorkspaceVideo } from "./production-workspace";
+import type { ProductionWorkspaceVideo } from "./production-workspace-types";
 
 export function CaptionVariantsPanel({
   captions,

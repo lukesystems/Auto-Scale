@@ -1,4 +1,4 @@
-import type { ProductionWorkspaceVideo } from "./production-workspace";
+import type { ProductionWorkspaceVideo } from "./production-workspace-types";
 import { scoreHook } from "@/services/video-factory/pre-render-gate";
 
 export function RenderQueuePanel({

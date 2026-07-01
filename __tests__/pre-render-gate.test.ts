@@ -94,32 +94,47 @@ describe("pre-render gate", () => {
     expect(result.autoApproveEligible).toBe(true);
   });
 
-  it("blocks demo_short without uploaded demo clip", () => {
+  it("passes typical scripts with template scene durations", () => {
     const result = runPreRenderGate({
       hook: SCRIPT.hook_line,
       cta: SCRIPT.cta_line,
       script: SCRIPT,
       targetLengthSeconds: 22,
-      sceneDurationsSeconds: [2.5, 3, 3, 3, 3],
+      sceneDurationsSeconds: [3, 4, 4, 5, 3, 3],
       audioMode: "voiceover",
-      productionFormat: "demo_short",
-      demoClipUrl: null,
+      trendConfidence: 0.55,
     });
-    expect(result.passed).toBe(false);
-    expect(result.blockReasons.some((r) => r.includes("demo clip"))).toBe(true);
+    expect(result.passed).toBe(true);
+    expect(result.checks.wpm_in_range).toBe(true);
   });
 
-  it("blocks voiceover WPM outside 140–170 range", () => {
+  it("blocks voiceover WPM above 200 — script too dense for durations", () => {
+    const denseVoiceover = Array(50).fill("word").join(" ");
     const result = runPreRenderGate({
       hook: SCRIPT.hook_line,
       cta: SCRIPT.cta_line,
-      script: { ...SCRIPT, voiceover_full: "short" },
-      targetLengthSeconds: 22,
-      sceneDurationsSeconds: [10, 10],
+      script: { ...SCRIPT, voiceover_full: denseVoiceover },
+      targetLengthSeconds: 10,
+      sceneDurationsSeconds: [5, 5],
       audioMode: "voiceover",
     });
     expect(result.passed).toBe(false);
     expect(result.blockReasons.some((r) => r.includes("WPM"))).toBe(true);
+  });
+
+  it("warns on fast but non-blocking WPM between 170 and 200", () => {
+    const voiceover = Array(30).fill("word").join(" ");
+    const result = runPreRenderGate({
+      hook: SCRIPT.hook_line,
+      cta: SCRIPT.cta_line,
+      script: { ...SCRIPT, voiceover_full: voiceover },
+      targetLengthSeconds: 10,
+      sceneDurationsSeconds: [5, 5],
+      audioMode: "voiceover",
+      trendConfidence: 0.55,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.warnings.some((w) => w.includes("WPM"))).toBe(true);
   });
 
   it("blocks duration mismatch for voiceover modes", () => {
