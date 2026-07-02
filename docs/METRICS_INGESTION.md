@@ -61,7 +61,7 @@ Module: `services/metrics-ingestion/`
 
 - Route: `POST|GET /api/cron/metrics-ingestion`
 - Header: `Authorization: Bearer <AUTOSCALE_CRON_SECRET>`
-- Schedule: daily `0 6 * * *` in `vercel.json`
+- Schedule: daily `0 6 * * *` via Supabase pg_cron or another external scheduler
 - Window: posted items with remote id in last **30 days**
 
 Autopilot (`services/autopilot/run.ts`) also runs a non-blocking per-project ingestion pass after Postiz/Post Bridge status sync.

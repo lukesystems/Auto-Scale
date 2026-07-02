@@ -186,6 +186,16 @@ The worker container runs FFmpeg and processes Stage 3 jobs out of Supabase.
 
 The worker image uses `.dockerignore` to exclude local secrets, build output, `.git`, `.next`, and `node_modules` from the Cloud Build context. All production secrets must be supplied through Cloud Run environment variables or Secret Manager, not copied into the image.
 
+Generate one shared worker secret before deploy:
+
+```powershell
+npm run generate:render-worker-secret -- autoscale-render-worker us-central1
+```
+
+Use the generated value for `AUTOSCALE_RENDER_WORKER_SECRET` in both Cloud Run and Vercel. If those values differ, Vercel cron and Growth Run kicks will reach Cloud Run but fail authorization.
+
+The production preflight rejects placeholder values and secrets shorter than 32 characters. Use the helper output instead of a memorable phrase.
+
 Recommended Windows deploy helper:
 
 ```powershell
@@ -309,7 +319,17 @@ POSTIZ_API_KEY=...
 
 Vercel should not run FFmpeg-heavy rendering. Its job is to enqueue Stage 3 jobs and kick Cloud Run with `POST /run`.
 
-`vercel.json` schedules:
+After local env values are set, print the exact Vercel and Cloud Run env propagation commands:
+
+```bash
+npm run print:loop1-env-commands -- autoscale-render-worker us-central1
+```
+
+Review the output before running it. It marks missing variables with `# MISSING`.
+Values are redacted by default so secrets do not end up in logs. Use `--show-values` only in a private terminal if you intentionally want copy-paste commands with values.
+The command prints PowerShell-safe Vercel input by default; add `--shell bash` if you are applying values from a Bash terminal.
+
+External scheduler jobs:
 
 ```txt
 /api/cron/metrics-ingestion  daily at 06:00 UTC
@@ -334,6 +354,14 @@ VERIFY_WORKER_LIVE=1 npm run verify:loop1-production
 ```
 
 The preflight checks required env vars, R2 configuration, Cloud Run worker URL/secret, LLM provider availability, publishing keys, and Supabase schema columns for the run spine, SLA telemetry, Stage 3 queue, rendered media, metrics, and compound results.
+
+For final production acceptance, run the strict preflight with live R2 and Cloud Run checks:
+
+```bash
+npm run verify:loop1-production:strict
+```
+
+Strict mode fails if R2 is not selected, the R2 live probe is skipped, Cloud Run live checks are skipped, production URLs are localhost/non-HTTPS, or the Stage 2/3 concurrency env vars are missing or below the first-loop SLA recommendation.
 
 After one real project run, verify the actual Loop 1 contract:
 

@@ -1,0 +1,25 @@
+.git
+.github
+.vercel
+.agents/
+.codex/
+.cursor/
+
+.env
+.env.*
+!.env.example
+
+.env.local
+.next/
+node_modules/
+tsconfig.tsbuildinfo
+
+coverage/
+playwright-report/
+test-results/
+*.log
+.codex-dev*.log
+
+run_e2e.js
+autoscale
+WHAT WE CURRENTLY HAVE AND HAVE BEEN WORKING TOWARDS PREVIOUSLY

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { IncomingMessage } from "node:http";
+import { pathToFileURL } from "node:url";
 import { runRenderWorkerUntilIdle } from "@/services/video-factory/render-worker";
 
 function readBody(req: IncomingMessage) {
@@ -23,47 +24,59 @@ function isAuthorized(authHeader: string | undefined): boolean {
   return authHeader === `Bearer ${secret}`;
 }
 
-const server = createServer(async (req, res) => {
-  try {
-    if (req.url === "/health") {
+export function createRenderWorkerServer() {
+  return createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      if (requestUrl.pathname === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (requestUrl.pathname !== "/run" || req.method !== "POST") {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "not_found" }));
+        return;
+      }
+
+      if (!isAuthorized(req.headers.authorization)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+        return;
+      }
+
+      const rawBody = await readBody(req);
+      const body = rawBody
+        ? (JSON.parse(rawBody) as { growthRunId?: string; maxBatches?: number })
+        : {};
+      const result = await runRenderWorkerUntilIdle({
+        growthRunId: body.growthRunId ?? requestUrl.searchParams.get("growthRunId") ?? undefined,
+        maxBatches: body.maxBatches,
+      });
+
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-      return;
+      res.end(JSON.stringify({ ok: true, ...result }));
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
     }
+  });
+}
 
-    if (req.url !== "/run" || req.method !== "POST") {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "not_found" }));
-      return;
-    }
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+}
 
-    if (!isAuthorized(req.headers.authorization)) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
-      return;
-    }
-
-    const rawBody = await readBody(req);
-    const body = rawBody ? (JSON.parse(rawBody) as { growthRunId?: string; maxBatches?: number }) : {};
-    const result = await runRenderWorkerUntilIdle({
-      growthRunId: body.growthRunId,
-      maxBatches: body.maxBatches,
-    });
-
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, ...result }));
-  } catch (err) {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    );
-  }
-});
-
-const port = Number.parseInt(process.env.PORT ?? "8080", 10);
-server.listen(port, "0.0.0.0", () => {
-  console.log(`[render-worker] listening on :${port}`);
-});
+if (isMainModule()) {
+  const port = Number.parseInt(process.env.PORT ?? "8080", 10);
+  createRenderWorkerServer().listen(port, "0.0.0.0", () => {
+    console.log(`[render-worker] listening on :${port}`);
+  });
+}

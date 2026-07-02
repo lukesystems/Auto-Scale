@@ -1,16 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/metrics-ingestion",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/trendhop",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/render-worker",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
