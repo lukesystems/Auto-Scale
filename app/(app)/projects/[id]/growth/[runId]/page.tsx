@@ -7,16 +7,36 @@ import {
   runCompoundAction,
   scheduleRunAction,
 } from "../actions";
-import { ProductionWorkspace, type ProductionWorkspaceVideo } from "@/components/growth/production-workspace";
+import { formatVideoTypeLabel } from "@/lib/growth-run/video-type-labels";
 import { SchedulePreviewPanel } from "@/components/growth/schedule-preview-panel";
+import { ProductionCommandCenter } from "@/components/growth/production-command-center";
+import { loadProductionReview } from "@/lib/growth-run/load-production-review";
+import {
+  mapScheduleItemStatusToState,
+  ScheduleStatusBadge,
+  type PublishingProviderLabel,
+} from "@/components/schedule-status-badge";
 import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
 import { requireUser } from "@/lib/supabase/server";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { getPublishingProviderLabel } from "@/services/social-publishing";
+import { RunApprovalCard } from "@/components/growth/run-approval-card";
+import { StageGateCard } from "@/components/growth/stage-gate-card";
+import { RunRetryCard } from "@/components/growth/run-retry-card";
+import { StageProgress, RunPageLiveUpdater } from "@/components/growth/run-phase-timeline";
+import { RunPageAutoExecutor } from "@/components/growth/run-page-auto-executor";
+import { RunningGrowthRunBanner, CancelGrowthRunButton } from "@/components/growth/cancel-growth-run-button";
+import { RunEvidenceTabs } from "@/components/growth/run-evidence-tabs";
+import { RunBriefPanel } from "@/components/growth/run-brief-panel";
+import { isStageBoundaryPause, resolveRunStage, getStageById } from "@/lib/growth-run/stages";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import { getProductionProviderStatus } from "@/lib/production-provider-status";
 
 interface RunPageProps {
   params: { id: string; runId: string };
+  searchParams?: { autoExecute?: string };
 }
 
 const PHASES = [
@@ -37,7 +57,7 @@ const PHASES = [
   "done",
 ] as const;
 
-export default async function GrowthRunPage({ params }: RunPageProps) {
+export default async function GrowthRunPage({ params, searchParams }: RunPageProps) {
   if (!isSupabaseConfigured()) return notFound();
   const supabase = createSupabaseServerClient();
   const projectId = params.id;
@@ -51,6 +71,14 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     .maybeSingle();
   if (!run) notFound();
 
+  const runOptionsRaw =
+    run.options && typeof run.options === "object" && !Array.isArray(run.options)
+      ? run.options
+      : {};
+  const storedRunOptions = GrowthRunOptionsSchema.partial().parse(runOptionsRaw);
+
+  const publishingProviderLabel = getPublishingProviderLabel() as PublishingProviderLabel;
+
   const [
     trendReport,
     strategy,
@@ -62,6 +90,12 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     fingerprintsRes,
     experimentsRes,
     receiptsRes,
+    briefRes,
+    sourcesRes,
+    videoEvidenceRes,
+    patternsRes,
+    projectRes,
+    productionReview,
   ] =
     await Promise.all([
       supabase.from("video_trend_reports").select("*").eq("growth_run_id", runId).maybeSingle(),
@@ -69,7 +103,7 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       supabase.from("posting_loadouts").select("*").eq("growth_run_id", runId).maybeSingle(),
       supabase
         .from("video_concepts")
-        .select("id, video_type, production_mode, platform, target_length_seconds, hook, angle, status")
+        .select("id, video_type, production_mode, platform, target_length_seconds, hook, angle, status, demo_clip_url")
         .eq("growth_run_id", runId)
         .order("video_type"),
       supabase
@@ -102,184 +136,51 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         .from("trend_receipts")
         .select("id, concept_id, format_fingerprint_id, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, expected_signal, reasoning, confidence, missing_evidence")
         .eq("growth_run_id", runId),
+      supabase.from("product_briefs").select("product_name, one_line_description, product_summary, what_it_does, target_customer, primary_pain, core_promise, offer, cta, category, key_features, positioning_angles").eq("project_id", projectId).maybeSingle(),
+      supabase.from("trendwatch_sources").select("id, source_url, platform, fetch_status, confidence_score").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
+      supabase.from("video_evidence").select("id, video_url, platform, title, source_confidence").eq("project_id", projectId).order("created_at", { ascending: false }).limit(12),
+      supabase.from("video_patterns").select("id, pattern_type, label, confidence").eq("project_id", projectId).order("confidence", { ascending: false }).limit(12),
+      supabase.from("projects").select("product_url, ai_model_slug").eq("id", projectId).maybeSingle(),
+      loadProductionReview(supabase, projectId, runId),
     ]);
 
   const conceptIds = (conceptsRes.data ?? []).map((c) => c.id);
+  const { data: scriptRows } = conceptIds.length
+    ? await supabase
+        .from("video_scripts")
+        .select("concept_id, hook_line, voiceover_full")
+        .in("concept_id", conceptIds)
+    : { data: [] as Array<{ concept_id: string; hook_line: string | null; voiceover_full: string | null }> };
   const { data: storyboards } = conceptIds.length
     ? await supabase.from("storyboards").select("id, concept_id, total_duration_seconds").in("concept_id", conceptIds)
     : { data: [] as Array<{ id: string; concept_id: string; total_duration_seconds: number }> };
-  const storyboardIds = (storyboards ?? []).map((s) => s.id);
-  const videoIds = (videosRes.data ?? []).map((v) => v.id);
 
-  const [sceneRes, jobsRes, assetsRes, qualityRes, captionsRes, accountsRes] = await Promise.all([
-    storyboardIds.length
-      ? supabase
-          .from("storyboard_scenes")
-          .select("id, storyboard_id, scene_index, purpose, role, visual_method, overlay_text, voiceover_line, duration_seconds, status, error")
-          .in("storyboard_id", storyboardIds)
-          .order("scene_index")
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    videoIds.length
-      ? supabase
-          .from("video_production_jobs")
-          .select("id, video_id, concept_id, status, current_stage, error, platform_profile, production_mode")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    supabase
-      .from("generated_assets")
-      .select("id, concept_id, scene_id, kind, status, public_url, error")
-      .eq("growth_run_id", runId),
-    videoIds.length
-      ? supabase
-          .from("video_quality_scores")
-          .select("video_id, overall_score, block_reason, hook_strength, cta_strength, duplicate_risk, claim_risk, pass_reasons")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    videoIds.length
-      ? supabase
-          .from("video_captions")
-          .select("id, video_id, platform, caption, connected_account_id")
-          .in("video_id", videoIds)
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    supabase
-      .from("connected_accounts")
-      .select("id, handle")
-      .eq("project_id", projectId),
-  ]);
-
-  const sceneRows = sceneRes.data ?? [];
-
+  const runProductionOptions = productionReview.productionContext.resolved;
+  const workspaceVideos = productionReview.workspaceVideos;
+  const workspaceSummary = productionReview.workspaceSummary;
   const conceptsById = new Map((conceptsRes.data ?? []).map((c) => [c.id, c]));
-  const boardByConcept = new Map((storyboards ?? []).map((b) => [b.concept_id, b]));
-  const jobByVideo = new Map((jobsRes.data ?? []).map((j) => [j.video_id as string, j]));
-  const qualityByVideo = new Map((qualityRes.data ?? []).map((q) => [q.video_id as string, q]));
-  const assetsByConcept = new Map<string, typeof assetsRes.data>();
-  for (const a of assetsRes.data ?? []) {
-    const cid = a.concept_id as string;
-    if (!cid) continue;
-    const list = assetsByConcept.get(cid) ?? [];
-    list.push(a);
-    assetsByConcept.set(cid, list);
-  }
-  const captionsByVideo = new Map<string, Array<{ id: string; platform: string; caption: string; handle: string | null }>>();
-  const accountById = new Map((accountsRes.data ?? []).map((a) => [a.id, a.handle]));
-  for (const c of captionsRes.data ?? []) {
-    const vid = c.video_id as string;
-    const list = captionsByVideo.get(vid) ?? [];
-    list.push({
-      id: c.id as string,
-      platform: c.platform as string,
-      caption: c.caption as string,
-      handle: c.connected_account_id ? (accountById.get(c.connected_account_id as string) ?? null) : null,
+
+  const scheduleItemIds = (scheduleRes.data ?? []).map((s) => s.id);
+  const { data: metricsSnapshotRows } = scheduleItemIds.length
+    ? await supabase
+        .from("metrics_snapshots")
+        .select("schedule_item_id, source, fetched_at")
+        .in("schedule_item_id", scheduleItemIds)
+        .order("fetched_at", { ascending: false })
+    : { data: [] as Array<{ schedule_item_id: string | null; source: string; fetched_at: string }> };
+
+  const latestMetricsBySchedule = new Map<
+    string,
+    { source: string; fetchedAt: string }
+  >();
+  for (const row of metricsSnapshotRows ?? []) {
+    if (!row.schedule_item_id || latestMetricsBySchedule.has(row.schedule_item_id)) continue;
+    latestMetricsBySchedule.set(row.schedule_item_id, {
+      source: row.source,
+      fetchedAt: row.fetched_at,
     });
-    captionsByVideo.set(vid, list);
   }
-  const receiptByConcept = new Map((receiptsRes.data ?? []).map((r) => [r.concept_id, r]));
-  const expByFingerprint = new Map(
-    (experimentsRes.data ?? []).map((e) => [e.format_fingerprint_id, e])
-  );
-  const fpById = new Map((fingerprintsRes.data ?? []).map((f) => [f.id, f]));
 
-  const workspaceVideos: ProductionWorkspaceVideo[] = (videosRes.data ?? []).map((v) => {
-    const concept = v.concept_id ? conceptsById.get(v.concept_id) : null;
-    const board = v.concept_id ? boardByConcept.get(v.concept_id) : undefined;
-    const scenes = board
-      ? sceneRows
-          .filter((s) => s.storyboard_id === board.id)
-          .map((s) => ({
-            id: s.id as string,
-            sceneIndex: s.scene_index as number,
-            purpose: (s.purpose as string | null) ?? null,
-            role: s.role as string,
-            visualMethod: (s.visual_method as string | null) ?? null,
-            overlayText: (s.overlay_text as string | null) ?? null,
-            voiceoverLine: (s.voiceover_line as string | null) ?? null,
-            durationSeconds: s.duration_seconds as number,
-            status: s.status as string,
-            error: (s.error as string | null) ?? null,
-          }))
-      : [];
-    const jobRow = jobByVideo.get(v.id);
-    const receipt = v.concept_id ? receiptByConcept.get(v.concept_id) : undefined;
-    const fp = receipt?.format_fingerprint_id ? fpById.get(receipt.format_fingerprint_id) : undefined;
-    const exp = receipt?.format_fingerprint_id ? expByFingerprint.get(receipt.format_fingerprint_id) : undefined;
-    const quality = qualityByVideo.get(v.id);
-    const finalAsset = (assetsRes.data ?? []).find((a) => a.id === v.final_asset_id);
-    const observed = Array.isArray(receipt?.observed_evidence) ? (receipt!.observed_evidence as string[]) : [];
-    const inference = Array.isArray(receipt?.strategic_inference) ? (receipt!.strategic_inference as string[]) : [];
-    const missing = Array.isArray(receipt?.missing_evidence) ? (receipt!.missing_evidence as string[]) : [];
-    const hasEvidence =
-      observed.length > 0 ||
-      (Array.isArray(receipt?.evidence_video_ids) && (receipt!.evidence_video_ids as string[]).length > 0);
-
-    return {
-      id: v.id,
-      conceptId: v.concept_id ?? "",
-      status: v.status,
-      approvalStatus: v.approval_status,
-      durationSeconds: v.duration_seconds,
-      finalAssetUrl: (finalAsset?.public_url as string | null) ?? null,
-      hook: concept?.hook ?? "",
-      platform: concept?.platform ?? "tiktok",
-      videoType: concept?.video_type ?? "slide",
-      productionMode: concept?.production_mode ?? null,
-      job: jobRow
-        ? {
-            id: jobRow.id as string,
-            status: jobRow.status as string,
-            currentStage: (jobRow.current_stage as string | null) ?? null,
-            error: (jobRow.error as string | null) ?? null,
-            platformProfile: jobRow.platform_profile as string,
-          }
-        : null,
-      experiment: exp
-        ? {
-            testedVariable: exp.tested_variable,
-            audiencePain: exp.audience_pain,
-            fixedBody: exp.fixed_body,
-            fixedCta: exp.fixed_cta,
-            fixedAudience: exp.fixed_audience,
-            status: exp.status,
-          }
-        : null,
-      fingerprint: fp ? { name: fp.name, status: fp.status } : null,
-      receipt: receipt
-        ? {
-            observedEvidence: observed,
-            strategicInference: inference,
-            expectedSignal: receipt.expected_signal ?? "",
-            confidence: receipt.confidence ?? 0,
-            missingEvidence: missing,
-            hasEvidence,
-            reasoning: receipt.reasoning ?? "",
-          }
-        : null,
-      quality: quality
-        ? {
-            overallScore: quality.overall_score as number,
-            blockReason: (quality.block_reason as string | null) ?? null,
-            hookStrength: quality.hook_strength as number,
-            ctaStrength: quality.cta_strength as number,
-            duplicateRisk: quality.duplicate_risk as number,
-            claimRisk: quality.claim_risk as number,
-            passReasons: Array.isArray(quality.pass_reasons) ? (quality.pass_reasons as string[]) : [],
-            passed:
-              (quality.overall_score as number) >= 0.55 &&
-              !(quality.block_reason as string | null),
-          }
-        : null,
-      scenes,
-      assets: (v.concept_id ? assetsByConcept.get(v.concept_id) ?? [] : []).map((a) => ({
-        id: a.id as string,
-        kind: a.kind as string,
-        status: a.status as string,
-        publicUrl: (a.public_url as string | null) ?? null,
-        sceneId: (a.scene_id as string | null) ?? null,
-        error: (a.error as string | null) ?? null,
-      })),
-      captions: captionsByVideo.get(v.id) ?? [],
-    };
-  });
 
   const videosWithConcept = (videosRes.data ?? []).map((v) => ({
     ...v,
@@ -291,8 +192,46 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       (v) => v.approval_status === "approved" || v.approval_status === "auto_approved"
     );
 
+  const runStage = resolveRunStage({
+    current_stage: run.current_stage,
+    paused_at_phase: run.paused_at_phase,
+    phase: run.phase,
+    status: run.status,
+  });
+
+  const productionProviderStatus = getProductionProviderStatus();
+
+  const stageGateSummary = {
+    briefName: briefRes.data?.product_name,
+    briefLine: briefRes.data?.one_line_description,
+    sourceCount: sourcesRes.data?.length ?? 0,
+    videoEvidenceCount: videoEvidenceRes.data?.length ?? 0,
+    patternCount: patternsRes.data?.length ?? 0,
+    trendStructures: Array.isArray(trendReport.data?.winning_structures)
+      ? (trendReport.data!.winning_structures as unknown[]).length
+      : undefined,
+    trendConfidence: trendReport.data?.confidence,
+    conceptCount: conceptsRes.data?.length ?? 0,
+    scriptCount: scriptRows?.length ?? 0,
+    storyboardCount: storyboards?.length ?? 0,
+    scriptPreviews: (scriptRows ?? []).slice(0, 3).map((row) => {
+      const concept = conceptsById.get(row.concept_id);
+      const voiceover = (row.voiceover_full ?? "").trim();
+      return {
+        hook: row.hook_line || concept?.hook || "Script",
+        excerpt: voiceover.slice(0, 160) || concept?.angle || "Script saved",
+      };
+    }),
+    videoCount: productionReview.videoCount,
+    approvedVideoCount: productionReview.approvedVideoCount,
+  };
+
+  const hasSilentVoiceover = productionReview.hasSilentVoiceover;
+
   let schedulePreview = null;
-  if (allApproved && run.status === "awaiting_approval") {
+  const showScheduleStage =
+    runStage === 4 || (run.phase === "schedule" && run.status === "awaiting_approval");
+  if (showScheduleStage && allApproved) {
     const user = await requireUser();
     const settings = await loadProjectGrowthSettings(projectId);
     const { data: projectRow } = await supabase
@@ -317,6 +256,15 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
     });
   }
 
+  const runOptionsRecord =
+    run.options && typeof run.options === "object" && !Array.isArray(run.options)
+      ? (run.options as Record<string, unknown>)
+      : {};
+  const discoveryLowConfidence = runOptionsRecord.discovery_low_confidence === true;
+  const videotrendLowConfidence =
+    typeof trendReport.data?.confidence === "number" && trendReport.data.confidence < 0.35;
+  const showLowConfidenceBanner = discoveryLowConfidence || videotrendLowConfidence;
+
   return (
     <div className="space-y-8 p-6">
       <header className="space-y-2">
@@ -326,12 +274,31 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           </Link>{" "}
           / {runId.slice(0, 8)}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Growth Run — {new Date(run.created_at).toLocaleString()}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Growth Run — {new Date(run.created_at).toLocaleString()}
+          </h1>
+          <CancelGrowthRunButton
+            projectId={projectId}
+            growthRunId={runId}
+            runStatus={run.status}
+          />
+        </div>
         <p className="text-sm text-muted-foreground">
           status: <strong>{run.status}</strong> · phase: <strong>{run.phase}</strong> · trigger:{" "}
           {run.trigger}
+          {run.execution_mode === "stage_only" && run.target_stage ? (
+            <>
+              {" "}
+              ·{" "}
+              <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-800 dark:text-violet-200">
+                Stage-only run · Stage {run.target_stage}
+                {getStageById(run.target_stage)?.title
+                  ? `: ${getStageById(run.target_stage)!.title}`
+                  : ""}
+              </span>
+            </>
+          ) : null}
         </p>
         <p className="text-xs text-muted-foreground">
           <a
@@ -350,6 +317,150 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         ) : null}
       </header>
 
+      <RunPageAutoExecutor
+        projectId={projectId}
+        growthRunId={runId}
+        initialStatus={run.status}
+        autoExecute={searchParams?.autoExecute === "1"}
+      />
+
+      <RunningGrowthRunBanner
+        projectId={projectId}
+        growthRunId={runId}
+        runStatus={run.status}
+        phase={run.phase}
+      />
+
+      <RunPageLiveUpdater
+        projectId={projectId}
+        growthRunId={runId}
+        runStatus={run.status}
+      />
+
+      {run.status === "awaiting_user_input" ? (
+        isStageBoundaryPause(run.paused_at_phase) ? (
+          <StageGateCard
+            projectId={projectId}
+            growthRunId={runId}
+            pausedAtPhase={run.paused_at_phase}
+            currentStage={run.current_stage}
+            executionMode={run.execution_mode}
+            targetStage={run.target_stage}
+            summary={stageGateSummary}
+            videoOutputMode={runProductionOptions.videoOutputMode}
+            audioMode={runProductionOptions.audioMode}
+            qualityTier={runProductionOptions.qualityTier}
+            visualPipeline={
+              storedRunOptions.visual_pipeline ?? "auto"
+            }
+            providerStatus={productionProviderStatus}
+            canRerunStage3={run.paused_at_phase === "approval"}
+          />
+        ) : (
+          <RunApprovalCard
+            projectId={projectId}
+            growthRunId={runId}
+            pausedAtPhase={run.paused_at_phase}
+          />
+        )
+      ) : null}
+
+      {run.status === "failed" ? (
+        <RunRetryCard
+          projectId={projectId}
+          growthRunId={runId}
+          failedPhase={run.phase}
+        />
+      ) : null}
+
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold mb-3">Run progress</h2>
+          <StageProgress
+            currentPhase={run.phase}
+            phaseStatus={(run.phase_status ?? {}) as Record<string, unknown>}
+            runStatus={run.status}
+            pausedAtPhase={run.paused_at_phase}
+            currentStage={run.current_stage}
+          />
+        </div>
+        <RunEvidenceTabs
+          briefContent={
+            briefRes.data ? (
+              <RunBriefPanel
+                brief={briefRes.data}
+                modelSlug={projectRes.data?.ai_model_slug}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Brief generates during the autobrief phase.
+              </p>
+            )
+          }
+          sourcesContent={
+            <ul className="space-y-2 text-sm">
+              {(sourcesRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Sources appear after discovery.</li>
+              ) : (
+                sourcesRes.data!.map((s) => (
+                  <li key={s.id} className="rounded border p-2">
+                    <p className="font-mono text-xs truncate">{s.source_url ?? s.platform}</p>
+                    <p className="text-xs text-muted-foreground">{s.fetch_status} · conf {(s.confidence_score ?? 0).toFixed(2)}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+          videosContent={
+            <ul className="space-y-2 text-sm">
+              {(videoEvidenceRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Video evidence appears after video discovery.</li>
+              ) : (
+                videoEvidenceRes.data!.map((v) => (
+                  <li key={v.id} className="rounded border p-2">
+                    <p className="font-medium truncate">{v.title ?? "Video"}</p>
+                    <p className="text-xs text-muted-foreground">{v.platform}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+          patternsContent={
+            <ul className="space-y-2 text-sm">
+              {(patternsRes.data ?? []).length === 0 ? (
+                <li className="text-muted-foreground">Patterns appear after pattern mining.</li>
+              ) : (
+                patternsRes.data!.map((p) => (
+                  <li key={p.id} className="rounded border p-2">
+                    <p className="font-medium">{p.label}</p>
+                    <p className="text-xs text-muted-foreground">{p.pattern_type} · {(p.confidence ?? 0).toFixed(2)}</p>
+                  </li>
+                ))
+              )}
+            </ul>
+          }
+        />
+      </section>
+
+      {showLowConfidenceBanner ? (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100"
+        >
+          <p className="font-medium">Thin evidence — conservative run</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+            {discoveryLowConfidence
+              ? "Discovery found fewer than 3 video evidence items. "
+              : ""}
+            {videotrendLowConfidence
+              ? `VideoTrend confidence is ${((trendReport.data?.confidence ?? 0) * 100).toFixed(0)}%. `
+              : ""}
+            Posting aggressiveness was capped and planned volume reduced. Add Sources or run Video
+            Intelligence discovery for stronger patterns before the next run.
+          </p>
+        </div>
+      ) : null}
+
       <PhaseStrip phase={run.phase} status={(run.phase_status ?? {}) as Record<string, unknown>} />
 
       {trendReport.data ? <TrendReportPanel report={trendReport.data} /> : null}
@@ -363,7 +474,36 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
 
       <ConceptsPanel concepts={conceptsRes.data ?? []} />
 
-      <ProductionWorkspace projectId={projectId} runId={runId} videos={workspaceVideos} />
+      {runStage >= 3 || workspaceVideos.length > 0 ? (
+        <ProductionCommandCenter
+          projectId={projectId}
+          runId={runId}
+          videos={workspaceVideos}
+          videoOutputMode={runProductionOptions.videoOutputMode}
+          creativeFormat={runProductionOptions.creativeFormat}
+          qualityTier={runProductionOptions.qualityTier}
+          audioMode={runProductionOptions.audioMode}
+          visualPipeline={storedRunOptions.visual_pipeline ?? null}
+          resolvedVisualPipeline={runProductionOptions.visualPipeline}
+          providerStatus={productionProviderStatus}
+          approvedCount={workspaceSummary.approved}
+          readyCount={workspaceSummary.ready}
+          totalCount={workspaceSummary.total}
+          canRerunStage3={run.status !== "running"}
+        />
+      ) : null}
+
+      {showScheduleStage && run.status === "awaiting_approval" ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+            Stage 4 — Distribution
+          </p>
+          <p className="text-sm font-semibold">Scheduling and posting via Post Bridge</p>
+          <p className="text-xs text-muted-foreground">
+            Review the posting plan below, then schedule when ready.
+          </p>
+        </div>
+      ) : null}
 
       {schedulePreview ? (
         <SchedulePreviewPanel
@@ -371,17 +511,27 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
           projectId={projectId}
           growthRunId={runId}
           scheduleAction={scheduleRunAction}
+          providerLabel={publishingProviderLabel}
+          hasSilentVoiceover={hasSilentVoiceover}
         />
-      ) : allApproved && run.status === "awaiting_approval" ? (
-        <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm">
+      ) : showScheduleStage && allApproved ? (
+        <form action={scheduleRunAction} className="rounded-lg border bg-card p-4 text-sm space-y-3">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="growthRunId" value={runId} />
-          <p className="mb-3">All videos approved. Push to Postiz across connected accounts:</p>
+          <p>
+            All videos approved. Push to {publishingProviderLabel} across connected accounts:
+          </p>
+          {hasSilentVoiceover ? (
+            <label className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <input type="checkbox" name="confirmSilentOverride" />
+              Schedule silent voiceover anyway
+            </label>
+          ) : null}
           <button
             type="submit"
             className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
           >
-            Schedule via Postiz
+            Schedule via {publishingProviderLabel}
           </button>
         </form>
       ) : null}
@@ -389,7 +539,8 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
       {videosWithConcept.length > 0 ? (
         <section className="rounded-lg border bg-card p-4 text-sm">
           <p className="mb-3 text-muted-foreground">
-            Postiz unavailable or you prefer manual posting? Download schedule CSV, captions, and media URLs.
+            {publishingProviderLabel} unavailable or you prefer manual posting? Download schedule CSV, captions, and
+            media URLs.
           </p>
           <a
             href={`/api/projects/${projectId}/growth/${runId}/export`}
@@ -404,6 +555,8 @@ export default async function GrowthRunPage({ params }: RunPageProps) {
         projectId={projectId}
         runId={runId}
         items={scheduleRes.data ?? []}
+        latestMetricsBySchedule={latestMetricsBySchedule}
+        providerLabel={publishingProviderLabel}
       />
 
       <CompoundPanel
@@ -564,7 +717,7 @@ function ConceptsPanel({ concepts }: { concepts: Array<{ id: string; video_type:
           <tbody>
             {concepts.map((c) => (
               <tr key={c.id} className="border-t">
-                <td className="px-2 py-1">{c.video_type}</td>
+                <td className="px-2 py-1">{formatVideoTypeLabel(c.video_type)}</td>
                 <td className="px-2 py-1">{c.platform}</td>
                 <td className="px-2 py-1">{c.target_length_seconds}s</td>
                 <td className="px-2 py-1">{c.hook}</td>
@@ -653,7 +806,7 @@ function WinningFormatLabPanel({
                 <div>
                   <h3 className="text-sm font-semibold">{fingerprint.name}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {fingerprint.platform} · {fingerprint.video_type} · testing {experiment?.tested_variable ?? "unknown"}
+                    {fingerprint.platform} · {formatVideoTypeLabel(fingerprint.video_type)} · testing {experiment?.tested_variable ?? "unknown"}
                   </p>
                 </div>
                 <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
@@ -725,14 +878,49 @@ function countItems(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
+function formatRelativeTime(iso: string): string {
+  const deltaMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.round(deltaMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function MetricsSyncBadge({
+  metrics,
+}: {
+  metrics?: { source: string; fetchedAt: string };
+}) {
+  if (!metrics) return null;
+  const label =
+    metrics.source === "postbridge"
+      ? "Auto-synced via Post Bridge"
+      : metrics.source === "manual"
+        ? "Manual entry"
+        : `Synced (${metrics.source})`;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+      <span className="rounded-full border px-2 py-0.5">{label}</span>
+      <span>Last synced: {formatRelativeTime(metrics.fetchedAt)}</span>
+    </div>
+  );
+}
+
 function SchedulePanel({
   projectId,
   runId,
   items,
+  latestMetricsBySchedule,
+  providerLabel,
 }: {
   projectId: string;
   runId: string;
   items: Array<{ id: string; video_id: string; platform: string; status: string; scheduled_for: string; posted_url: string | null; postiz_post_id: string | null; failure_reason: string | null }>;
+  latestMetricsBySchedule: Map<string, { source: string; fetchedAt: string }>;
+  providerLabel: PublishingProviderLabel;
 }) {
   if (!items.length) return null;
   return (
@@ -742,16 +930,30 @@ function SchedulePanel({
         {items.map((it) => (
           <li key={it.id} className="py-3 space-y-2">
             <div className="flex justify-between gap-4">
-              <div>
-                <div className="font-medium">{it.platform} · {it.status}</div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{it.platform}</span>
+                  <ScheduleStatusBadge
+                    state={mapScheduleItemStatusToState(it.status)}
+                    providerLabel={providerLabel}
+                    detail={
+                      it.status === "failed" && it.failure_reason
+                        ? it.failure_reason
+                        : it.posted_url
+                          ? "live"
+                          : null
+                    }
+                  />
+                </div>
                 <div className="text-muted-foreground">
                   scheduled {new Date(it.scheduled_for).toLocaleString()}
                   {it.posted_url ? ` · live: ${it.posted_url}` : null}
-                  {it.postiz_post_id ? ` · postiz:${it.postiz_post_id}` : null}
+                  {it.postiz_post_id ? ` · remote:${it.postiz_post_id}` : null}
                 </div>
-                {it.failure_reason ? (
+                {it.failure_reason && it.status === "failed" ? (
                   <div className="text-red-600 dark:text-red-300">{it.failure_reason}</div>
                 ) : null}
+                <MetricsSyncBadge metrics={latestMetricsBySchedule.get(it.id)} />
               </div>
             </div>
             <form

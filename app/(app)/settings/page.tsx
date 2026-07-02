@@ -17,6 +17,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 import { isManagedMode } from "@/lib/provider-mode";
+import { CrawlModeToggle } from "./crawl-mode-toggle";
+import { ApprovalPolicyToggle } from "./approval-policy-toggle";
+import type { ApprovalPolicy } from "@/lib/approval-policy";
 
 
 
@@ -31,6 +34,8 @@ export default async function SettingsPage() {
   const active = getDefaultProvider();
 
   let mode = "managed" as "managed" | "byok";
+  let crawlMode: "llm" | "heuristic" = "llm";
+  let approvalPolicy: ApprovalPolicy = "auto_approve_all";
 
 
 
@@ -47,6 +52,20 @@ export default async function SettingsPage() {
     if (user) {
 
       mode = await getProviderModeForUser(user.id);
+
+      const { data } = await supabase
+        .from("user_settings")
+        .select("crawl_mode, approval_policy")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+      crawlMode = data?.crawl_mode === "heuristic" ? "heuristic" : "llm";
+      if (
+        data?.approval_policy === "auto_approve_all" ||
+        data?.approval_policy === "ask_at_critical" ||
+        data?.approval_policy === "ask_at_every_stage"
+      ) {
+        approvalPolicy = data.approval_policy;
+      }
 
     }
 
@@ -112,22 +131,41 @@ export default async function SettingsPage() {
 
       <section className="rounded-xl border border-border bg-card p-6">
 
+        <h3 className="font-semibold tracking-tight">Product crawl mode</h3>
+
+        <p className="mt-1 text-sm text-muted-foreground">
+
+          Controls how AutoBrief reads your product website on re-fetch. LLM crawl extracts structured facts; heuristic mode is faster but shallower.
+
+        </p>
+
+        <div className="mt-4">
+
+          <CrawlModeToggle currentMode={crawlMode} />
+
+        </div>
+
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6">
+        <h3 className="font-semibold tracking-tight">Run approval</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Controls when AutoScale pauses during a run and waits for you to continue.
+        </p>
+        <div className="mt-4">
+          <ApprovalPolicyToggle currentPolicy={approvalPolicy} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-start gap-3">
-
           <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-
             <Sparkles className="h-4 w-4" />
-
           </div>
-
           <div className="flex-1">
-
             <h3 className="font-semibold tracking-tight">AI runtime</h3>
-
             <p className="mt-1 text-sm text-muted-foreground">
-
-              Task-based model routing via OpenRouter in Managed Mode. Mock provider keeps local dev working without keys.
-
+              Task-based model routing via OpenRouter in Managed Mode.
             </p>
 
 

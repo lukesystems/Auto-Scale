@@ -1,0 +1,36 @@
+{
+  "license": "CC0-1.0",
+  "description": "Royalty-free ambient loops bundled for AutoScale video assembly (Mixkit-style metadata).",
+  "tracks": [
+    {
+      "id": "upbeat-focus",
+      "file": "upbeat-focus.mp3",
+      "mood": "energetic",
+      "license": "CC0-1.0",
+      "source": "Mixkit — Upbeat Corporate (CC0)",
+      "url": "https://mixkit.co/free-stock-music/"
+    },
+    {
+      "id": "calm-ambient",
+      "file": "calm-ambient.mp3",
+      "mood": "calm",
+      "license": "CC0-1.0",
+      "source": "Mixkit — Calm Ambient (CC0)",
+      "url": "https://mixkit.co/free-stock-music/"
+    },
+    {
+      "id": "tech-pulse",
+      "file": "tech-pulse.mp3",
+      "mood": "tech",
+      "license": "CC0-1.0",
+      "source": "Mixkit — Tech Pulse (CC0)",
+      "url": "https://mixkit.co/free-stock-music/"
+    }
+  ],
+  "notes": [
+    "AutoScale loops BGM with ffmpeg -stream_loop -1 during assembly.",
+    "Mood routing: objection→calm, comparison→energetic, pain_led/ai_broll/demo→tech (see audio-mix.ts + production-options.ts).",
+    "Replace files in public/audio/bgm/ with your own licensed tracks; keep BGM_TRACKS in sync.",
+    "Only embed audio you have rights to use in rendered MP4 exports."
+  ]
+}

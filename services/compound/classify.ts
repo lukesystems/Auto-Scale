@@ -7,6 +7,7 @@ import {
   type ExperimentClassification,
 } from "@/services/growth-run/schema";
 import { materializeWinnerVariants } from "@/services/compound/materialize-winner";
+import { loadClassifierThresholds, type ClassifierThresholds } from "@/services/compound/thresholds";
 
 /**
  * Compound v2.
@@ -58,6 +59,8 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
     return { classifiedCount: 0, winners: 0, losers: 0, variantsQueued: 0, killDecisions: 0 };
   }
 
+  const thresholds = await loadClassifierThresholds(supabase, opts.projectId);
+
   let winners = 0;
   let losers = 0;
   let variantsQueued = 0;
@@ -105,11 +108,7 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
     const classification = await classifyOne({
       video,
       summary,
-      thresholds: {
-        weakCompletion: opts.weakCompletionThreshold ?? 0.35,
-        weakClick: opts.weakClickRateThreshold ?? 0.005,
-        winnerSignups: opts.winnerSignupThreshold ?? 3,
-      },
+      thresholds,
     });
 
     const { data: resultRow, error } = await supabase
@@ -146,10 +145,7 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
         variantsQueued += materialized.conceptIds.length;
       }
     }
-    if (
-      classification.classification === "loser" ||
-      classification.next_action === "kill"
-    ) {
+    if (classification.classification === "kill" || classification.next_action === "kill") {
       losers++;
       await supabase.from("kill_decisions").insert({
         project_id: opts.projectId,
@@ -189,6 +185,8 @@ export async function runCompound(opts: RunCompoundOpts): Promise<CompoundResult
 interface MetricSummary {
   hasSignal: boolean;
   views: number;
+  saves: number | null;
+  save_rate: number | null;
   completionRate: number | null;
   link_clicks: number;
   pixel_signups: number;
@@ -204,13 +202,30 @@ async function aggregateMetrics(
   videoId: string,
   projectId: string
 ): Promise<MetricSummary> {
+  const { data: snapshotRows } = await supabase
+    .from("metrics_snapshots")
+    .select("views, likes, comments, shares, saves, watch_time_seconds, engagement_rate, source, fetched_at")
+    .eq("video_id", videoId)
+    .order("fetched_at", { ascending: false })
+    .limit(1);
+  const latestSnapshot = snapshotRows?.[0];
+
   const { data: metricRows } = await supabase
     .from("video_run_metrics")
     .select("*")
     .eq("video_id", videoId)
     .order("captured_at", { ascending: false })
     .limit(1);
-  const latest = metricRows?.[0];
+  const latestMetric = metricRows?.[0];
+
+  const views = latestSnapshot?.views ?? latestMetric?.views ?? 0;
+  const saves = latestSnapshot?.saves ?? latestMetric?.saves ?? null;
+  const saveRate = views > 0 && saves != null ? saves / views : null;
+  const completionRate =
+    latestMetric?.completion_rate ??
+    (latestSnapshot?.watch_time_seconds != null && views > 0
+      ? Math.min(1, Number(latestSnapshot.watch_time_seconds) / views)
+      : null);
 
   const { data: linkRows } = await supabase
     .from("tracked_links")
@@ -231,24 +246,26 @@ async function aggregateMetrics(
   const paidUsers = payments?.length ?? 0;
   const revenue = (payments ?? []).reduce((s, p) => s + (p.amount_cents ?? 0), 0);
 
-  const views = latest?.views ?? 0;
-  const manualSignups = latest?.signups ?? 0;
+  const manualSignups = latestMetric?.signups ?? 0;
   const ownedSignups = signupCount ?? 0;
   const allSignups = Math.max(manualSignups, ownedSignups);
 
   return {
-    hasSignal: views > 0 || totalClicks > 0 || allSignups > 0,
+    hasSignal: views > 0 || totalClicks > 0 || allSignups > 0 || (saves ?? 0) > 0,
     views,
-    completionRate: latest?.completion_rate ?? null,
-    link_clicks: Math.max(latest?.link_clicks ?? 0, totalClicks),
+    saves,
+    save_rate: saveRate,
+    completionRate,
+    link_clicks: Math.max(latestMetric?.link_clicks ?? 0, totalClicks),
     pixel_signups: ownedSignups,
     signups: allSignups,
     paid_users: paidUsers,
     revenue_cents: revenue,
-    click_through_rate: views > 0 ? Math.max(latest?.link_clicks ?? 0, totalClicks) / views : null,
+    click_through_rate:
+      views > 0 ? Math.max(latestMetric?.link_clicks ?? 0, totalClicks) / views : null,
     signup_rate:
-      Math.max(latest?.link_clicks ?? 0, totalClicks) > 0
-        ? allSignups / Math.max(latest?.link_clicks ?? 0, totalClicks)
+      Math.max(latestMetric?.link_clicks ?? 0, totalClicks) > 0
+        ? allSignups / Math.max(latestMetric?.link_clicks ?? 0, totalClicks)
         : null,
   };
 }
@@ -256,53 +273,98 @@ async function aggregateMetrics(
 async function classifyOne(input: {
   video: { id: string; concept_id: string };
   summary: MetricSummary;
-  thresholds: { weakCompletion: number; weakClick: number; winnerSignups: number };
+  thresholds: ClassifierThresholds;
 }): Promise<ExperimentClassification> {
-  // First, deterministic rules — only fall back to model when rules are mute.
   const { summary, thresholds } = input;
-  if (summary.signups >= thresholds.winnerSignups || summary.paid_users >= 1) {
+
+  if (summary.signups >= thresholds.winnerSignupThreshold || summary.paid_users >= 1) {
     return {
       classification: "winner",
-      diagnosis: `Generated ${summary.signups} signups${summary.paid_users ? ` and ${summary.paid_users} paid users` : ""} from ${summary.views || "unknown"} views. Compound.`,
+      diagnosis: `Generated ${summary.signups} signups${summary.paid_users ? ` and ${summary.paid_users} paid users` : ""} from ${summary.views || "unknown"} views.${summary.save_rate != null ? ` Save rate ${(summary.save_rate * 100).toFixed(1)}%.` : ""} Compound.`,
       next_action: "variant",
       confidence: 0.85,
     };
   }
+
   if (
-    summary.views > 1500 &&
-    summary.completionRate !== null &&
-    summary.completionRate < thresholds.weakCompletion
+    summary.save_rate !== null &&
+    summary.save_rate >= thresholds.strongSaveRateThreshold &&
+    summary.views >= thresholds.flatViewsThreshold
   ) {
     return {
-      classification: "weak_hook",
+      classification: "promising",
+      diagnosis: `Save rate ${(summary.save_rate * 100).toFixed(1)}% (${summary.saves ?? 0} saves / ${summary.views} views) — strong conversion-intent signal. Tighten CTA to capture signups.`,
+      next_action: "rewrite_cta",
+      confidence: 0.8,
+    };
+  }
+
+  if (
+    summary.save_rate !== null &&
+    summary.save_rate >= thresholds.promisingSaveRateThreshold &&
+    summary.views >= thresholds.flatViewsThreshold &&
+    summary.signups === 0
+  ) {
+    return {
+      classification: "promising",
+      diagnosis: `Save rate ${(summary.save_rate * 100).toFixed(1)}% meets the 2%+ intent threshold with ${summary.views} views — audience is saving but not clicking yet.`,
+      next_action: "rewrite_cta",
+      confidence: 0.74,
+    };
+  }
+
+  if (
+    summary.views >= thresholds.flatViewsThreshold &&
+    summary.completionRate !== null &&
+    summary.completionRate >= thresholds.weakCompletionThreshold &&
+    (summary.click_through_rate ?? 0) >= thresholds.weakClickRateThreshold
+  ) {
+    return {
+      classification: "promising",
+      diagnosis: `Solid reach (${summary.views} views) with acceptable completion and CTR — iterate hook/CTA before scaling.`,
+      next_action: "rewrite_hook",
+      confidence: 0.72,
+    };
+  }
+
+  if (
+    summary.views > thresholds.flatViewsThreshold &&
+    summary.completionRate !== null &&
+    summary.completionRate < thresholds.weakCompletionThreshold
+  ) {
+    return {
+      classification: "flat",
       diagnosis: `High views (${summary.views}) but completion rate ${(summary.completionRate * 100).toFixed(0)}% — hook is not earning the watch.`,
       next_action: "rewrite_hook",
       confidence: 0.75,
     };
   }
+
   if (
-    summary.views > 1500 &&
+    summary.views > thresholds.flatViewsThreshold &&
     summary.click_through_rate !== null &&
-    summary.click_through_rate < thresholds.weakClick
+    summary.click_through_rate < thresholds.weakClickRateThreshold
   ) {
     return {
-      classification: "weak_cta",
+      classification: "flat",
       diagnosis: `Strong reach (${summary.views} views) but only ${summary.link_clicks} clicks — CTA is weak.`,
       next_action: "rewrite_cta",
       confidence: 0.75,
     };
   }
+
   if (summary.views > 5000 && summary.signups === 0 && summary.link_clicks < 5) {
     return {
-      classification: "loser",
+      classification: "kill",
       diagnosis: `${summary.views} views, ${summary.link_clicks} clicks, 0 signups. Audience may not be a fit.`,
       next_action: "kill",
       confidence: 0.7,
     };
   }
-  if (summary.views < 300 && summary.link_clicks === 0) {
+
+  if (summary.views < thresholds.flatViewsThreshold && summary.link_clicks === 0) {
     return {
-      classification: "inconclusive",
+      classification: "flat",
       diagnosis: "Not enough reach yet to learn from this video.",
       next_action: "review",
       confidence: 0.6,
@@ -353,9 +415,11 @@ async function updateLearningMemory(
   const weightDelta =
     opts.classification.classification === "winner"
       ? 0.25
-      : opts.classification.classification === "loser"
+      : opts.classification.classification === "kill"
         ? -0.25
-        : 0;
+        : opts.classification.classification === "promising"
+          ? 0.1
+          : 0;
 
   // Upsert format performance learning row.
   const { data: existing } = await supabase
@@ -403,13 +467,11 @@ async function updateFormatDecision(
   const compoundAction =
     opts.classification.classification === "winner"
       ? "scale"
-      : opts.classification.classification === "loser" || opts.classification.next_action === "kill"
+      : opts.classification.classification === "kill" || opts.classification.next_action === "kill"
         ? "kill"
-        : ["weak_hook", "weak_cta", "message_mismatch"].includes(opts.classification.classification)
+        : opts.classification.classification === "promising" || opts.classification.classification === "flat"
           ? "iterate"
-          : opts.classification.classification === "inconclusive"
-            ? "inconclusive"
-            : null;
+          : null;
 
   const fingerprintStatus =
     compoundAction === "scale"
@@ -426,9 +488,7 @@ async function updateFormatDecision(
         ? "kill"
         : compoundAction === "iterate"
           ? "iterate"
-          : compoundAction === "inconclusive"
-            ? "evaluating"
-            : null;
+          : "evaluating";
 
   const pausedUntil =
     compoundAction === "kill"

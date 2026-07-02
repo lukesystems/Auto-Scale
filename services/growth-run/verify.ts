@@ -1,8 +1,13 @@
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { buildGrowthRunExportZip } from "@/services/export/growth-run-pack";
 import { isFfmpegAvailable } from "@/services/video-factory/ffmpeg";
+import { resolvePostBridgeCredentials } from "@/lib/postbridge-credentials";
 import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { getProviderModeForUser } from "@/lib/provider-mode";
+import {
+  getPublishingProviderId,
+  resolvePublishingCredentials,
+} from "@/services/social-publishing/resolver";
 import { runCompound } from "@/services/compound/classify";
 
 export type VerifyStepStatus = "pass" | "fail" | "skip" | "warn";
@@ -27,6 +32,8 @@ export interface VerifyGrowthRunReport {
     supabase: boolean;
     ffmpeg: boolean;
     postiz: boolean;
+    publishing: boolean;
+    publishingProvider: string;
   };
 }
 
@@ -43,7 +50,7 @@ const STEPS = [
   "video_ready_status",
   "quality_score",
   "export_pack",
-  "postiz_skip_safe",
+  "publishing_skip_safe",
   "tracking_links",
   "compound_classifier",
 ] as const;
@@ -61,10 +68,11 @@ export async function verifyGrowthRun(opts: {
   const steps: VerifyStepResult[] = [];
   let failedStep: number | null = null;
 
-  const postiz =
+  const publishingProvider = getPublishingProviderId();
+  const publishingConfigured =
     opts.ownerId != null
       ? Boolean(
-          await resolvePostizCredentials(
+          await resolvePublishingCredentials(
             opts.ownerId,
             await getProviderModeForUser(opts.ownerId)
           )
@@ -74,7 +82,17 @@ export async function verifyGrowthRun(opts: {
   const env = {
     supabase: true,
     ffmpeg: isFfmpegAvailable(),
-    postiz,
+    postiz:
+      opts.ownerId != null
+        ? Boolean(
+            await resolvePostizCredentials(
+              opts.ownerId,
+              await getProviderModeForUser(opts.ownerId)
+            )
+          )
+        : false,
+    publishing: publishingConfigured,
+    publishingProvider,
   };
 
   function record(
@@ -377,13 +395,15 @@ export async function verifyGrowthRun(opts: {
     });
   }
 
-  // 13. Postiz skip safe
-  if (!postiz) {
-    record(12, "skip", "Postiz not configured — scheduling safely falls back to export queue.", {
-      service: "services/postiz/multi-account.ts",
+  // 13. Publishing skip safe (Postiz or Post Bridge)
+  if (!publishingConfigured) {
+    record(12, "skip", "Publishing provider not configured — scheduling safely falls back to export queue.", {
+      service: "services/social-publishing/resolver.ts",
     });
   } else {
-    record(12, "pass", "Postiz credentials present.", { service: "lib/postiz-credentials.ts" });
+    record(12, "pass", `${publishingProvider} credentials present.`, {
+      service: "services/social-publishing/resolver.ts",
+    });
   }
 
   // 14. Tracking links
@@ -448,7 +468,7 @@ export function formatVerifyReport(report: VerifyGrowthRunReport): string {
     `Growth Run Verification: ${report.growthRunId}`,
     `Project: ${report.projectId}`,
     `Result: ${report.passed ? "PASS" : "FAIL"}${report.failedStep ? ` (failed at step ${report.failedStep})` : ""}`,
-    `Environment: supabase=${report.environment.supabase} ffmpeg=${report.environment.ffmpeg} postiz=${report.environment.postiz}`,
+    `Environment: supabase=${report.environment.supabase} ffmpeg=${report.environment.ffmpeg} publishing=${report.environment.publishing} (${report.environment.publishingProvider})`,
     "",
     ...report.steps.map(
       (s) =>

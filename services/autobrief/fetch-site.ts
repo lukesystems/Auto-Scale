@@ -9,15 +9,21 @@ export { safeFetchUrl, type SafeFetchResult } from "@/services/trendwatch/ingest
  * Backward-compatible AutoBrief site fetch.
  * Delegates to Product Site Intelligence when projectId is provided (persists evidence).
  */
+/** Default page budget when callers omit maxPages (signup, project, refresh). */
+export const URL_TO_BRIEF_DEFAULT_MAX_PAGES = 8;
+
 export async function fetchSiteForAutoBrief(
-  input: SiteFetchInput & { projectId?: string }
+  input: SiteFetchInput & { projectId?: string; maxPages?: number; existingCrawlId?: string }
 ): Promise<SiteFetchOutput> {
+  const maxPages = input.maxPages ?? URL_TO_BRIEF_DEFAULT_MAX_PAGES;
   if (input.projectId) {
     const crawl = await runProductSiteCrawl({
       projectId: input.projectId,
       url: input.url,
-      maxPages: 25,
+      maxPages,
       persist: true,
+      scrapeProfile: "autobrief",
+      existingCrawlId: input.existingCrawlId,
     });
 
     return {
@@ -27,6 +33,8 @@ export async function fetchSiteForAutoBrief(
       title: crawl.title,
       description: crawl.description,
       textSnippet: crawl.textSnippet,
+      llmFactsSummary: crawl.llmFactsSummary,
+      crawlMode: crawl.crawlMode,
       pages: crawl.pages
         .filter((page) => page.fetchStatus === "success")
         .map(toExtractedPage),
@@ -39,8 +47,9 @@ export async function fetchSiteForAutoBrief(
   const crawl = await runProductSiteCrawl({
     projectId: "00000000-0000-0000-0000-000000000000",
     url: input.url,
-    maxPages: 5,
+    maxPages: input.maxPages ?? 5,
     persist: false,
+    scrapeProfile: "autobrief",
   });
 
   return {

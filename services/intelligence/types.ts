@@ -71,6 +71,9 @@ export interface ProductCrawlResult {
   title: string | null;
   description: string | null;
   textSnippet: string | null;
+  /** Aggregated LLM-extracted facts across pages (when crawl_mode = llm). */
+  llmFactsSummary?: string | null;
+  crawlMode?: "llm" | "heuristic";
   pages: CrawledPageContent[];
   facts: ProductSiteFact[];
   pagesDiscovered: number;

@@ -1,59 +1,133 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { renderSlidePng, sceneToSlideInput } from "./slide-renderer";
 import { synthesizeVoiceoverWithMeta } from "./voiceover";
-import { buildBrollVisualPrompt, brandSafetyCheckPrompt } from "./broll-prompt";
-import { upsertPlatformVariants } from "./platform-variants";
 import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { buildSrtFromScenes } from "./subtitles";
 import { assembleVideoToBuffer } from "./assembler";
-import { generateSeedanceClip, downloadRemoteVideo } from "./fal/seedance";
 import { uploadGrowthMedia } from "./storage";
 import { getRenderProfile } from "./render-profiles";
-import { isFfmpegAvailable } from "./ffmpeg";
+import { upsertPlatformVariants } from "./platform-variants";
 import { checkSlideQuality } from "./slide-quality";
-import { scoreVideo } from "@/services/video-quality/score";
+import { deriveSceneDurationsFromAlignment } from "./scene-timing";
+import { scoreVideo, passesQualityGate } from "@/services/video-quality/score";
+import type { VideoQualityScore } from "@/services/video-quality/score";
+import { isVoiceoverTtsConfigured } from "@/services/voiceover/provider";
 import { persistVideoQualityScore } from "@/services/video-quality/persist";
 import type { SceneContract } from "./scene-contract";
 import { roleToPurpose } from "./scene-contract";
+import {
+  audioModeUsesMusic,
+  audioModeUsesVoiceover,
+} from "./production-options";
+import {
+  loadRunProductionContext,
+  type RunProductionContext,
+} from "./load-run-production-context";
+import {
+  backgroundMusicVolumeForMode,
+  selectBackgroundMusicPath,
+  shouldDuckMusicUnderVoice,
+} from "./audio-mix";
+import { createCaptionPages, charsToTimedWords, wordsFromSceneDurations } from "./captions/paging";
+import { formatAssCaptions, pagesToSrt } from "./captions/export-ass";
+import { mapWithConcurrency } from "@/lib/async-pool";
+import { saveRenderCheckpoint } from "./production-job";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
+import { renderSceneVisual } from "./scene-render";
 
 /**
- * Render one concept end-to-end: scene assets → voiceover → subtitles → MP4.
- * Updates generated_assets rows and flips videos.status to "ready" on success.
+ * Render one concept end-to-end: voiceover → scene assets → subtitles → MP4.
+ * Sets videos.status to "ready" only when quality gate and render checks pass.
  */
+/** Max Seedance fal generations per concept (not per run). */
+const FAL_SCENES_PER_CONCEPT_CAP = 3;
+
+/** Max slide scenes rendered in parallel within one concept. */
+const SLIDE_SCENE_CONCURRENCY = 4;
+/** Max Fal-backed scenes in flight per concept (shared falCount mutex). */
+const FAL_SCENE_CONCURRENCY = 2;
+
+async function downloadRemoteAudio(url: string): Promise<Buffer> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) throw new Error(`voiceover download failed: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function sceneUsesFalBroll(scene: {
+  asset_method?: string | null;
+  visual_method?: string | null;
+  purpose?: string | null;
+  role?: string | null;
+}): boolean {
+  if (
+    scene.asset_method === "screen_demo" ||
+    scene.visual_method === "screen_recording" ||
+    scene.purpose === "demo" ||
+    scene.role === "demo"
+  ) {
+    return false;
+  }
+  return scene.asset_method === "fal_clip" || scene.visual_method === "ai_broll";
+}
+
 export async function renderConceptVideo(opts: {
   projectId: string;
   growthRunId: string;
   conceptId: string;
   videoId: string;
   finalAssetId: string;
-}): Promise<{ publicUrl: string }> {
+  jobId?: string;
+  productionContext?: RunProductionContext;
+  client?: SupabaseClient<Database>;
+}): Promise<{
+  publicUrl: string;
+  partialFailures?: string[];
+  qualityPassed: boolean;
+  qualityScore?: VideoQualityScore;
+  qualityBlockReason?: string | null;
+}> {
   const ffmpeg = checkFfmpegHealth();
   if (!ffmpeg.available) {
     throw new Error(ffmpeg.message + (ffmpeg.fixHint ? ` ${ffmpeg.fixHint}` : ""));
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = opts.client ?? createSupabaseServerClient();
   const { data: concept } = await supabase
     .from("video_concepts")
-    .select("id, platform, video_type, target_length_seconds, hook, cta, production_mode, growth_run_id")
+    .select("id, platform, video_type, target_length_seconds, hook, cta, production_mode, growth_run_id, render_approved")
     .eq("id", opts.conceptId)
     .single();
   if (!concept) throw new Error("concept not found");
+  if (concept.render_approved === false) {
+    throw new Error("concept not approved for render");
+  }
 
   const brandConstraints = await supabase
     .from("growth_runs")
-    .select("brand_constraints")
+    .select("brand_constraints, options")
     .eq("id", opts.growthRunId)
     .maybeSingle();
+
+  const runProduction =
+    opts.productionContext ??
+    (await loadRunProductionContext(opts.growthRunId, opts.projectId, supabase));
+  const { audioMode, productionFormat, falRenderMode, falModelTier, visualPipeline, creativeFormat, renderStyle, qualityTier, fallbackOnBadAiScene } =
+    runProduction.resolved;
+
+  const brandConstraintsObj =
+    (brandConstraints.data?.brand_constraints as Record<string, unknown> | null) ?? null;
   const brandColor =
-    (brandConstraints.data?.brand_constraints as Record<string, unknown> | null)?.primary_color ??
-    (brandConstraints.data?.brand_constraints as Record<string, unknown> | null)?.brand_color ??
-    null;
+    brandConstraintsObj?.primary_color ?? brandConstraintsObj?.brand_color ?? null;
+  const productScreenshotUrl =
+    typeof brandConstraintsObj?.product_screenshot_url === "string"
+      ? brandConstraintsObj.product_screenshot_url
+      : null;
 
   const { data: script } = await supabase
     .from("video_scripts")
@@ -77,6 +151,17 @@ export async function renderConceptVideo(opts: {
 
   const workDir = await mkdtemp(join(tmpdir(), "autoscale-render-"));
   const sceneFiles: Array<{ filePath: string; kind: "image" | "video"; durationSeconds: number }> = [];
+  const partialFailures: string[] = [];
+
+  const checkpoint = async (phase: Parameters<typeof saveRenderCheckpoint>[1], extra?: Record<string, unknown>) => {
+    if (!opts.jobId) return;
+    await saveRenderCheckpoint(opts.jobId, phase === "upload" ? "done" : phase, {
+      conceptId: opts.conceptId,
+      ...extra,
+    });
+  };
+
+  const timingSource = { value: "storyboard" as "alignment" | "storyboard" };
 
   const { data: brief } = await supabase
     .from("product_briefs")
@@ -94,163 +179,237 @@ export async function renderConceptVideo(opts: {
     : "";
 
   try {
-    for (const scene of scenes) {
-      const duration = Math.max(0.5, Number(scene.duration_seconds));
-      const scenePath = join(workDir, `scene-${scene.scene_index}`);
+    let sceneDurations = scenes.map((sc) => Math.max(0.5, Number(sc.duration_seconds)));
+    const storyboardDuration = sceneDurations.reduce((sum, d) => sum + d, 0);
+    let voiceResult: Awaited<ReturnType<typeof synthesizeVoiceoverWithMeta>> | null = null;
+    let voicePath: string | undefined;
+    let reusedVoiceover = false;
 
-      const useBroll =
-        scene.asset_method === "fal_clip" ||
-        scene.visual_method === "ai_broll" ||
-        concept.production_mode === "ai_broll_short";
+    await checkpoint("audio");
+    if (audioModeUsesVoiceover(audioMode)) {
+      if (!isVoiceoverTtsConfigured()) {
+        throw new Error(
+          "Voiceover required but no TTS provider configured — set ELEVENLABS_API_KEY or OPENAI_API_KEY"
+        );
+      }
+      const scriptText = script?.voiceover_full ?? "";
+      const scriptHash = createHash("sha256").update(scriptText).digest("hex");
+      const { data: existingVoiceover } = await supabase
+        .from("generated_assets")
+        .select("public_url, metadata")
+        .eq("concept_id", opts.conceptId)
+        .eq("kind", "voiceover")
+        .eq("status", "succeeded")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const existingVoiceoverMeta =
+        existingVoiceover?.metadata &&
+        typeof existingVoiceover.metadata === "object" &&
+        !Array.isArray(existingVoiceover.metadata)
+          ? (existingVoiceover.metadata as Record<string, unknown>)
+          : {};
 
-      if (useBroll) {
-        const prompt =
-          scene.asset_prompt ||
-          buildBrollVisualPrompt({
-            productSummary: brief?.product_summary ?? "SaaS product",
-            scenePurpose: String(scene.purpose ?? scene.role),
-            hook: concept.hook,
-            audience: brief?.target_customer ?? "founders",
-            tone: "professional",
-            trendInference,
-            overlayText: scene.overlay_text ?? scene.on_screen_text ?? undefined,
-          });
-        const safety = brandSafetyCheckPrompt(prompt);
-        if (!safety.ok) {
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              status: "skipped",
-              error: safety.reason,
-              metadata: { fallback_reason: safety.reason } as never,
-            } as never)
-            .eq("id", scene.id);
-        } else {
-        try {
-          const clip = await generateSeedanceClip({
-            prompt,
-            durationSeconds: duration,
-            aspectRatio: storyboard.aspect_ratio,
-          });
-          const videoBuf = await downloadRemoteVideo(clip.videoUrl);
-          const mp4Path = `${scenePath}.mp4`;
-          await writeFile(mp4Path, videoBuf);
-          sceneFiles.push({ filePath: mp4Path, kind: "video", durationSeconds: duration });
+      if (
+        existingVoiceover?.public_url &&
+        existingVoiceoverMeta.script_hash === scriptHash
+      ) {
+        voicePath = join(workDir, "voiceover.m4a");
+        await writeFile(voicePath, await downloadRemoteAudio(existingVoiceover.public_url));
+        reusedVoiceover = true;
+        await checkpoint("audio", { reused: true });
+      } else {
+        voiceResult = await synthesizeVoiceoverWithMeta({
+          scriptText,
+          durationSeconds: Math.max(1, Math.round(storyboardDuration)),
+        });
+      }
+      if (voiceResult?.isSilent) {
+        throw new Error(
+          `Voiceover synthesis returned silent audio — ${formatVoiceoverAttemptSummary(voiceResult.attemptLog)}`
+        );
+      }
 
-          await supabase
-            .from("generated_assets")
-            .update({
-              status: "succeeded",
-              provider: "fal_seedance",
-              provider_request_id: clip.requestId ?? null,
-              public_url: clip.videoUrl,
-              metadata: { source: "fal_clip", prompt } as never,
-            } as never)
-            .eq("concept_id", opts.conceptId)
-            .eq("scene_id", scene.id)
-            .eq("kind", "fal_clip");
-
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              status: "ready",
-              visual_method: "ai_broll",
-              asset_prompt: prompt,
-            } as never)
-            .eq("id", scene.id);
-          continue;
-        } catch (brollErr) {
-          const reason = brollErr instanceof Error ? brollErr.message : String(brollErr);
-          await supabase
-            .from("storyboard_scenes")
-            .update({
-              metadata: { fallback_reason: reason } as never,
-            } as never)
-            .eq("id", scene.id);
-          // Fall through to slide render.
-        }
+      if (voiceResult?.alignment) {
+        const derived = deriveSceneDurationsFromAlignment(scenes, voiceResult.alignment);
+        if (derived) {
+          sceneDurations = derived;
+          timingSource.value = "alignment";
         }
       }
 
-      const png = await renderSlidePng(
-        sceneToSlideInput(
-          {
-            purpose: (scene.purpose as SceneContract["purpose"]) ?? roleToPurpose(scene.role),
-            role: scene.role,
-            voiceover_text: scene.voiceover_line ?? "",
-            subtitle_text: scene.subtitle_text ?? scene.voiceover_line ?? "",
-            overlay_text: scene.overlay_text ?? scene.on_screen_text ?? "",
-            visual_prompt: scene.asset_prompt ?? scene.visual_intent,
-          },
-          { aspectRatio: storyboard.aspect_ratio, brandColor: brandColor as string | null }
-        )
-      );
-      const pngPath = `${scenePath}.png`;
-      await writeFile(pngPath, png);
-      sceneFiles.push({ filePath: pngPath, kind: "image", durationSeconds: duration });
+      if (voiceResult) {
+        const voiceBuf = voiceResult.buffer;
+        voicePath = join(workDir, "voiceover.m4a");
+        await writeFile(voicePath, voiceBuf);
 
-      const { storagePath, publicUrl } = await uploadGrowthMedia({
-        projectId: opts.projectId,
-        growthRunId: opts.growthRunId,
-        conceptId: opts.conceptId,
-        filename: `scene-${scene.scene_index}.png`,
-        body: png,
-        contentType: "image/png",
-      });
-
+        const { storagePath: voiceStorage, publicUrl: voiceUrl } = await uploadGrowthMedia({
+          projectId: opts.projectId,
+          growthRunId: opts.growthRunId,
+          conceptId: opts.conceptId,
+          filename: "voiceover.m4a",
+          body: voiceBuf,
+          contentType: "audio/mp4",
+        });
+        await supabase
+          .from("generated_assets")
+          .update({
+            status: "succeeded",
+            storage_path: voiceStorage,
+            public_url: voiceUrl,
+            provider: voiceResult.provider,
+            error: null,
+            metadata: {
+              is_silent: false,
+              quality_penalty: voiceResult.qualityPenalty,
+              attempt_log: voiceResult.attemptLog,
+              audio_mode: audioMode,
+              timing_source: voiceResult.alignment ? "alignment" : "storyboard",
+              script_hash: scriptHash,
+            } as never,
+          })
+          .eq("concept_id", opts.conceptId)
+          .eq("kind", "voiceover");
+      }
+    } else {
       await supabase
         .from("generated_assets")
         .update({
-          status: "succeeded",
-          storage_path: storagePath,
-          public_url: publicUrl,
+          status: "skipped",
+          provider: "none",
+          error: null,
+          metadata: { audio_mode: audioMode, skipped_reason: "music_only" } as never,
         })
         .eq("concept_id", opts.conceptId)
-        .eq("scene_id", scene.id)
-        .eq("kind", "slide_image");
+        .eq("kind", "voiceover");
+    }
 
+    const audioSynced =
+      audioModeUsesVoiceover(audioMode) &&
+      (reusedVoiceover || Boolean(voiceResult && !voiceResult.isSilent));
+    for (const scene of scenes) {
+      const existingMeta =
+        scene.metadata && typeof scene.metadata === "object" && !Array.isArray(scene.metadata)
+          ? (scene.metadata as Record<string, unknown>)
+          : {};
       await supabase
         .from("storyboard_scenes")
-        .update({ status: "ready", asset_id: null })
+        .update({
+          metadata: {
+            ...existingMeta,
+            audio_synced: audioSynced,
+            duration_source: timingSource.value,
+          } as never,
+        } as never)
         .eq("id", scene.id);
+    }
+
+    const sceneRenderCtx = {
+      supabase,
+      projectId: opts.projectId,
+      growthRunId: opts.growthRunId,
+      conceptId: opts.conceptId,
+      workDir,
+      aspectRatio: storyboard.aspect_ratio as string,
+      brandColor: brandColor as string | null,
+      hook: concept.hook,
+      productSummary: brief?.product_summary ?? "SaaS product",
+      targetCustomer: brief?.target_customer ?? "founders",
+      trendInference,
+      productionFormat,
+      productScreenshotUrl,
+      audioMode,
+      falRenderMode,
+      falModelTier,
+      visualPipeline,
+      falCount: { value: 0 },
+      falScenesCap: runProduction.resolved.maxFalScenes ?? FAL_SCENES_PER_CONCEPT_CAP,
+      creativeFormat,
+      renderStyle,
+      qualityTier,
+      fallbackOnBadAiScene,
+      checkpoint: opts.jobId
+        ? async (phase: string, extra?: Record<string, unknown>) => {
+            await saveRenderCheckpoint(opts.jobId!, phase as Parameters<typeof saveRenderCheckpoint>[1], {
+              conceptId: opts.conceptId,
+              ...extra,
+            });
+          }
+        : undefined,
+    };
+
+    await checkpoint("assets", { sceneCount: scenes.length, visualPipeline });
+
+    const slideIndices: number[] = [];
+    const falIndices: number[] = [];
+    for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+      if (sceneUsesFalBroll(scenes[sceneIdx]!)) falIndices.push(sceneIdx);
+      else slideIndices.push(sceneIdx);
+    }
+
+    const orderedSceneFiles: Array<{
+      filePath: string;
+      kind: "image" | "video";
+      durationSeconds: number;
+    } | null> = new Array(scenes.length).fill(null);
+
+    const renderSceneAt = async (sceneIdx: number) => {
+      const scene = scenes[sceneIdx]!;
+      const duration = sceneDurations[sceneIdx] ?? Math.max(0.5, Number(scene.duration_seconds));
+      const { sceneFile, partialFailure } = await renderSceneVisual(sceneRenderCtx, scene, duration);
+      orderedSceneFiles[sceneIdx] = sceneFile;
+      if (partialFailure) {
+        console.log(`[render] ${partialFailure}`);
+        partialFailures.push(partialFailure);
+      }
+    };
+
+    await mapWithConcurrency(slideIndices, SLIDE_SCENE_CONCURRENCY, renderSceneAt);
+    await mapWithConcurrency(falIndices, FAL_SCENE_CONCURRENCY, renderSceneAt);
+
+    for (const sceneFile of orderedSceneFiles) {
+      if (!sceneFile) throw new Error("scene render incomplete");
+      sceneFiles.push(sceneFile);
     }
 
     const totalDuration = Math.max(
       1,
-      Math.round(
-        script?.voiceover_full
-          ? scenes.reduce((s, sc) => s + Number(sc.duration_seconds), 0)
-          : storyboard.total_duration_seconds
-      )
+      Math.round(sceneDurations.reduce((sum, d) => sum + d, 0) || storyboard.total_duration_seconds)
     );
 
-    const voiceResult = await synthesizeVoiceoverWithMeta({
-      scriptText: script?.voiceover_full ?? "",
-      durationSeconds: totalDuration,
-    });
-    const voiceBuf = voiceResult.buffer;
-    const voicePath = join(workDir, "voiceover.m4a");
-    await writeFile(voicePath, voiceBuf);
-
-    const { storagePath: voiceStorage, publicUrl: voiceUrl } = await uploadGrowthMedia({
-      projectId: opts.projectId,
-      growthRunId: opts.growthRunId,
-      conceptId: opts.conceptId,
-      filename: "voiceover.m4a",
-      body: voiceBuf,
-      contentType: "audio/mp4",
-    });
-    await supabase
-      .from("generated_assets")
-      .update({
+    await checkpoint("subs");
+    let srt: string;
+    let assPath: string | undefined;
+    if (voiceResult?.alignment && audioModeUsesVoiceover(audioMode)) {
+      const words = charsToTimedWords(voiceResult.alignment);
+      const pages = createCaptionPages(words);
+      const ass = formatAssCaptions(pages, { karaoke: true });
+      assPath = join(workDir, "subs.ass");
+      await writeFile(assPath, ass, "utf8");
+      srt = pagesToSrt(pages);
+      await supabase.from("generated_assets").insert({
+        project_id: opts.projectId,
+        growth_run_id: opts.growthRunId,
+        concept_id: opts.conceptId,
+        kind: "caption_ass",
         status: "succeeded",
-        storage_path: voiceStorage,
-        public_url: voiceUrl,
-      })
-      .eq("concept_id", opts.conceptId)
-      .eq("kind", "voiceover");
-
-    const srt = buildSrtFromScenes(scenes);
+        metadata: { pages: pages.length, source: "elevenlabs_alignment" } as never,
+      } as never);
+    } else {
+      srt = buildSrtFromScenes(scenes);
+      const sceneWords = wordsFromSceneDurations(
+        scenes.map((sc, idx) => ({
+          text: (sc.subtitle_text ?? sc.voiceover_line ?? "") as string,
+          durationSeconds: sceneDurations[idx] ?? Number(sc.duration_seconds),
+        }))
+      );
+      const pages = createCaptionPages(sceneWords);
+      if (pages.length) {
+        const ass = formatAssCaptions(pages, { karaoke: false });
+        assPath = join(workDir, "subs.ass");
+        await writeFile(assPath, ass, "utf8");
+      }
+    }
     const srtPath = join(workDir, "subs.srt");
     await writeFile(srtPath, srt, "utf8");
     await uploadGrowthMedia({
@@ -269,10 +428,19 @@ export async function renderConceptVideo(opts: {
 
     const profile = getRenderProfile(concept.platform);
 
+    await checkpoint("assemble");
+    const bgmPath = audioModeUsesMusic(audioMode)
+      ? selectBackgroundMusicPath({ seed: opts.conceptId, productionFormat })
+      : null;
+
     const mp4Buf = await assembleVideoToBuffer({
       scenes: sceneFiles,
       voiceoverPath: voicePath,
       subtitlesPath: srtPath,
+      assSubtitlesPath: assPath,
+      backgroundMusicPath: bgmPath ?? undefined,
+      backgroundMusicVolume: backgroundMusicVolumeForMode(audioMode),
+      duckMusicUnderVoice: shouldDuckMusicUnderVoice(audioMode),
       width: profile.width,
       height: profile.height,
     });
@@ -296,15 +464,7 @@ export async function renderConceptVideo(opts: {
       })
       .eq("id", opts.finalAssetId);
 
-    await supabase
-      .from("videos")
-      .update({
-        status: "ready",
-        duration_seconds: totalDuration,
-      })
-      .eq("id", opts.videoId);
-
-    const sceneContracts: SceneContract[] = scenes.map((sc) => ({
+    const sceneContracts: SceneContract[] = scenes.map((sc, idx) => ({
       order: sc.scene_index,
       scene_type: String(sc.scene_type ?? concept.production_mode ?? "fast_slides"),
       purpose: (sc.purpose as SceneContract["purpose"]) ?? roleToPurpose(sc.role),
@@ -313,7 +473,7 @@ export async function renderConceptVideo(opts: {
       subtitle_text: sc.subtitle_text ?? sc.voiceover_line ?? "",
       overlay_text: sc.overlay_text ?? sc.on_screen_text ?? "",
       visual_prompt: sc.asset_prompt ?? sc.visual_intent ?? "",
-      duration_seconds: Number(sc.duration_seconds),
+      duration_seconds: sceneDurations[idx] ?? Number(sc.duration_seconds),
       status: "ready",
     }));
 
@@ -347,9 +507,44 @@ export async function renderConceptVideo(opts: {
         ? (receipt.missing_evidence as string[])
         : [],
       slideQualityPassed: slideQc?.passed ?? null,
-      silentVoiceover: voiceResult.isSilent,
-      voiceQualityPenalty: voiceResult.qualityPenalty,
+      silentVoiceover: voiceResult?.isSilent ?? false,
+      voiceQualityPenalty:
+        voiceResult?.qualityPenalty ?? (reusedVoiceover || audioMode === "music_only" ? 0 : 0.25),
     });
+
+    const qualityPassed =
+      passesQualityGate(quality) &&
+      !partialFailures.some((f) => !f.includes("AI fallback"));
+    const qualityBlockReason = qualityPassed
+      ? null
+      : partialFailures.length
+        ? `Partial render failures: ${partialFailures.join("; ")}`
+        : quality.block_reason;
+
+    if (qualityPassed) {
+      await supabase
+        .from("videos")
+        .update({
+          status: "ready",
+          duration_seconds: totalDuration,
+        })
+        .eq("id", opts.videoId);
+    } else {
+      await supabase
+        .from("videos")
+        .update({
+          status: "failed",
+          duration_seconds: totalDuration,
+        })
+        .eq("id", opts.videoId);
+      await supabase
+        .from("generated_assets")
+        .update({
+          status: "failed",
+          error: qualityBlockReason ?? "Quality gate failed",
+        })
+        .eq("id", opts.finalAssetId);
+    }
 
     const { data: runRow } = await supabase
       .from("growth_runs")
@@ -372,6 +567,8 @@ export async function renderConceptVideo(opts: {
       targetPlatforms,
     });
 
+    await checkpoint("upload", { publicUrl, partialFailures });
+
     await persistVideoQualityScore({
       client: supabase,
       projectId: opts.projectId,
@@ -381,7 +578,13 @@ export async function renderConceptVideo(opts: {
       score: quality,
     });
 
-    return { publicUrl };
+    return {
+      publicUrl,
+      partialFailures: partialFailures.length ? partialFailures : undefined,
+      qualityPassed,
+      qualityScore: quality,
+      qualityBlockReason,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await supabase
@@ -393,4 +596,12 @@ export async function renderConceptVideo(opts: {
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+function formatVoiceoverAttemptSummary(
+  attemptLog: Array<{ provider: string; ok: boolean; error?: string }>
+): string {
+  const failed = attemptLog.filter((entry) => !entry.ok);
+  if (!failed.length) return "no provider errors";
+  return failed.map((entry) => `${entry.provider}: ${entry.error ?? "failed"}`).join("; ");
 }

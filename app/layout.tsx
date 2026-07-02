@@ -19,34 +19,34 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: {
-    default: "AutoScale — Find the video format that brings users",
+    default: "AutoScale — Autonomous Video Growth Engine for Founders",
     template: "%s · AutoScale",
   },
   description:
-    "AutoScale finds proven short-form video patterns, turns them into videos for your product, tracks what brings users, and compounds the winners.",
+    "Paste your product URL. AutoScale reads your site, hops viral short-form trends on TikTok, Reels, and YouTube Shorts, ships an exploration batch of video experiments, and compounds the winners into variants.",
   keywords: [
-    "startup distribution",
-    "short-form video growth",
-    "video trend research",
+    "video growth engine",
+    "short-form video for founders",
+    "TikTok growth for SaaS",
+    "Instagram Reels for startups",
+    "YouTube Shorts for founders",
+    "trend hopping",
     "growth runs",
-    "indie hacker",
-    "saas marketing",
-    "trend-backed videos",
-    "founder growth",
-    "ai marketing",
+    "indie hacker distribution",
+    "autonomous video marketing",
   ],
   authors: [{ name: "AutoScale" }],
   openGraph: {
-    title: "AutoScale — Find the video format that brings users",
+    title: "AutoScale — Autonomous Video Growth Engine for Founders",
     description:
-      "Find proven short-form video patterns, turn them into videos for your product, track what brings users, and compound the winners.",
+      "Paste your URL. Hop viral trends. Ship an exploration batch of short-form videos. Compound the winners into variants.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AutoScale — Videos that compound",
+    title: "AutoScale — Autonomous video growth for founders",
     description:
-      "Find the video format that brings users. Then automate the winner.",
+      "Ship the short-form videos that actually bring users. Trend hop, experiment, compound winners.",
   },
 };
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { coerceDiscoveryQuery, coerceHypotheses, coerceToString } from "@/services/ai/coerce-llm-output";
 import { DiscoveryQuerySchema } from "../discovery/schema";
 
 /**
@@ -7,21 +8,17 @@ import { DiscoveryQuerySchema } from "../discovery/schema";
  * it has enough evidence to stop. This is the "real-time pondering" step.
  */
 export const DeepDiscoveryActionSchema = z.object({
-  thought: z
-    .string()
-    .min(1)
-    .describe("Current reasoning about what is known, what is missing, and why these next queries."),
-  hypotheses: z
-    .array(z.string())
-    .default([])
-    .describe("Working hypotheses about competitors and what seems to be driving distribution."),
+  thought: z.preprocess(
+    (val) => coerceToString(val) || "Continuing discovery based on current evidence.",
+    z.string().min(1)
+  ),
+  hypotheses: z.preprocess((val) => coerceHypotheses(val), z.array(z.string()).default([])),
   next_queries: z
-    .array(DiscoveryQuerySchema)
-    .max(5)
-    .describe("Queries to run this round. Empty when the model decides to stop."),
-  should_continue: z
-    .boolean()
-    .describe("True to keep searching, false when evidence is sufficient or returns are diminishing."),
+    .preprocess(
+      (val) => (Array.isArray(val) ? val.map((q) => coerceDiscoveryQuery(q)) : []),
+      z.array(DiscoveryQuerySchema).max(5)
+    ),
+  should_continue: z.preprocess((val) => (typeof val === "boolean" ? val : true), z.boolean()),
   stop_reason: z.string().nullable().default(null),
 });
 

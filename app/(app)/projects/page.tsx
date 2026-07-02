@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, Plus, Sparkles, LayoutGrid } from "lucide-react";
+import { Suspense } from "react";
+import { ArrowRight, Plus, Sparkles } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { formatRelativeTime } from "@/lib/utils";
+import { ProjectsNewModalHost } from "@/components/projects/projects-new-modal-host";
 
 export const metadata = { title: "Projects" };
 
@@ -18,7 +20,7 @@ export default async function ProjectsPage() {
         description="Each project is a self-contained growth loop. Create one per product or distinct ICP."
         actions={
           <Button asChild>
-            <Link href="/projects/new">
+            <Link href="/projects?new=1">
               <Plus className="h-4 w-4" /> New project
             </Link>
           </Button>
@@ -32,7 +34,7 @@ export default async function ProjectsPage() {
           description="Drop your product URL, add a few competitors, and let TrendWatch reverse-engineer your niche."
           action={
             <Button asChild size="lg" variant="glow">
-              <Link href="/projects/new">
+              <Link href="/projects?new=1">
                 Create my first project
                 <ArrowRight className="h-4 w-4" />
               </Link>
@@ -82,6 +84,9 @@ export default async function ProjectsPage() {
           </Link>
         </div>
       )}
+      <Suspense fallback={null}>
+        <ProjectsNewModalHost />
+      </Suspense>
     </div>
   );
 }

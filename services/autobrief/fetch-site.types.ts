@@ -18,6 +18,8 @@ export interface SiteFetchOutput {
   title: string | null;
   description: string | null;
   textSnippet: string | null;
+  llmFactsSummary?: string | null;
+  crawlMode?: "llm" | "heuristic";
   pages: ExtractedPage[];
   crawlId?: string | null;
   factsCount?: number;

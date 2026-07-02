@@ -5,7 +5,8 @@ import { detectPlatform } from "@/services/trendwatch/ingestion";
 import type { DiscoveryIntent } from "./schema";
 import type { NormalizedCandidate } from "./dedupe-candidates";
 
-const ADAPTER_ORDER: SearchAdapterName[] = ["exa", "brave", "firecrawl"];
+/** Firecrawl-first: richer page discovery; Brave as fallback when Firecrawl is unavailable. */
+const ADAPTER_ORDER: SearchAdapterName[] = ["firecrawl", "brave"];
 
 /** Per-URL hit after merging results from one or more search adapters. */
 export interface MergedSearchHit extends SearchResult {

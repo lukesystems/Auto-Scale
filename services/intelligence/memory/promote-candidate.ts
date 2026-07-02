@@ -1,16 +1,23 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
+import type { Database, AccountType, SourcePlatform } from "@/lib/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
 import { detectPlatform } from "@/services/trendwatch/ingestion";
+import { TRENDWATCH_SOURCE_ENRICH_SELECT } from "@/lib/trendwatch/source-select";
+
+type SupabaseClientType = SupabaseClient<Database>;
 
 export async function promoteCandidateToSource(input: {
   projectId: string;
   candidateId: string;
+  client?: SupabaseClientType;
+  /** Skip fetch/classify during bulk discovery — enrich loop handles pending rows. */
+  deferEnrichment?: boolean;
 }): Promise<{ sourceId: string }> {
-  const supabase = createSupabaseServerClient();
+  const supabase = input.client ?? createSupabaseServerClient();
 
   const { data: candidate, error: candidateError } = await supabase
     .from("source_candidates")
@@ -60,7 +67,7 @@ export async function promoteCandidateToSource(input: {
   }
 
   const platform = (candidate.platform || detectPlatform(candidate.url)) as SourcePlatform;
-  const notes = [
+  const discoveryNotes = [
     candidate.discovery_reason,
     candidate.discovery_query ? `Query: ${candidate.discovery_query}` : null,
     candidate.snippet,
@@ -68,27 +75,57 @@ export async function promoteCandidateToSource(input: {
     .filter(Boolean)
     .join("\n\n");
 
+  const insertPayload: Database["public"]["Tables"]["trendwatch_sources"]["Insert"] = {
+    project_id: input.projectId,
+    source_url: candidate.url,
+    platform,
+    account_handle: extractHandleFromMetadata(candidate.metadata),
+    account_type: inferAccountType(candidate.source_type) as AccountType,
+    notes: discoveryNotes || null,
+    fetch_status: "pending",
+  };
+
   const { data: inserted, error: insertError } = await supabase
     .from("trendwatch_sources")
-    .insert({
-      project_id: input.projectId,
-      source_url: candidate.url,
-      platform,
-      account_handle: extractHandleFromMetadata(candidate.metadata),
-      account_type: inferAccountType(candidate.source_type) as AccountType,
-      caption: candidate.snippet,
-      notes: notes || null,
-      fetch_status: "pending",
-    })
-    .select("id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes")
+    .insert(insertPayload)
+    .select("id")
     .single();
 
   if (insertError || !inserted) {
     throw new Error(insertError?.message ?? "Failed to promote candidate.");
   }
 
-  const patch = await enrichSourceFromUrl(inserted as SourceRecord);
-  const classifiedSource = { ...inserted, fetched_text: patch.fetched_text } as SourceRecord;
+  // #region agent log
+  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "845232" },
+    body: JSON.stringify({
+      sessionId: "845232",
+      hypothesisId: "H-caption",
+      location: "promote-candidate.ts:insert",
+      message: "candidate promoted to trendwatch_sources",
+      data: { sourceId: inserted.id, deferEnrichment: Boolean(input.deferEnrichment) },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
+  if (input.deferEnrichment) {
+    return { sourceId: inserted.id };
+  }
+
+  const { data: sourceRow, error: loadError } = await supabase
+    .from("trendwatch_sources")
+    .select(TRENDWATCH_SOURCE_ENRICH_SELECT)
+    .eq("id", inserted.id)
+    .single();
+
+  if (loadError || !sourceRow) {
+    return { sourceId: inserted.id };
+  }
+
+  const patch = await enrichSourceFromUrl(sourceRow as SourceRecord);
+  const classifiedSource = { ...sourceRow, fetched_text: patch.fetched_text } as SourceRecord;
   const classification = await classifySource(classifiedSource);
   const rescored = scoreSourceRecord(
     { ...classifiedSource, transferability_score: classification.transferability_score },

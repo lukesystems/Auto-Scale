@@ -200,3 +200,7 @@ function round(n: number): number {
 export function isSchedulable(score: VideoQualityScore): boolean {
   return score.block_reason === null && score.overall_score >= MIN_SCHEDULE_QUALITY_SCORE;
 }
+
+export function passesQualityGate(score: VideoQualityScore): boolean {
+  return isSchedulable(score);
+}

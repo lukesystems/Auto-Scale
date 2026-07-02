@@ -16,8 +16,12 @@ export interface AssembleVideoInput {
   scenes: SceneClipInput[];
   voiceoverPath?: string;
   subtitlesPath?: string;
+  /** ASS subtitles for kinetic burn-in (preferred over SRT when set). */
+  assSubtitlesPath?: string;
   backgroundMusicPath?: string;
   backgroundMusicVolume?: number;
+  /** When true, duck music under voiceover via sidechain compression. */
+  duckMusicUnderVoice?: boolean;
   outputPath: string;
   width?: number;
   height?: number;
@@ -49,11 +53,14 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
           "-c:v",
           "libx264",
           "-preset",
-          "veryfast",
+          "medium",
           "-an",
           out,
         ]);
       } else {
+        const frames = Math.max(1, Math.ceil(scene.durationSeconds * 30));
+        const kenBurns = `zoompan=z='min(zoom+0.0008,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30`;
+        const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,${kenBurns},format=yuv420p`;
         await runFfmpeg([
           "-loop",
           "1",
@@ -66,7 +73,7 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
           "-c:v",
           "libx264",
           "-preset",
-          "veryfast",
+          "medium",
           "-pix_fmt",
           "yuv420p",
           "-an",
@@ -85,10 +92,8 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
     await runFfmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatOut]);
 
     const args: string[] = ["-i", concatOut];
-    let audioInputIndex = 1;
     if (input.backgroundMusicPath) {
-      args.push("-i", input.backgroundMusicPath);
-      audioInputIndex = 2;
+      args.push("-stream_loop", "-1", "-i", input.backgroundMusicPath);
     }
     if (input.voiceoverPath) {
       args.push("-i", input.voiceoverPath);
@@ -96,20 +101,32 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
 
     const filters: string[] = [];
     let videoOut = "0:v";
-    if (input.subtitlesPath) {
-      const escaped = input.subtitlesPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-      filters.push(`[0:v]subtitles='${escaped}'[vout]`);
+    const subPath = input.assSubtitlesPath ?? input.subtitlesPath;
+    if (subPath) {
+      const escaped = subPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      const isAss = subPath.toLowerCase().endsWith(".ass");
+      filters.push(
+        isAss
+          ? `[0:v]ass='${escaped}'[vout]`
+          : `[0:v]subtitles='${escaped}'[vout]`
+      );
       videoOut = "[vout]";
     }
 
     if (input.backgroundMusicPath && input.voiceoverPath) {
       const musicVol = input.backgroundMusicVolume ?? 0.12;
-      filters.push(
-        `[1:a]volume=${musicVol}[bg];[2:a][bg]amix=inputs=2:duration=shortest:dropout_transition=2[aout]`
-      );
+      if (input.duckMusicUnderVoice) {
+        filters.push(
+          `[1:a]volume=${musicVol}[bg];[2:a]asplit=2[vo][sc];[bg][sc]sidechaincompress=threshold=0.03:ratio=6:attack=200:release=800[ducked];[vo][ducked]amix=inputs=2:duration=shortest:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`
+        );
+      } else {
+        filters.push(
+          `[1:a]volume=${musicVol}[bg];[2:a][bg]amix=inputs=2:duration=shortest:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`
+        );
+      }
     } else if (input.backgroundMusicPath) {
       const musicVol = input.backgroundMusicVolume ?? 0.2;
-      filters.push(`[1:a]volume=${musicVol}[aout]`);
+      filters.push(`[1:a]volume=${musicVol},loudnorm=I=-16:TP=-1.5:LRA=11[aout]`);
     }
 
     if (filters.length) {
@@ -130,14 +147,16 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
     }
 
     if (input.voiceoverPath || input.backgroundMusicPath) {
-      args.push("-c:a", "aac", "-b:a", "128k", "-shortest");
+      args.push("-c:a", "aac", "-b:a", "192k", "-shortest");
     }
 
     args.push(
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      "medium",
+      "-crf",
+      "20",
       "-pix_fmt",
       "yuv420p",
       "-movflags",

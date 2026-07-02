@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { persistAutoBriefForProject } from "@/services/autobrief/persist-product-brief";
+import { AutoBriefSchema } from "@/services/autobrief/schema";
+import { runUrlToBriefPipeline } from "@/services/autobrief/run-url-to-brief-pipeline";
 import { generateProductBrief } from "@/services/product-brief/generate";
 import { logAIRun } from "@/services/ai/logger";
 import {
@@ -44,6 +47,47 @@ const BriefUpdateSchema = z.object({
 });
 
 export type BriefResult = { ok: true } | { ok: false; error: string };
+
+export type FetchBriefFromUrlResult =
+  | { ok: true; brief: z.infer<typeof AutoBriefSchema>; fetchWarning?: string }
+  | { ok: false; error: string };
+
+export async function fetchBriefFromUrlAction(input: {
+  projectId: string;
+  productUrl: string;
+}): Promise<FetchBriefFromUrlResult> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase is not configured." };
+
+  const projectParsed = z.string().uuid().safeParse(input.projectId);
+  if (!projectParsed.success) return { ok: false, error: "Invalid project." };
+
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectParsed.data)
+    .maybeSingle();
+  if (!project) return { ok: false, error: "Project not found." };
+
+  const pipeline = await runUrlToBriefPipeline({
+    userId: user.id,
+    productUrl: input.productUrl,
+    profile: "refresh",
+    projectId: projectParsed.data,
+  });
+
+  if (!pipeline.ok) return { ok: false, error: pipeline.error };
+
+  await persistAutoBriefForProject(projectParsed.data, pipeline.brief);
+  revalidatePath(`/projects/${projectParsed.data}`);
+  revalidatePath(`/projects/${projectParsed.data}/brief`);
+  return { ok: true, brief: pipeline.brief, fetchWarning: pipeline.fetchWarning };
+}
 
 export async function saveBriefAction(formData: FormData): Promise<BriefResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase is not configured." };

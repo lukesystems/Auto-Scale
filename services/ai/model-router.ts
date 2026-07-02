@@ -1,10 +1,15 @@
 import type { AIProvider, AITaskType } from "./types";
 import { getManagedProviderConfig } from "@/services/providers/config";
+import { getProjectModelFromContext } from "./project-context";
+import { resolveOpenRouterModelSlug } from "./model-aliases";
 
 export const STRUCTURED_JSON_TASK_TYPES: readonly AITaskType[] = [
   "autobrief",
   "trendwatch",
   "discovery_reasoning",
+  "videotrend_reasoning",
+  "hook_generation",
+  "strategy_generation",
   "content",
   "quality_gate",
   "compound",
@@ -21,6 +26,7 @@ const UNSTABLE_STRUCTURED_JSON_MODEL_MARKERS = [
   // casing on the Growth Run schemas. Keep it for prose; route structured
   // calls through the stable JSON model instead.
   "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-chat",
 ] as const;
 
 export function isStructuredJsonTask(taskType: AITaskType): boolean {
@@ -70,6 +76,9 @@ const TASK_ENV_MAP: Record<AITaskType, keyof ReturnType<typeof getManagedProvide
   autobrief: "autobrief",
   trendwatch: "trendwatch",
   discovery_reasoning: "discovery_reasoning",
+  videotrend_reasoning: "videotrend_reasoning",
+  hook_generation: "hook_generation",
+  strategy_generation: "strategy_generation",
   content: "content",
   quality_gate: "quality_gate",
   compound: "compound",
@@ -77,9 +86,14 @@ const TASK_ENV_MAP: Record<AITaskType, keyof ReturnType<typeof getManagedProvide
 };
 
 export function resolveModelForTask(taskType: AITaskType = "default"): string | undefined {
+  const projectModel = getProjectModelFromContext();
+  if (projectModel?.trim()) {
+    return resolveOpenRouterModelSlug(projectModel.trim()) ?? projectModel.trim();
+  }
+
   const config = getManagedProviderConfig();
   const taskModel = config.models[TASK_ENV_MAP[taskType]];
-  if (taskModel) return taskModel;
+  if (taskModel) return resolveOpenRouterModelSlug(taskModel) ?? taskModel;
 
   // Deep-reasoning falls back to the trendwatch model before the global default,
   // so the loop still routes to a capable model when no dedicated one is set.
@@ -87,11 +101,23 @@ export function resolveModelForTask(taskType: AITaskType = "default"): string | 
     return config.models.trendwatch;
   }
 
+  if (taskType === "videotrend_reasoning" && config.models.trendwatch) {
+    return config.models.trendwatch;
+  }
+
+  if (taskType === "hook_generation" && config.models.content) {
+    return config.models.content;
+  }
+
+  if (taskType === "strategy_generation" && config.models.content) {
+    return config.models.content;
+  }
+
   const fallback = config.models.default;
   if (fallback) return fallback;
 
   if (process.env.AUTOSCALE_DEFAULT_MODEL) {
-    return process.env.AUTOSCALE_DEFAULT_MODEL;
+    return resolveOpenRouterModelSlug(process.env.AUTOSCALE_DEFAULT_MODEL) ?? process.env.AUTOSCALE_DEFAULT_MODEL;
   }
 
   return undefined;
@@ -104,6 +130,11 @@ export function getModelRoutingSummary(): Record<AITaskType, string | null> {
     trendwatch: config.models.trendwatch ?? config.models.default,
     discovery_reasoning:
       config.models.discovery_reasoning ?? config.models.trendwatch ?? config.models.default,
+    videotrend_reasoning:
+      config.models.videotrend_reasoning ?? config.models.trendwatch ?? config.models.default,
+    hook_generation: config.models.hook_generation ?? config.models.content ?? config.models.default,
+    strategy_generation:
+      config.models.strategy_generation ?? config.models.content ?? config.models.default,
     content: config.models.content ?? config.models.default,
     quality_gate: config.models.quality_gate ?? config.models.default,
     compound: config.models.compound ?? config.models.default,

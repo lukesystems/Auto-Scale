@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { coercePatternType, coerceToString } from "@/services/ai/coerce-llm-output";
 
 export const PatternTypeSchema = z.enum([
   "hook",
@@ -39,15 +40,54 @@ export const MinedPatternSchema = z.object({
 export type MinedPattern = z.infer<typeof MinedPatternSchema>;
 
 export const PatternConsolidationSchema = z.object({
-  patterns: z.array(
-    z.object({
-      pattern_type: PatternTypeSchema,
-      label: z.string(),
-      summary: z.string(),
-      why_it_matters: z.string(),
-      how_to_use: z.string(),
-      group_keys: z.array(z.string()).min(1),
-    })
+  patterns: z.preprocess(
+    (val) => {
+      const rows = Array.isArray(val) ? val : [];
+      return rows.map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) {
+          return {
+            pattern_type: "angle",
+            label: "Observed pattern",
+            summary: "Pattern from sources",
+            why_it_matters: "May inform hook and angle tests",
+            how_to_use: "Adapt to product brief with evidence",
+            group_keys: ["fallback"],
+          };
+        }
+        const r = row as Record<string, unknown>;
+        const summary =
+          coerceToString(r.summary) ||
+          coerceToString(r.pattern) ||
+          coerceToString(r.label) ||
+          "Observed pattern";
+        return {
+          pattern_type: coercePatternType(r.pattern_type ?? r.patternType ?? r.type),
+          label: coerceToString(r.label) || summary.slice(0, 80),
+          summary,
+          why_it_matters:
+            coerceToString(r.why_it_matters) ||
+            coerceToString(r.whyItMatters) ||
+            "Relevant to niche content performance",
+          how_to_use:
+            coerceToString(r.how_to_use) ||
+            coerceToString(r.howToUse) ||
+            "Test in controlled hook variants",
+          group_keys: Array.isArray(r.group_keys)
+            ? r.group_keys.map((k) => coerceToString(k)).filter(Boolean)
+            : ["ungrouped"],
+        };
+      });
+    },
+    z.array(
+      z.object({
+        pattern_type: PatternTypeSchema,
+        label: z.string(),
+        summary: z.string(),
+        why_it_matters: z.string(),
+        how_to_use: z.string(),
+        group_keys: z.array(z.string()).min(1),
+      })
+    )
   ),
 });
 

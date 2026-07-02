@@ -21,6 +21,20 @@ export async function saveProductCrawl(input: SaveProductCrawlInput): Promise<st
   const supabase = createSupabaseServerClient();
 
   if (input.crawlId) {
+    let mergedMetadata: Json | undefined;
+    if (input.metadata !== undefined) {
+      const { data: existing } = await supabase
+        .from("product_site_crawls")
+        .select("metadata")
+        .eq("id", input.crawlId)
+        .maybeSingle();
+      const prev =
+        existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+          ? (existing.metadata as Record<string, unknown>)
+          : {};
+      mergedMetadata = { ...prev, ...(input.metadata as Record<string, unknown>) } as Json;
+    }
+
     const { error } = await supabase
       .from("product_site_crawls")
       .update({
@@ -31,7 +45,7 @@ export async function saveProductCrawl(input: SaveProductCrawlInput): Promise<st
         pages_crawled: input.pagesCrawled ?? 0,
         pages_failed: input.pagesFailed ?? 0,
         error: input.error ?? null,
-        metadata: (input.metadata ?? {}) as Json,
+        ...(mergedMetadata !== undefined ? { metadata: mergedMetadata } : {}),
         completed_at: input.completed ? new Date().toISOString() : null,
       })
       .eq("id", input.crawlId);

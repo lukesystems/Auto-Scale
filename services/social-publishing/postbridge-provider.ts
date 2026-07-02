@@ -1,35 +1,92 @@
 import "server-only";
 
-import type { PublishingProvider } from "./provider";
-import { isGrowthPublishingPlatform, POSTBRIDGE_PROVIDER_STUB_REASON } from "./provider";
+import {
+  fetchPostBridgeAccounts,
+  getPostBridgePostStatus,
+  sendToPostBridge,
+  testPostBridgeConnection,
+  type PostBridgeCredentials,
+} from "@/services/postbridge/client";
+import type {
+  PublishingAccount,
+  PublishingCredentials,
+  PublishingProvider,
+  PublishingScheduleInput,
+  PublishingScheduleResult,
+} from "./provider";
+import { isGrowthPublishingPlatform, isPostBridgeCredentials } from "./provider";
 
-/**
- * Post Bridge adapter stub.
- *
- * Do not call Post Bridge APIs until docs, auth, upload, scheduling,
- * status, limits, and pricing are confirmed.
- */
+function toPostBridgeCredentials(credentials: PublishingCredentials): PostBridgeCredentials {
+  return {
+    apiKey: credentials.apiKey ?? "",
+    apiUrl: credentials.apiUrl ?? undefined,
+  };
+}
+
+function assertPostBridgeCredentials(
+  credentials: PublishingCredentials
+): PublishingCredentials & { provider: "postbridge"; apiKey: string } {
+  if (!isPostBridgeCredentials(credentials) || !credentials.apiKey?.trim()) {
+    throw new Error("Post Bridge provider requires Post Bridge credentials.");
+  }
+  return credentials;
+}
+
+function mapSchedulePayload(input: PublishingScheduleInput) {
+  return {
+    accountId: input.accountId,
+    scheduledFor: input.scheduledFor,
+    caption: input.caption,
+    slides: input.slides,
+    imageUrls: input.imageUrls,
+    mediaUrls: input.mediaUrls,
+    cta: input.cta,
+    externalRef: input.externalRef,
+    platform: input.platform,
+  };
+}
+
 export const postBridgePublishingProvider: PublishingProvider = {
   name: "postbridge",
 
-  async validateCredentials() {
-    return { ok: false, reason: POSTBRIDGE_PROVIDER_STUB_REASON };
+  async validateCredentials({ credentials }) {
+    const postBridge = assertPostBridgeCredentials(credentials);
+    const result = await testPostBridgeConnection(toPostBridgeCredentials(postBridge));
+    return result.ok ? { ok: true } : { ok: false, reason: result.error };
   },
 
-  async listAccounts() {
-    throw new Error(POSTBRIDGE_PROVIDER_STUB_REASON);
+  async listAccounts({ credentials }) {
+    const postBridge = assertPostBridgeCredentials(credentials);
+    const accounts = await fetchPostBridgeAccounts(toPostBridgeCredentials(postBridge));
+    return accounts.map(
+      (account): PublishingAccount => ({
+        id: account.id,
+        name: account.name,
+        platform: account.platform,
+        disabled: account.disabled,
+        profile: account.profile,
+        raw: account.raw,
+      })
+    );
   },
 
-  async schedulePost() {
+  async schedulePost(input): Promise<PublishingScheduleResult> {
+    const postBridge = assertPostBridgeCredentials(input.credentials);
+    return sendToPostBridge(toPostBridgeCredentials(postBridge), mapSchedulePayload(input));
+  },
+
+  async getPostStatus({ credentials, remoteId }) {
+    const postBridge = assertPostBridgeCredentials(credentials);
+    const statusResult = await getPostBridgePostStatus(
+      toPostBridgeCredentials(postBridge),
+      remoteId
+    );
+    if (!statusResult) return null;
     return {
-      ok: false,
-      status: "failed",
-      error: POSTBRIDGE_PROVIDER_STUB_REASON,
+      status: statusResult.status,
+      postedUrl: statusResult.postedUrl ?? null,
+      raw: statusResult.raw,
     };
-  },
-
-  async getPostStatus() {
-    return null;
   },
 
   supportsPlatform(platform: string) {

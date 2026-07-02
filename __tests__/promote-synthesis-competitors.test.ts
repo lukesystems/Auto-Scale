@@ -75,7 +75,10 @@ describe("promoteSynthesisCompetitors", () => {
             working_patterns: ["Build in public threads"],
             hooks: ["We grew to 1k users without ads"],
             formats: ["thread"],
-            evidence_urls: ["https://x.com/rivalsaas/status/123"],
+            evidence_urls: [
+              "https://x.com/rivalsaas/status/123",
+              "https://x.com/rivalsaas/status/456",
+            ],
             confidence: "medium",
             caveats: ["Engagement metrics unverified"],
           },

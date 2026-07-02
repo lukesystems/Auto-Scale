@@ -6,20 +6,25 @@ export interface SeedanceClipInput {
   prompt: string;
   durationSeconds?: number;
   aspectRatio?: string;
+  /** When true, fal generates its own audio — disable when muxing ElevenLabs VO */
+  generateAudio?: boolean;
+  imageUrl?: string;
+  /** Router-selected fal model id (e.g. bytedance/seedance-2.0/text-to-video) */
+  modelId?: string;
+  resolution?: string;
 }
 
 export interface SeedanceClipResult {
   videoUrl: string;
   requestId?: string;
+  seed?: number;
+  model: string;
+  mode: "text_to_video" | "image_to_video";
+  resolution: string;
 }
 
-const DEFAULT_MODEL =
-  process.env.AUTOSCALE_FAL_SEEDANCE_MODEL?.trim() ||
-  "fal-ai/bytedance/seedance/v1/lite/text-to-video";
-
 /**
- * Generate a short AI clip via fal Seedance. Only used when
- * storyboard.scene.asset_method === 'fal_clip' and FAL_KEY is set.
+ * Generate a short AI clip via fal Seedance queue API.
  */
 export async function generateSeedanceClip(
   input: SeedanceClipInput
@@ -30,20 +35,39 @@ export async function generateSeedanceClip(
   const falKey = process.env.FAL_KEY?.trim();
   if (!falKey) throw new Error("FAL_KEY missing");
 
-  const aspect = input.aspectRatio === "16:9" ? "16:9" : "9:16";
-  const duration = Math.min(10, Math.max(3, Math.round(input.durationSeconds ?? 5)));
+  const mode = input.imageUrl ? "image_to_video" : "text_to_video";
+  const model = input.modelId?.trim();
+  if (!model) {
+    throw new Error("fal modelId is required — use selectFalVideoModel() before calling generateSeedanceClip");
+  }
 
-  const submit = await fetch(`https://queue.fal.run/${DEFAULT_MODEL}`, {
+  const aspect = input.aspectRatio === "16:9" ? "16:9" : "9:16";
+  const durationSec = Math.min(15, Math.max(4, Math.round(input.durationSeconds ?? 5)));
+  const duration = String(durationSec);
+  const resolution = input.resolution === "480p" ? "480p" : "720p";
+
+  const body: Record<string, unknown> = {
+    prompt: input.prompt,
+    aspect_ratio: aspect,
+    duration,
+    resolution,
+    generate_audio: input.generateAudio ?? false,
+  };
+  if (input.imageUrl) {
+    body.image_url = input.imageUrl;
+  }
+
+  console.log(
+    `[fal] seedance ${mode} model=${model} resolution=${resolution} duration=${duration}s aspect=${aspect}`
+  );
+
+  const submit = await fetch(`https://queue.fal.run/${model}`, {
     method: "POST",
     headers: {
       Authorization: `Key ${falKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      prompt: input.prompt,
-      aspect_ratio: aspect,
-      duration,
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
   if (!submit.ok) {
@@ -61,14 +85,34 @@ export async function generateSeedanceClip(
   }
 
   const deadline = Date.now() + 180_000;
+  let lastStatus = "unknown";
+  let pollCount = 0;
   while (Date.now() < deadline) {
     await sleep(3_000);
+    pollCount++;
     const statusRes = await fetch(statusUrl, {
       headers: { Authorization: `Key ${falKey}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (!statusRes.ok) continue;
     const status = (await statusRes.json()) as { status?: string };
+    lastStatus = status.status ?? "unknown";
+    // #region agent log
+    if (pollCount === 1 || pollCount % 10 === 0 || lastStatus === "FAILED" || lastStatus === "COMPLETED") {
+      fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6d5496" },
+        body: JSON.stringify({
+          sessionId: "6d5496",
+          hypothesisId: "H1",
+          location: "seedance.ts:poll",
+          message: "fal seedance poll",
+          data: { model, mode, lastStatus, pollCount, requestId: queued.request_id },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
+    // #endregion
     if (status.status === "FAILED") {
       throw new Error("fal Seedance generation failed");
     }
@@ -84,12 +128,34 @@ export async function generateSeedanceClip(
     const result = (await resultRes.json()) as {
       video?: { url?: string };
       video_url?: string;
+      seed?: number;
     };
     const videoUrl = result.video?.url ?? result.video_url;
     if (!videoUrl) throw new Error("fal Seedance returned no video URL");
-    return { videoUrl, requestId: queued.request_id };
+    return {
+      videoUrl,
+      requestId: queued.request_id,
+      seed: result.seed,
+      model,
+      mode,
+      resolution,
+    };
   }
-  throw new Error("fal Seedance timed out");
+  // #region agent log
+  fetch("http://127.0.0.1:7755/ingest/e9fc8964-ae23-4fa9-a7cb-b5541b636a4d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6d5496" },
+    body: JSON.stringify({
+      sessionId: "6d5496",
+      hypothesisId: "H1",
+      location: "seedance.ts:timeout",
+      message: "fal seedance timed out",
+      data: { model, mode, lastStatus, pollCount, requestId: queued.request_id },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  throw new Error(`fal Seedance timed out (last status: ${lastStatus}, polls: ${pollCount})`);
 }
 
 export async function downloadRemoteVideo(url: string): Promise<Buffer> {

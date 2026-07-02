@@ -1,5 +1,33 @@
 import { z } from "zod";
+import {
+  coerceAccountType,
+  coerceAssetMethod,
+  coerceDiscoveryQuery,
+  coerceHypotheses,
+  coercePatternType,
+  coerceToString,
+  parseFollowerCount,
+} from "@/services/ai/coerce-llm-output";
+import {
+  ProductionFormatSchema,
+  AudioModeSchema,
+  FalRenderModeSchema,
+  FalModelTierSchema,
+  VisualPipelineSchema,
+} from "@/services/video-factory/production-options";
+import {
+  FallbackOnBadAiSceneSchema,
+  VideoOutputModeSchema,
+} from "@/services/video-factory/scene-render-plan";
 import { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
+import {
+  confidenceScoreField,
+  defaultStringField,
+  enumField,
+  looseUrlField,
+  minStringArrayField,
+  recordEnumMixField,
+} from "@/lib/zod-coerce";
 
 export { normalizePreferredLengthSeconds } from "./normalize-preferred-length";
 
@@ -23,6 +51,7 @@ export const VIDEO_TYPES = [
   "ai_broll",
   "objection",
   "comparison",
+  "carousel",
 ] as const;
 export type VideoType = (typeof VIDEO_TYPES)[number];
 
@@ -51,27 +80,41 @@ export const SCENE_ROLES = [
 // ------------------------------------------------------------------
 
 export const HookPatternSchema = z.object({
-  label: z.string(),
-  pattern: z.string(),
+  label: defaultStringField("Hook pattern"),
+  pattern: defaultStringField("Opening hook"),
+  reference_url: looseUrlField("https://example.com/evidence"),
   example: z.string().optional(),
   when_to_use: z.string().optional(),
 });
 
 export const WinningStructureSchema = z.object({
-  name: z.string(),
-  beats: z.array(z.string()).min(2),
-  ideal_length_seconds: z.number().int().positive(),
-  why_it_works: z.string(),
+  name: defaultStringField("Winning structure"),
+  beats: minStringArrayField(["hook", "value", "cta"]),
+  ideal_length_seconds: z.preprocess(
+    (value) => {
+      const n = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+      return Number.isFinite(n) && n > 0 ? n : 22;
+    },
+    z.number().int().positive()
+  ),
+  why_it_works: defaultStringField("Structure matches observed short-form patterns in this niche."),
 });
 
 export const CtaPatternSchema = z.object({
-  label: z.string(),
-  pattern: z.string(),
+  label: defaultStringField("CTA"),
+  pattern: defaultStringField("Call to action"),
   best_for: z.array(z.string()).default([]),
 });
 
 export const PlatformPatternSchema = z.object({
-  platform: z.enum(PLATFORMS),
+  platform: enumField(PLATFORMS, "tiktok", {
+    tiktok: "tiktok",
+    instagram: "instagram",
+    ig: "instagram",
+    reels: "instagram",
+    youtube: "youtube",
+    shorts: "youtube",
+  }),
   preferred_length_seconds: z.preprocess(
     normalizePreferredLengthSeconds,
     z.tuple([z.number(), z.number()]).optional()
@@ -81,25 +124,100 @@ export const PlatformPatternSchema = z.object({
 });
 
 export const RecommendedExperimentSchema = z.object({
-  hypothesis: z.string(),
-  video_type: z.enum(VIDEO_TYPES),
-  platform: z.enum(PLATFORMS),
-  ideal_length_seconds: z.number().int().positive(),
-  estimated_variants: z.number().int().min(1).max(20).default(3),
-  rationale: z.string(),
+  hypothesis: defaultStringField("Test whether this format drives qualified engagement."),
+  video_type: enumField(VIDEO_TYPES, "pain_led"),
+  platform: enumField(PLATFORMS, "tiktok"),
+  ideal_length_seconds: z.preprocess(
+    (value) => {
+      const n = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+      return Number.isFinite(n) && n > 0 ? n : 22;
+    },
+    z.number().int().positive()
+  ),
+  estimated_variants: z.preprocess(
+    (value) => {
+      const n = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+      return Number.isFinite(n) && n >= 1 ? Math.min(n, 20) : 3;
+    },
+    z.number().int().min(1).max(20)
+  ).default(3),
+  rationale: defaultStringField("Based on observed niche patterns."),
 });
 
+const DEFAULT_WINNING_STRUCTURE = {
+  name: "Hook → proof → CTA",
+  beats: ["Open with a pain hook", "Show the product solving it", "Close with a clear CTA"],
+  ideal_length_seconds: 22,
+  why_it_works: "Default structure when evidence is thin.",
+};
+
+const DEFAULT_HOOK_PATTERN = {
+  label: "Pain-led opener",
+  pattern: "Still doing this manually?",
+  reference_url: "https://example.com/evidence",
+};
+
+const DEFAULT_CTA_PATTERN = {
+  label: "Direct CTA",
+  pattern: "Try it free — link in bio",
+  best_for: ["founders", "operators"],
+};
+
+const DEFAULT_PLATFORM_PATTERN = {
+  platform: "tiktok" as const,
+  preferred_aspect_ratio: "9:16",
+};
+
+const DEFAULT_EXPERIMENT = {
+  hypothesis: "Pain-led short will drive product interest.",
+  video_type: "pain_led" as const,
+  platform: "tiktok" as const,
+  ideal_length_seconds: 22,
+  estimated_variants: 3,
+  rationale: "Conservative default experiment when evidence is sparse.",
+};
+
 export const VideoTrendReportSchema = z.object({
-  winning_structures: z.array(WinningStructureSchema).min(1),
-  hook_patterns: z.array(HookPatternSchema).min(1),
-  opening_frames: z.array(z.string()).min(1),
-  cta_patterns: z.array(CtaPatternSchema).min(1),
+  winning_structures: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) return [DEFAULT_WINNING_STRUCTURE];
+      return value;
+    },
+    z.array(WinningStructureSchema).min(1)
+  ),
+  hook_patterns: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) return [DEFAULT_HOOK_PATTERN];
+      return value;
+    },
+    z.array(HookPatternSchema).min(1)
+  ),
+  opening_frames: minStringArrayField(["On-screen text stating the core pain point"]),
+  cta_patterns: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) return [DEFAULT_CTA_PATTERN];
+      return value;
+    },
+    z.array(CtaPatternSchema).min(1)
+  ),
   audience_language: z.array(z.string()).default([]),
-  platform_patterns: z.array(PlatformPatternSchema).min(1),
-  recommended_experiments: z.array(RecommendedExperimentSchema).min(1),
+  platform_patterns: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) return [DEFAULT_PLATFORM_PATTERN];
+      return value;
+    },
+    z.array(PlatformPatternSchema).min(1)
+  ),
+  recommended_experiments: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) return [DEFAULT_EXPERIMENT];
+      return value;
+    },
+    z.array(RecommendedExperimentSchema).min(1)
+  ),
   competitor_gaps: z.array(z.string()).default([]),
   repurposable_formats: z.array(z.string()).default([]),
-  confidence: z.number().min(0).max(1).default(0.5),
+  confidence: confidenceScoreField(0.5),
 });
 
 export type VideoTrendReport = z.infer<typeof VideoTrendReportSchema>;
@@ -108,12 +226,12 @@ export type VideoTrendReport = z.infer<typeof VideoTrendReportSchema>;
 // Video strategy + posting loadout
 // ------------------------------------------------------------------
 
-export const PlatformMixSchema = z.record(z.enum(PLATFORMS), z.number().min(0).max(1));
-export const VideoTypeMixSchema = z.record(z.enum(VIDEO_TYPES), z.number().min(0).max(1));
+export const PlatformMixSchema = recordEnumMixField(PLATFORMS, "tiktok");
+export const VideoTypeMixSchema = recordEnumMixField(VIDEO_TYPES, "slide");
 
 export const CampaignHypothesisSchema = z.object({
-  hypothesis: z.string(),
-  metric_to_watch: z.string(),
+  hypothesis: defaultStringField("Test a short-form format against baseline engagement."),
+  metric_to_watch: defaultStringField("qualified_clicks"),
   success_threshold: z.string().optional(),
   kill_threshold: z.string().optional(),
 });
@@ -121,8 +239,21 @@ export const CampaignHypothesisSchema = z.object({
 export const VideoStrategySchema = z.object({
   platform_mix: PlatformMixSchema,
   video_type_mix: VideoTypeMixSchema,
-  campaign_hypotheses: z.array(CampaignHypothesisSchema).min(1),
-  rationale: z.string(),
+  campaign_hypotheses: z.preprocess(
+    (value) => {
+      if (!Array.isArray(value) || value.length === 0) {
+        return [
+          {
+            hypothesis: "Pain-led shorts will drive qualified product interest.",
+            metric_to_watch: "product_link_clicks",
+          },
+        ];
+      }
+      return value;
+    },
+    z.array(CampaignHypothesisSchema).min(1)
+  ),
+  rationale: defaultStringField("Mix prioritizes formats supported by available evidence."),
 });
 
 export type VideoStrategy = z.infer<typeof VideoStrategySchema>;
@@ -182,10 +313,14 @@ export const StoryboardSceneSchema = z.object({
   role: z.enum(SCENE_ROLES),
   duration_seconds: z.number().positive(),
   visual_intent: z.string(),
-  on_screen_text: z.string().optional().default(""),
-  voiceover_line: z.string().optional().default(""),
-  asset_method: z.enum(ASSET_METHODS).default("slide"),
-  asset_prompt: z.string().optional().default(""),
+  on_screen_text: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
+  voiceover_line: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
+  asset_method: z
+    .preprocess((val) => coerceAssetMethod(val), z.enum(ASSET_METHODS).default("slide")),
+  asset_prompt: z
+    .preprocess((val) => coerceToString(val), z.string().optional().default("")),
 });
 
 export const StoryboardSchema = z.object({
@@ -202,15 +337,7 @@ export type Storyboard = z.infer<typeof StoryboardSchema>;
 // ------------------------------------------------------------------
 
 export const ExperimentClassificationSchema = z.object({
-  classification: z.enum([
-    "winner",
-    "weak_hook",
-    "weak_cta",
-    "wrong_audience",
-    "message_mismatch",
-    "loser",
-    "inconclusive",
-  ]),
+  classification: z.enum(["winner", "promising", "flat", "kill"]),
   diagnosis: z.string(),
   next_action: z.enum([
     "variant",
@@ -231,14 +358,37 @@ export type ExperimentClassification = z.infer<typeof ExperimentClassificationSc
 // ------------------------------------------------------------------
 
 export const GrowthRunOptionsSchema = z.object({
-  target_platforms: z.array(z.enum(PLATFORMS)).default(["tiktok", "instagram", "youtube"]),
+  target_platforms: z.array(z.enum(PLATFORMS)).default(["tiktok"]),
   approval_mode: z.enum(["manual", "per_format", "autopilot"]).default("manual"),
-  posting_aggressiveness: z.enum(["conservative", "balanced", "aggressive"]).default("balanced"),
-  duration_days: z.number().int().min(1).max(60).default(7),
+  posting_aggressiveness: z.enum(["conservative", "balanced", "aggressive"]).default("conservative"),
+  duration_days: z.number().int().min(1).max(60).default(1),
   brand_constraints: z.record(z.unknown()).default({}),
   connected_account_ids: z.array(z.string().uuid()).default([]),
   distribution_mode: z.enum(["postiz", "export_only"]).default("postiz"),
-  concept_target_count: z.number().int().min(1).max(40).default(12),
+  concept_target_count: z.number().int().min(1).max(40).default(3),
+  /** Dev / emergency: allow scheduling videos with silent TTS fallback */
+  allow_silent_voiceover: z.boolean().default(false),
+  /** User-selected production format for Stage 3 render (legacy — prefer video_output_mode) */
+  production_format: ProductionFormatSchema.optional(),
+  /** User-facing video output preset at storyboards gate */
+  video_output_mode: z.string().optional(),
+  creative_format: z.string().optional(),
+  render_style: z.string().optional(),
+  quality_tier: z.string().optional(),
+  max_fal_scenes: z.number().int().min(0).max(6).optional(),
+  max_ai_video_scenes: z.number().int().min(0).max(6).optional(),
+  require_scene_review: z.boolean().optional(),
+  fallback_on_bad_ai_scene: FallbackOnBadAiSceneSchema.optional(),
+  /** User-selected audio mode for Stage 3 render */
+  audio_mode: AudioModeSchema.optional(),
+  /** cinematic = fal middle scenes; fast = slides only */
+  fal_render_mode: FalRenderModeSchema.optional(),
+  /** Override fal model tier; auto derives from render mode + scene purpose */
+  fal_model_tier: FalModelTierSchema.optional(),
+  /** Per-scene visual pipeline: slide | t2v | image_to_video */
+  visual_pipeline: VisualPipelineSchema.optional(),
+  /** User acknowledged low-evidence render for this run */
+  low_evidence_acknowledged: z.boolean().optional(),
 });
 
 export type GrowthRunOptions = z.infer<typeof GrowthRunOptionsSchema>;

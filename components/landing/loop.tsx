@@ -1,68 +1,78 @@
-import { BarChart3, Repeat2, Search, Video } from "lucide-react";
-import { GrowthLoop } from "@/components/growth-loop";
+import {
+  BarChart3,
+  CalendarClock,
+  FileSearch,
+  Globe2,
+  Repeat2,
+  Sparkles,
+  TrendingUp,
+  Trophy,
+  Video,
+} from "lucide-react";
 
 const LOOP = [
-  {
-    icon: Search,
-    title: "Find what works",
-    description:
-      "AutoScale studies proven video patterns, hooks, formats, creator angles, competitor moves, and audience language in your niche. No blank-page guessing.",
-  },
-  {
-    icon: Video,
-    title: "Ship videos",
-    description:
-      "AutoScale creates scripts, storyboards, captions, slides, demo shorts, AI b-roll, and ready-to-post TikToks, Reels, and Shorts.",
-  },
-  {
-    icon: BarChart3,
-    title: "Track users",
-    description:
-      "Track views, clicks, signups, activation, and revenue signals so you know what actually moves the business.",
-  },
-  {
-    icon: Repeat2,
-    title: "Compound winners",
-    description:
-      "When a video works, AutoScale creates new hooks, angles, and formats from the same proven pattern. Weak formats get killed. Winners get multiplied.",
-  },
+  { icon: Globe2, title: "Product URL", desc: "Drop a link to your site." },
+  { icon: FileSearch, title: "LLM crawl + Brief", desc: "The AI reads your product and writes the brief." },
+  { icon: TrendingUp, title: "Deep discovery", desc: "Hunt competitors, shadow accounts, and niche patterns from public evidence." },
+  { icon: Video, title: "Video evidence + Growth Run", desc: "Reverse-engineer TikTok/Reels/Shorts hooks, then ship experiments." },
+  { icon: CalendarClock, title: "Schedule + post", desc: "Gap-aware scheduling through Post Bridge." },
+  { icon: BarChart3, title: "Measure", desc: "Save rate, views, and signups from every post." },
+  { icon: Sparkles, title: "Classify", desc: "Winner · promising · flat · kill (save-rate aware)." },
+  { icon: Trophy, title: "Compound winners", desc: "Proven hooks spawn variant batches." },
+  { icon: Repeat2, title: "Repeat", desc: "Distribution that compounds, not resets." },
 ] as const;
 
 export function Loop() {
   return (
-    <section id="loop" className="border-t border-border/40 bg-secondary/30 py-20 md:py-28">
+    <section id="loop" className="border-t border-border/40 bg-secondary/30 py-20 md:py-28 overflow-hidden">
       <div className="container">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">The solution</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">The Growth Run loop</p>
           <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-balance md:text-5xl">
-            AutoScale helps you find the formats worth scaling.
+            One loop. Compounding video distribution.
           </h2>
           <p className="mt-5 text-base text-muted-foreground text-balance md:text-lg">
-            Paste your product URL. AutoScale studies your product, niche, competitors, and proven short-form patterns,
-            then creates video experiments, posts them through your accounts, tracks what brings users, and turns
-            winners into more variants.
-          </p>
-          <p className="mt-5 text-sm font-medium text-foreground/80">
-            You do not need to be a natural marketer. You need a system that tests faster than you can guess.
+            Your first Growth Run is an exploration batch — wide, varied, designed to learn. Every run after that
+            exploits what worked, compounding winners into more variants and killing what didn&apos;t.
           </p>
         </div>
 
-        <GrowthLoop className="mx-auto mt-10 max-w-4xl" />
+        <div className="mx-auto mt-14 max-w-6xl">
+          <div className="relative rounded-2xl border border-border bg-card/70 p-6 md:p-10">
+            <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-br from-primary/[0.04] via-transparent to-primary/[0.04]" />
+            <ol className="grid gap-3 md:grid-cols-3 lg:grid-cols-3">
+              {LOOP.map((step, index) => (
+                <li
+                  key={step.title}
+                  className="group relative rounded-xl border border-border/60 bg-background/60 p-5 transition-all hover:border-primary/40 hover:bg-background"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <step.icon className="h-4 w-4" />
+                    </div>
+                    <span className="font-mono text-[10px] text-primary">{String(index + 1).padStart(2, "0")}</span>
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold tracking-tight">{step.title}</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{step.desc}</p>
+                </li>
+              ))}
+            </ol>
 
-        <ol className="mx-auto mt-14 grid max-w-6xl overflow-hidden rounded-2xl border border-border bg-card/70 md:grid-cols-2 lg:grid-cols-4">
-          {LOOP.map((step, index) => (
-            <li key={step.title} className="border-b border-border p-6 last:border-b-0 md:border-r md:[&:nth-child(2)]:border-r-0 lg:border-b-0 lg:[&:nth-child(2)]:border-r">
-              <div className="flex items-center justify-between">
-                <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <step.icon className="h-4 w-4" />
-                </div>
-                <span className="font-mono text-[10px] text-primary">{String(index + 1).padStart(2, "0")}</span>
+            <div className="mt-8 flex flex-col gap-4 rounded-xl border border-primary/20 bg-primary/[0.04] p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Exploration → Exploitation</p>
+                <p className="mt-2 text-sm text-foreground/90">
+                  Run 1 explores broadly. Runs 2+ exploit winners into variant batches you&apos;d never script by hand.
+                </p>
               </div>
-              <h3 className="mt-5 text-base font-semibold tracking-tight">{step.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.description}</p>
-            </li>
-          ))}
-        </ol>
+              <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                <span className="rounded-md border border-border bg-background px-2 py-1">batch 1: explore</span>
+                <span className="text-primary">→</span>
+                <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-primary">batch 2+: compound</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -45,12 +45,47 @@ export async function generateVideoStrategy(opts: {
   ownerId: string;
   trendReport: VideoTrendReport;
   options: GrowthRunOptions;
+  lowConfidenceEvidence?: boolean;
+  evidenceCount?: number;
+  patternCount?: number;
 }): Promise<{
   strategy: VideoStrategy;
   loadout: PostingLoadout;
   strategyId: string;
   loadoutId: string;
 }> {
+  const supabase = createSupabaseServerClient();
+  const { data: existingStrategyRow } = await supabase
+    .from("video_strategies")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+  const { data: existingLoadoutRow } = await supabase
+    .from("posting_loadouts")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+
+  if (existingStrategyRow && existingLoadoutRow) {
+    const strategy: VideoStrategy = normalizeStrategyVideoTypes({
+      platform_mix: existingStrategyRow.platform_mix as never,
+      video_type_mix: existingStrategyRow.video_type_mix as never,
+      campaign_hypotheses: existingStrategyRow.campaign_hypotheses as never,
+      rationale: existingStrategyRow.rationale ?? "",
+    });
+    const loadout = PostingLoadoutSchema.parse({
+      per_account_plan: existingLoadoutRow.per_account_plan,
+      total_videos_planned: existingLoadoutRow.total_videos_planned,
+      duration_days: existingLoadoutRow.duration_days,
+    });
+    return {
+      strategy,
+      loadout,
+      strategyId: existingStrategyRow.id,
+      loadoutId: existingLoadoutRow.id,
+    };
+  }
+
   const [brief, accounts, learningMemory, killDecisions] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadConnectedAccounts(
@@ -72,6 +107,12 @@ export async function generateVideoStrategy(opts: {
       }
     : null;
 
+  const productionConstraints = brief?.production_constraints as
+    | { can_make_carousels?: boolean }
+    | null
+    | undefined;
+  const canMakeCarousels = productionConstraints?.can_make_carousels !== false;
+
   const accountPacket = accounts.map((a) => ({
     id: a.id,
     platform: a.platform,
@@ -80,9 +121,16 @@ export async function generateVideoStrategy(opts: {
     max_per_day: a.max_posts_per_day,
   }));
 
+  const thinEvidence =
+    opts.lowConfidenceEvidence === true || opts.trendReport.confidence < 0.35;
+  const effectiveAggressiveness = thinEvidence ? "conservative" : opts.options.posting_aggressiveness;
+
   const prompt = [
     "You are AutoScale's Video Strategy Agent.",
     "Pick the right short-form video mix for this SaaS founder.",
+    thinEvidence
+      ? "IMPORTANT: Discovery evidence is thin or VideoTrend confidence is low. Prefer conservative volume, fewer hypotheses, and formats with the strongest direct evidence. Do not recommend aggressive posting cadence."
+      : "",
     "",
     "Product brief:",
     JSON.stringify(briefPacket),
@@ -95,6 +143,16 @@ export async function generateVideoStrategy(opts: {
       platform_patterns: opts.trendReport.platform_patterns,
       recommended_experiments: opts.trendReport.recommended_experiments,
       competitor_gaps: opts.trendReport.competitor_gaps,
+      confidence: opts.trendReport.confidence,
+    }),
+    "",
+    "Evidence quality signals:",
+    JSON.stringify({
+      discovery_low_confidence: opts.lowConfidenceEvidence ?? false,
+      evidence_count: opts.evidenceCount ?? null,
+      pattern_count: opts.patternCount ?? null,
+      videotrend_confidence: opts.trendReport.confidence,
+      thin_evidence: thinEvidence,
     }),
     "",
     "Prior project learning (must influence this run):",
@@ -115,25 +173,30 @@ export async function generateVideoStrategy(opts: {
     "User options:",
     JSON.stringify({
       target_platforms: opts.options.target_platforms,
-      aggressiveness: opts.options.posting_aggressiveness,
+      aggressiveness: effectiveAggressiveness,
+      requested_aggressiveness: opts.options.posting_aggressiveness,
       duration_days: opts.options.duration_days,
       connected_accounts: accountPacket,
       concept_target_count: opts.options.concept_target_count,
+      thin_evidence: thinEvidence,
     }),
     "",
     "Return a strict JSON object matching VideoStrategy:",
     "- platform_mix: weights summing to 1.0 across the target platforms only.",
-    "- video_type_mix: weights summing to 1.0 across video types (slide / demo / founder_pov / pain_led / trend_remix / ai_broll / objection / comparison). Prefer slide + demo for SaaS unless evidence says otherwise.",
+    "- video_type_mix: weights summing to 1.0 across video types (slide / founder_pov / pain_led / trend_remix / ai_broll / objection / comparison / carousel). Do NOT allocate weight to demo — Stage 3 no longer supports screen demos. Prefer pain_led + ai_broll + slide for SaaS unless evidence says otherwise.",
+    canMakeCarousels
+      ? "- carousel is allowed when brief production_constraints.can_make_carousels is true — weight it on instagram when evidence supports swipeable formats."
+      : "- do not allocate weight to carousel — production_constraints.can_make_carousels is false.",
     "- campaign_hypotheses: 3-6 testable hypotheses tied to the trend evidence.",
     "  Every hypothesis object MUST include hypothesis and metric_to_watch strings.",
     "- rationale: 3-5 sentences explaining the mix.",
     "Use this exact shape (replace the example values, never omit keys):",
     JSON.stringify({
       platform_mix: { tiktok: 0.4, instagram: 0.3, youtube: 0.3 },
-      video_type_mix: { slide: 0.5, demo: 0.5 },
+      video_type_mix: { slide: 0.35, pain_led: 0.35, ai_broll: 0.3 },
       campaign_hypotheses: [
         {
-          hypothesis: "A pain-led demo will drive qualified product clicks.",
+          hypothesis: "A pain-led short will drive qualified product clicks.",
           metric_to_watch: "product_link_clicks",
           success_threshold: "At least 3 qualified clicks in the evaluation window.",
           kill_threshold: "No clicks after the evaluation window.",
@@ -147,7 +210,7 @@ export async function generateVideoStrategy(opts: {
     schema: VideoStrategySchema,
     schemaDescription:
       "VideoStrategy JSON with platform_mix and video_type_mix numeric records; campaign_hypotheses is an array of objects where every object contains hypothesis:string and metric_to_watch:string, plus optional success_threshold:string and kill_threshold:string; rationale:string.",
-    taskType: "content",
+    taskType: "strategy_generation",
     system:
       "You are a growth strategist for SaaS short-form video. You output deterministic, founder-actionable mixes. Never recommend more volume than the connected accounts can support.",
     prompt,
@@ -165,17 +228,18 @@ export async function generateVideoStrategy(opts: {
     latencyMs: strategyRes.latencyMs,
     retryCount: strategyRes.retries,
     input: {
-      aggressiveness: opts.options.posting_aggressiveness,
+      aggressiveness: effectiveAggressiveness,
+      thinEvidence,
       learningRows: learningMemory.length,
       killDecisions: killDecisions.length,
     },
     parsedOutput: strategyRes.object,
   });
 
-  const strategy = strategyRes.object;
+  const strategy = normalizeStrategyVideoTypes(strategyRes.object);
 
   // Derive the loadout deterministically — we don't need an LLM for math.
-  const perDay = AGGRESSIVENESS_VIDEOS_PER_ACCOUNT_PER_DAY[opts.options.posting_aggressiveness];
+  const perDay = AGGRESSIVENESS_VIDEOS_PER_ACCOUNT_PER_DAY[effectiveAggressiveness];
   const perAccountPlan = accounts.map((a) => ({
     connected_account_id: a.id,
     platform: a.platform,
@@ -183,18 +247,28 @@ export async function generateVideoStrategy(opts: {
     videos_per_day: Math.min(perDay, a.max_posts_per_day),
     video_type_focus: pickFocusForPlatform(a.platform, strategy),
   }));
-  const totalPlanned = perAccountPlan.reduce(
+  const accountCapacity = perAccountPlan.reduce(
     (sum, p) => sum + p.videos_per_day * opts.options.duration_days,
     0
   );
+  let totalPlanned = perAccountPlan.reduce(
+    (sum, p) => sum + p.videos_per_day * opts.options.duration_days,
+    0
+  );
+  totalPlanned = Math.max(totalPlanned, opts.options.concept_target_count);
+  if (accountCapacity > 0) {
+    totalPlanned = Math.min(totalPlanned, accountCapacity);
+  }
+  if (thinEvidence) {
+    totalPlanned = Math.min(totalPlanned, 3);
+  }
 
   const loadout = PostingLoadoutSchema.parse({
     per_account_plan: perAccountPlan,
-    total_videos_planned: Math.max(totalPlanned, opts.options.concept_target_count),
+    total_videos_planned: Math.max(totalPlanned, 1),
     duration_days: opts.options.duration_days,
   });
 
-  const supabase = createSupabaseServerClient();
   const { data: strategyRow, error: strategyError } = await supabase
     .from("video_strategies")
     .insert({
@@ -240,11 +314,28 @@ function pickFocusForPlatform(
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .map(([k]) => k as keyof typeof strategy.video_type_mix);
   if (platform === "youtube") {
-    // Shorts favor explanatory / demo
-    return sorted.filter((t) => ["demo", "objection", "comparison", "slide"].includes(t)).slice(0, 3);
+    return sorted.filter((t) => ["pain_led", "objection", "comparison", "slide", "ai_broll"].includes(t)).slice(0, 3);
   }
   if (platform === "instagram") {
-    return sorted.filter((t) => ["demo", "ai_broll", "founder_pov", "slide"].includes(t)).slice(0, 3);
+    return sorted.filter((t) => ["pain_led", "ai_broll", "founder_pov", "slide"].includes(t)).slice(0, 3);
   }
   return sorted.slice(0, 4);
+}
+
+/** Remap legacy demo weights to pain_led + ai_broll for Stage 3 compatibility. */
+function normalizeStrategyVideoTypes(strategy: VideoStrategy): VideoStrategy {
+  const mix = { ...strategy.video_type_mix };
+  const demoWeight = Number(mix.demo ?? 0);
+  if (demoWeight > 0) {
+    delete mix.demo;
+    mix.pain_led = Number(mix.pain_led ?? 0) + demoWeight * 0.6;
+    mix.ai_broll = Number(mix.ai_broll ?? 0) + demoWeight * 0.4;
+  }
+  const total = Object.values(mix).reduce((sum, w) => sum + Number(w), 0);
+  if (total > 0) {
+    for (const key of Object.keys(mix)) {
+      mix[key as keyof typeof mix] = Number(mix[key as keyof typeof mix]) / total;
+    }
+  }
+  return { ...strategy, video_type_mix: mix };
 }

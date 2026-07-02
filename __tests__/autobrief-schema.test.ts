@@ -66,12 +66,15 @@ describe("AutoBriefSchema string-to-array tolerance", () => {
     }
   });
 
-  it("still rejects invalid confidence_score", () => {
+  it("coerces string confidence_score levels to numeric scores", () => {
     const result = AutoBriefSchema.safeParse({
       ...validBrief,
       confidence_score: "high",
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.confidence_score).toBe(0.85);
+    }
   });
 
   it("still rejects invalid object for string-array fields", () => {
@@ -80,5 +83,39 @@ describe("AutoBriefSchema string-to-array tolerance", () => {
       target_audience: { name: "wrong" },
     });
     expect(result.success).toBe(false);
+  });
+
+  it("coerces missing competitor reason to a default string", () => {
+    const result = AutoBriefSchema.safeParse({
+      ...validBrief,
+      suggested_competitors: [
+        { name: "Comp A", confidence: 0.6 },
+        { name: "Comp B", reason: "Direct rival", confidence: "medium" },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.suggested_competitors[0]?.reason).toContain("Likely alternative");
+      expect(result.data.suggested_competitors[1]?.reason).toBe("Direct rival");
+    }
+  });
+
+  it("coerces missing source confidence and object target_customer", () => {
+    const result = AutoBriefSchema.safeParse({
+      ...validBrief,
+      target_customer: { description: "Busy founders", segment: "B2B SaaS" },
+      primary_pain: null,
+      suggested_sources: [
+        { platform: "tiktok", reason: "Active niche", confidence: "medium" },
+        { platform: "youtube", url: "https://youtube.com/@x" },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.target_customer).toBe("Busy founders");
+      expect(result.data.primary_pain).toContain("not clearly stated");
+      expect(result.data.suggested_sources[0]?.confidence).toBe(0.55);
+      expect(result.data.suggested_sources[1]?.confidence).toBe(0.5);
+    }
   });
 });

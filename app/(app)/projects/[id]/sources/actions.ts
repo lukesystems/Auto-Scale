@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { briefCompletenessError, isBriefComplete } from "@/lib/brief-completeness";
+import { getProductBrief } from "../queries";
 import type { AccountType, SourcePlatform } from "@/lib/supabase/types";
 import { enrichSourceFromUrl, scoreSourceRecord, type SourceRecord } from "@/services/trendwatch/enrich-sources";
 import { classifySource } from "@/services/trendwatch/classify-source";
@@ -11,6 +13,7 @@ import { runDiscovery } from "@/services/intelligence/discovery/run-discovery";
 import { runDeepDiscovery } from "@/services/intelligence/deep-discovery";
 import { promoteCandidateToSource } from "@/services/intelligence/memory/promote-candidate";
 import { logAIRun } from "@/services/ai/logger";
+import { TRENDWATCH_SOURCE_ENRICH_SELECT } from "@/lib/trendwatch/source-select";
 
 const PlatformEnum = z.enum([
   "tiktok", "instagram", "x", "linkedin", "youtube", "threads", "pinterest", "reddit", "facebook", "other",
@@ -34,6 +37,14 @@ const SourceSchema = z.object({
 });
 
 export type SourceActionResult = { ok: true } | { ok: false; error: string };
+
+async function assertBriefReadyForDiscovery(projectId: string): Promise<SourceActionResult | null> {
+  const brief = await getProductBrief(projectId);
+  if (!isBriefComplete(brief)) {
+    return { ok: false, error: briefCompletenessError() };
+  }
+  return null;
+}
 
 export async function addSourceAction(formData: FormData): Promise<SourceActionResult> {
   if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
@@ -61,6 +72,10 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  const notesParts = [parsed.data.notes, parsed.data.caption ? `Caption: ${parsed.data.caption}` : null]
+    .filter(Boolean)
+    .join("\n\n");
+
   const { data: inserted, error } = await supabase
     .from("trendwatch_sources")
     .insert({
@@ -69,7 +84,6 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
       platform: parsed.data.platform,
       account_handle: parsed.data.account_handle || null,
       account_type: (parsed.data.account_type as AccountType | undefined) ?? "unknown",
-      caption: parsed.data.caption || null,
       published_at: parsed.data.published_at ? new Date(parsed.data.published_at).toISOString() : null,
       follower_count: parsed.data.follower_count ?? null,
       views: parsed.data.views ?? null,
@@ -77,10 +91,10 @@ export async function addSourceAction(formData: FormData): Promise<SourceActionR
       saves: parsed.data.saves ?? null,
       shares: parsed.data.shares ?? null,
       comments: parsed.data.comments ?? null,
-      notes: parsed.data.notes || null,
+      notes: notesParts || null,
       fetch_status: parsed.data.source_url ? "pending" : "skipped",
     })
-    .select("id, source_url, platform, account_handle, account_type, caption, published_at, follower_count, views, likes, saves, shares, comments, transferability_score, notes")
+    .select(TRENDWATCH_SOURCE_ENRICH_SELECT)
     .single();
   if (error || !inserted) return { ok: false, error: error?.message ?? "Failed to add source." };
 
@@ -163,6 +177,9 @@ export async function runDiscoveryAction(projectId: string): Promise<SourceActio
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  const briefGate = await assertBriefReadyForDiscovery(parsed.data);
+  if (briefGate) return briefGate;
+
   try {
     const result = await runDiscovery({ projectId: parsed.data, enrich: true });
 
@@ -204,6 +221,9 @@ export async function runDeepDiscoveryAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  const briefGate = await assertBriefReadyForDiscovery(parsed.data);
+  if (briefGate) return briefGate;
 
   try {
     const result = await runDeepDiscovery({ projectId: parsed.data });

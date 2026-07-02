@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
+  { label: "The loop", href: "#loop" },
   { label: "How it works", href: "#how" },
-  { label: "Loop", href: "#loop" },
-  { label: "Modules", href: "#modules" },
+  { label: "Engine", href: "#modules" },
   { label: "Pricing", href: "#pricing" },
   { label: "FAQ", href: "#faq" },
 ];
@@ -56,7 +56,7 @@ export function LandingNav() {
             <Link href="/auth/sign-in">Sign in</Link>
           </Button>
           <Button asChild size="sm">
-            <Link href="/auth/sign-up">Find My Winning Format</Link>
+            <Link href="/auth/sign-up">Start your first Growth Run</Link>
           </Button>
         </div>
 
@@ -88,7 +88,7 @@ export function LandingNav() {
                 <Link href="/auth/sign-in">Sign in</Link>
               </Button>
               <Button asChild size="sm" className="flex-1">
-                <Link href="/auth/sign-up">Find My Winning Format</Link>
+                <Link href="/auth/sign-up">Start your first Growth Run</Link>
               </Button>
             </div>
           </div>

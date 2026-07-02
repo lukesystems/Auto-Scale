@@ -9,6 +9,10 @@ export const DiscoveryIntentSchema = z.enum([
   "comparison",
   "community",
   "creator",
+  /** Unofficial / alt accounts that often outperform official brand pages. */
+  "shadow_account",
+  /** Short-form format, hook, or distribution pattern hunting. */
+  "distribution",
 ]);
 
 export type DiscoveryIntent = z.infer<typeof DiscoveryIntentSchema>;

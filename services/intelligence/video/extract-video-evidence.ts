@@ -94,11 +94,43 @@ export function parseMetric(value: string): number | null {
   return Math.round(number * multiplier);
 }
 
-export function extractVisibleMetric(text: string, label: "views" | "likes" | "comments" | "shares"): number | null {
+export type EngagementMetricLabel = "views" | "likes" | "comments" | "shares" | "saves";
+
+export function extractVisibleMetric(text: string, label: EngagementMetricLabel): number | null {
   const escaped = label.replace(/s$/, "s?");
   const patterns = [
     new RegExp(`(?:^|[^\\w])([0-9]+(?:[.,][0-9]+)?\\s*[KMB]?)\\s+${escaped}(?:[^\\w]|$)`, "i"),
     new RegExp(`${escaped}\\s*[:·-]\\s*([0-9]+(?:[.,][0-9]+)?\\s*[KMB]?)(?:[^\\w]|$)`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return parseMetric(match[1].replace(/\s+/g, ""));
+  }
+  return null;
+}
+
+export interface EngagementProxies {
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+}
+
+export function extractEngagementFromText(text: string): EngagementProxies {
+  return {
+    views: extractVisibleMetric(text, "views"),
+    likes: extractVisibleMetric(text, "likes"),
+    comments: extractVisibleMetric(text, "comments"),
+    shares: extractVisibleMetric(text, "shares"),
+    saves: extractVisibleMetric(text, "saves"),
+  };
+}
+
+export function extractVisibleFollowerCount(text: string): number | null {
+  const patterns = [
+    /(?:^|[^\w])([0-9]+(?:[.,][0-9]+)?\s*[KMB]?)\s+followers?(?:[^\w]|$)/i,
+    /followers?\s*[:·-]\s*([0-9]+(?:[.,][0-9]+)?\s*[KMB]?)(?:[^\w]|$)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -163,6 +195,7 @@ export async function extractVideoEvidence(url: string): Promise<VideoEvidence> 
   const hashtags = extractHashtags(visibleText);
   const postedAt = extractDate(html);
   const durationSeconds = extractDurationSeconds(html);
+  const followerCount = extractVisibleFollowerCount(visibleText);
 
   return VideoEvidenceSchema.parse({
     ...base,
@@ -171,6 +204,7 @@ export async function extractVideoEvidence(url: string): Promise<VideoEvidence> 
     caption,
     hashtags,
     durationSeconds,
+    followerCount,
     viewCount: extractVisibleMetric(visibleText, "views"),
     likeCount: extractVisibleMetric(visibleText, "likes"),
     commentCount: extractVisibleMetric(visibleText, "comments"),

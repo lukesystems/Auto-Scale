@@ -18,8 +18,8 @@ export function getFalProviderStatus(): FalProviderStatus {
     configured: config.fal.configured,
     enabled: config.fal.enabled,
     message: config.fal.configured
-      ? "Fal credentials are configured. Media generation pipeline is not active yet."
-      : "Fal is not configured. Set FAL_KEY when media generation ships.",
+      ? "Fal credentials are configured. Seedance text-to-video runs for ai_broll scenes when storyboard asset_method is fal_clip."
+      : "Fal is not configured. Set FAL_KEY to enable Seedance text-to-video b-roll.",
   };
 }
 
@@ -29,9 +29,16 @@ export function assertFalConfigured(): void {
   }
 }
 
-/** Placeholder for future image generation — not implemented in V1.1. */
-export async function generateFalImagePlaceholder(_prompt: string): Promise<never> {
-  throw new Error("Fal image generation is not implemented yet. See docs/MEDIA_PROVIDER_PLAN.md.");
+/** Delegate to video-factory image generation. */
+export async function generateFalImagePlaceholder(prompt: string): Promise<{ imageUrl: string }> {
+  const { generateFalImage } = await import("@/services/video-factory/fal/image-gen");
+  const { selectFalImageModel } = await import("@/services/video-factory/fal/model-router");
+  const selected = selectFalImageModel({
+    falRenderMode: "cinematic",
+    scenePurpose: "hook",
+  });
+  const result = await generateFalImage({ prompt, modelId: selected.modelId });
+  return { imageUrl: result.imageUrl };
 }
 
 /** Placeholder for future video generation — not implemented in V1.1. */

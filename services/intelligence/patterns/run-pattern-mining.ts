@@ -1,3 +1,4 @@
+import { bridgeVideoEvidenceToSources } from "../video/bridge-video-evidence-to-sources";
 import { loadPatternMiningContext } from "./load-pattern-context";
 import { extractSignalsFromSources } from "./extract-source-signals";
 import {
@@ -25,6 +26,7 @@ export interface RunPatternMiningResult {
 }
 
 export async function runPatternMining(input: RunPatternMiningInput): Promise<RunPatternMiningResult> {
+  await bridgeVideoEvidenceToSources({ projectId: input.projectId });
   const context = await loadPatternMiningContext(input.projectId);
 
   if (!context.sources.length) {
@@ -35,7 +37,23 @@ export async function runPatternMining(input: RunPatternMiningInput): Promise<Ru
       patternCount: 0,
       patterns: [],
       usedAi: false,
-      error: "No accepted TrendWatch sources with mineable signals. Add and accept sources first.",
+      error:
+        "No mineable signals from video evidence or TrendWatch sources. Run video discovery or accept sources first.",
+    };
+  }
+
+  const buckets = extractSignalsFromSources(context.sources);
+
+  if (!buckets.length) {
+    return {
+      ok: false,
+      runId: null,
+      sourceCount: context.sources.length,
+      patternCount: 0,
+      patterns: [],
+      usedAi: false,
+      error:
+        "Video evidence and TrendWatch sources lack extractable hooks, formats, or CTAs for pattern mining.",
     };
   }
 
@@ -58,7 +76,6 @@ export async function runPatternMining(input: RunPatternMiningInput): Promise<Ru
     };
   }
 
-  const buckets = extractSignalsFromSources(context.sources);
   const groups = groupSignalsDeterministically(buckets);
   const clustered = await clusterPatterns({ groups, context });
   const patterns = filterPatternsWithEvidence(clustered.patterns);

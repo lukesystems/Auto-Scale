@@ -16,6 +16,7 @@ import { isSchedulable, MIN_SCHEDULE_QUALITY_SCORE } from "@/services/video-qual
 import { logAutopilotSkip } from "./skip-log";
 import { getPlatformVariantUrl } from "@/services/video-factory/platform-variants";
 import { nativeSoundNote } from "@/services/audio/library";
+import { ensureExperimentResultForVideo } from "@/services/compound/ensure-experiment";
 
 /**
  * Multi-account scheduler.
@@ -415,6 +416,12 @@ export async function scheduleApprovedVideos(
         });
         continue;
       }
+
+      await ensureExperimentResultForVideo(supabase, {
+        projectId: input.projectId,
+        growthRunId: input.growthRunId,
+        videoId: video.id,
+      });
 
       // link the tracked_link back to the schedule_item now we have its id
       await supabase

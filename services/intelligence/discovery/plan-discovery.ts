@@ -64,12 +64,35 @@ export function buildFallbackDiscoveryPlan(context: DiscoveryContext): Discovery
   const category = context.brief.category || context.brief.market_category || "SaaS tool";
   const pain = context.brief.primary_pain || "workflow pain";
   const icp = context.brief.target_customer || "founders";
+  const competitorNames = extractCompetitorNames(context);
 
   const queries: DiscoveryPlan["queries"] = [
     {
       query: `best alternatives to ${category}`,
       intent: "alternative",
       reason: "Find comparison and alternative pages for the product category.",
+    },
+    {
+      query: `${category} vs comparison 2025`,
+      intent: "comparison",
+      reason: "Find recent comparison pages revealing category winners.",
+    },
+    {
+      query: `site:reddit.com "${pain}" tool recommendation`,
+      intent: "community",
+      platform_hint: "reddit",
+      reason: "Find Reddit threads where the ICP asks for tool recommendations.",
+    },
+    {
+      query: `site:g2.com OR site:capterra.com ${category}`,
+      intent: "comparison",
+      reason: "Review sites with competitor positioning and user pain language.",
+    },
+    {
+      query: `site:tiktok.com ${category} ${icp}`,
+      intent: "distribution",
+      platform_hint: "tiktok",
+      reason: "Public TikTok content discussing the category.",
     },
     {
       query: `${icp} ${pain}`,
@@ -81,18 +104,6 @@ export function buildFallbackDiscoveryPlan(context: DiscoveryContext): Discovery
       intent: "community",
       platform_hint: "reddit",
       reason: "Find community threads where the ICP discusses this pain.",
-    },
-    {
-      query: `site:youtube.com ${category} review`,
-      intent: "comparison",
-      platform_hint: "youtube",
-      reason: "Find video reviews and comparisons in the category.",
-    },
-    {
-      query: `site:linkedin.com ${category} for ${icp}`,
-      intent: "platform",
-      platform_hint: "linkedin",
-      reason: "Find LinkedIn posts about the category and audience.",
     },
     {
       query: `${category} tools for ${icp}`,
@@ -112,5 +123,51 @@ export function buildFallbackDiscoveryPlan(context: DiscoveryContext): Discovery
     },
   ];
 
-  return { queries, notes: ["Deterministic fallback plan — AI planner unavailable."] };
+  for (const competitor of competitorNames.slice(0, 3)) {
+    queries.push(
+      {
+        query: `"${competitor}" unofficial TikTok account OR shadow account`,
+        intent: "shadow_account",
+        platform_hint: "tiktok",
+        reason: `Hunt unofficial/shadow accounts covering ${competitor}.`,
+      },
+      {
+        query: `"${competitor}" shadow account Instagram`,
+        intent: "shadow_account",
+        platform_hint: "instagram",
+        reason: `Find alt Instagram accounts for ${competitor}.`,
+      },
+      {
+        query: `"${competitor}" affiliate creator OR partner account`,
+        intent: "distribution",
+        reason: `Partner/creator accounts that distribute ${competitor}.`,
+      }
+    );
+  }
+
+  return {
+    queries: queries.slice(0, 15),
+    notes: ["Deterministic fallback plan — AI planner unavailable."],
+  };
+}
+
+function extractCompetitorNames(context: DiscoveryContext): string[] {
+  const names = new Set<string>();
+  const brief = context.brief;
+
+  if (Array.isArray(brief.likely_competitors)) {
+    for (const item of brief.likely_competitors) {
+      if (typeof item === "string") names.add(item);
+      else if (item && typeof item === "object" && typeof (item as { name?: string }).name === "string") {
+        names.add((item as { name: string }).name);
+      }
+    }
+  }
+  if (Array.isArray(brief.competitors)) {
+    for (const item of brief.competitors) {
+      if (typeof item === "string") names.add(item);
+    }
+  }
+
+  return [...names].filter(Boolean);
 }

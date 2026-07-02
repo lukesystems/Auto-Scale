@@ -1,17 +1,17 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 
-const DEAD_END = [
-  "Guess what to post",
-  "Publish a few videos",
-  "Get weak or unclear results",
-  "Stop before finding a repeatable format",
+const FOUNDER_PAIN = [
+  "You're a technical founder. You can't spend 4 hours a day on TikTok.",
+  "Carousel and text-post tools won't bring users — short-form video is where distribution lives now.",
+  "You don't know what's trending today, let alone how to hop on a trend with your product.",
+  "Every video is a shot in the dark. No system to learn what actually works.",
 ];
 
-const FORMAT_FIRST = [
-  "Test proven patterns instead of random prompts",
-  "Measure users and revenue signals, not just views",
-  "Kill weak formats before they waste more time",
-  "Multiply winners into new hooks, angles, and variants",
+const AUTOSCALE_ANSWER = [
+  "Paste a URL. The engine handles trend research, scripting, and scheduling for you.",
+  "Short-form video on TikTok, Reels, and YouTube Shorts — the channels users actually convert from.",
+  "TrendWatch surfaces viral trends and proposes how to ride them with a video about your product.",
+  "Every Growth Run is an experiment. Winners compound into variants. Failures become learnings.",
 ];
 
 export function Pain() {
@@ -19,27 +19,21 @@ export function Pain() {
     <section id="problem" className="border-t border-border/40 py-20 md:py-28">
       <div className="container">
         <div className="mx-auto max-w-4xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">The real problem</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Why founders stall on social</p>
           <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-balance md:text-5xl">
-            You do not have a content problem.
+            You don&apos;t need another carousel tool.
             <br />
-            <span className="text-muted-foreground">You have a distribution loop problem.</span>
+            <span className="text-muted-foreground">You need a video growth engine.</span>
           </h2>
           <p className="mx-auto mt-5 max-w-3xl text-base text-muted-foreground text-balance md:text-lg">
-            Most founders guess what to post, publish a few videos, get weak results, then stop before they ever find a
-            repeatable format.
-          </p>
-          <p className="mx-auto mt-5 max-w-2xl text-lg font-semibold text-foreground text-balance md:text-xl">
-            More volume does not fix a bad format.
-          </p>
-          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground text-balance">
-            If your videos are not bringing users, posting more of the wrong thing only burns time faster.
+            Carousels and text posts don&apos;t bring users anymore. Short-form video does — and shipping it consistently
+            is a full-time job most technical founders can&apos;t afford.
           </p>
         </div>
 
         <div className="mx-auto mt-14 grid max-w-5xl gap-4 md:grid-cols-2">
-          <ComparisonCard title="The distribution dead end" items={DEAD_END} negative />
-          <ComparisonCard title="The format-first loop" items={FORMAT_FIRST} />
+          <ComparisonCard title="What founders actually face" items={FOUNDER_PAIN} negative />
+          <ComparisonCard title="What AutoScale does instead" items={AUTOSCALE_ANSWER} />
         </div>
       </div>
     </section>

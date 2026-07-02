@@ -25,6 +25,7 @@ describe("production mode schema", () => {
   it("accepts implemented modes", () => {
     expect(ProductionModeSchema.parse("fast_slides")).toBe("fast_slides");
     expect(PRODUCTION_MODE_SPECS.fast_slides.implemented).toBe(true);
+    expect(PRODUCTION_MODE_SPECS.ai_broll_short.implemented).toBe(true);
     expect(PRODUCTION_MODE_SPECS.demo_short.implemented).toBe(false);
   });
 });
@@ -45,15 +46,18 @@ describe("scene plan generation", () => {
     expect(plan.scenes.some((s) => s.purpose === "cta")).toBe(true);
   });
 
-  it("scaffolds demo_short with screen_recording scene", () => {
+  it("maps legacy demo_short production mode to ai b-roll scenes", () => {
     const plan = buildScenePlan({
       productionMode: "demo_short",
       script: SCRIPT,
       hook: SCRIPT.hook_line,
       cta: SCRIPT.cta_line,
       targetLengthSeconds: 28,
+      preferAiBroll: true,
+      falConfigured: true,
     });
-    expect(plan.scenes.some((s) => s.visual_method === "screen_recording")).toBe(true);
+    expect(plan.scenes.some((s) => s.visual_method === "ai_broll")).toBe(true);
+    expect(plan.scenes.some((s) => s.visual_method === "screen_recording")).toBe(false);
   });
 });
 
@@ -170,17 +174,16 @@ describe("trend receipt confidence downgrade", () => {
 describe("compound action decision", () => {
   function compoundAction(classification: string, nextAction: string) {
     if (classification === "winner") return "scale";
-    if (classification === "loser" || nextAction === "kill") return "kill";
-    if (["weak_hook", "weak_cta", "message_mismatch"].includes(classification)) return "iterate";
-    if (classification === "inconclusive") return "inconclusive";
+    if (classification === "kill" || nextAction === "kill") return "kill";
+    if (["promising", "flat"].includes(classification)) return "iterate";
     return null;
   }
 
   it("maps classifications to compound actions", () => {
     expect(compoundAction("winner", "variant")).toBe("scale");
-    expect(compoundAction("loser", "kill")).toBe("kill");
-    expect(compoundAction("weak_hook", "rewrite_hook")).toBe("iterate");
-    expect(compoundAction("inconclusive", "review")).toBe("inconclusive");
+    expect(compoundAction("kill", "kill")).toBe("kill");
+    expect(compoundAction("flat", "rewrite_hook")).toBe("iterate");
+    expect(compoundAction("promising", "review")).toBe("iterate");
   });
 });
 
@@ -212,7 +215,13 @@ describe("verify report formatter", () => {
       projectId: "proj-1",
       passed: false,
       failedStep: 9,
-      environment: { supabase: true, ffmpeg: true, postiz: false },
+      environment: {
+        supabase: true,
+        ffmpeg: true,
+        postiz: false,
+        publishing: false,
+        publishingProvider: "postiz",
+      },
       steps: [
         {
           step: 9,

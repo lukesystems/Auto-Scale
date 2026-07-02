@@ -307,8 +307,8 @@ describe("enrichment.pickDeepEnrichCandidateIndices", () => {
     const indices = pickDeepEnrichCandidateIndices(candidates);
     expect(indices.size).toBe(MAX_DEEP_ENRICH_PER_RUN);
     expect(indices.has(0)).toBe(true);
-    expect(indices.has(4)).toBe(true);
-    expect(indices.has(5)).toBe(false);
+    expect(indices.has(7)).toBe(true);
+    expect(indices.has(8)).toBe(false);
   });
 
   it("skips candidates that do not qualify for deep enrichment", () => {

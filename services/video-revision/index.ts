@@ -3,17 +3,24 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { renderConceptVideo } from "@/services/video-factory/render-concept";
 import { generateCaptionsForVideo } from "@/services/video-factory/captions";
-import { synthesizeVoiceover } from "@/services/video-factory/voiceover";
 import { uploadGrowthMedia } from "@/services/video-factory/storage";
 import { renderSlidePng, sceneToSlideInput } from "@/services/video-factory/slide-renderer";
 import { roleToPurpose } from "@/services/video-factory/scene-contract";
 import type { SceneContract } from "@/services/video-factory/scene-contract";
 import { setProductionJobStage } from "@/services/video-factory/production-job";
 import { isFfmpegAvailable } from "@/services/video-factory/ffmpeg";
+import { isFalConfigured } from "@/services/media/fal-config";
+import { resolveProductionOptions, coerceFallbackOnBadAiScene } from "@/services/video-factory/production-options";
+import { GrowthRunOptionsSchema } from "@/services/growth-run/schema";
+import { renderSceneVisual } from "@/services/video-factory/scene-render";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type {
   ReviseHookInput,
   ReviseSceneTextInput,
 } from "./schema";
+export { regenerateVoiceoverWithResult, type RegenerateVoiceoverResult } from "./regenerate-voiceover";
 
 export async function reviseHook(input: ReviseHookInput): Promise<void> {
   const supabase = createSupabaseServerClient();
@@ -82,6 +89,105 @@ export async function regenerateSceneVisual(opts: {
     .single();
   if (!scene) throw new Error("scene not found");
 
+  const useBroll =
+    scene.asset_method === "fal_clip" || scene.visual_method === "ai_broll";
+
+  if (useBroll && isFalConfigured()) {
+    const { data: runRow } = await supabase
+      .from("growth_runs")
+      .select("options, brand_constraints")
+      .eq("id", opts.growthRunId)
+      .maybeSingle();
+    const runOpts =
+      runRow?.options && typeof runRow.options === "object" && !Array.isArray(runRow.options)
+        ? GrowthRunOptionsSchema.partial().parse(runRow.options)
+        : {};
+    const { falRenderMode, falModelTier, visualPipeline, audioMode, productionFormat, creativeFormat, renderStyle, qualityTier, maxFalScenes } =
+      resolveProductionOptions({
+        productionFormat: runOpts.production_format ?? null,
+        videoOutputMode: runOpts.video_output_mode ?? null,
+        creativeFormat: runOpts.creative_format ?? null,
+        renderStyle: runOpts.render_style ?? null,
+        qualityTier: runOpts.quality_tier ?? null,
+        audioMode: runOpts.audio_mode ?? null,
+        falRenderMode: runOpts.fal_render_mode ?? null,
+        falModelTier: runOpts.fal_model_tier ?? null,
+        visualPipeline: runOpts.visual_pipeline ?? null,
+        maxFalScenes: runOpts.max_ai_video_scenes ?? runOpts.max_fal_scenes ?? null,
+        falConfigured: true,
+      });
+    const fallbackOnBadAiScene = coerceFallbackOnBadAiScene(
+      runOpts.fallback_on_bad_ai_scene ?? null
+    );
+
+    const { data: concept } = await supabase
+      .from("video_concepts")
+      .select("hook")
+      .eq("id", opts.conceptId)
+      .single();
+    const { data: storyboard } = await supabase
+      .from("storyboards")
+      .select("aspect_ratio")
+      .eq("concept_id", opts.conceptId)
+      .maybeSingle();
+    const { data: brief } = await supabase
+      .from("product_briefs")
+      .select("product_summary, target_customer")
+      .eq("project_id", opts.projectId)
+      .maybeSingle();
+
+    const brandConstraints =
+      (runRow?.brand_constraints as Record<string, unknown> | null) ?? null;
+    const brandColor = brandConstraints?.primary_color ?? brandConstraints?.brand_color ?? null;
+    const productScreenshotUrl =
+      typeof brandConstraints?.product_screenshot_url === "string"
+        ? brandConstraints.product_screenshot_url
+        : null;
+
+    await supabase
+      .from("generated_assets")
+      .update({ status: "pending", error: null } as never)
+      .eq("concept_id", opts.conceptId)
+      .eq("scene_id", opts.sceneId)
+      .in("kind", ["fal_image", "fal_clip"]);
+
+    const workDir = await mkdtemp(join(tmpdir(), "autoscale-scene-rev-"));
+    try {
+      await renderSceneVisual(
+        {
+          supabase,
+          projectId: opts.projectId,
+          growthRunId: opts.growthRunId,
+          conceptId: opts.conceptId,
+          workDir,
+          aspectRatio: (storyboard?.aspect_ratio as string) ?? "9:16",
+          brandColor: brandColor as string | null,
+          hook: concept?.hook ?? "",
+          productSummary: brief?.product_summary ?? "SaaS product",
+          targetCustomer: brief?.target_customer ?? "founders",
+          trendInference: "",
+          productionFormat,
+          productScreenshotUrl,
+          audioMode,
+          falRenderMode,
+          falModelTier,
+          visualPipeline,
+          falCount: { value: 0 },
+          falScenesCap: maxFalScenes,
+          creativeFormat,
+          renderStyle,
+          qualityTier,
+          fallbackOnBadAiScene,
+        },
+        scene,
+        Math.max(0.5, Number(scene.duration_seconds))
+      );
+      return;
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   const png = await renderSlidePng(
     sceneToSlideInput({
       purpose: (scene.purpose as SceneContract["purpose"]) ?? roleToPurpose(scene.role),
@@ -125,29 +231,12 @@ export async function regenerateVoiceover(opts: {
   conceptId: string;
   durationSeconds: number;
 }): Promise<void> {
-  const supabase = createSupabaseServerClient();
-  const { data: script } = await supabase
-    .from("video_scripts")
-    .select("voiceover_full")
-    .eq("concept_id", opts.conceptId)
-    .maybeSingle();
-  const voiceBuf = await synthesizeVoiceover({
-    scriptText: script?.voiceover_full ?? "",
-    durationSeconds: opts.durationSeconds,
-  });
-  const { storagePath, publicUrl } = await uploadGrowthMedia({
+  const { regenerateVoiceoverWithResult } = await import("./regenerate-voiceover");
+  const result = await regenerateVoiceoverWithResult({
     projectId: opts.projectId,
-    growthRunId: opts.growthRunId,
     conceptId: opts.conceptId,
-    filename: "voiceover-rev.m4a",
-    body: voiceBuf,
-    contentType: "audio/mp4",
   });
-  await supabase
-    .from("generated_assets")
-    .update({ status: "succeeded", storage_path: storagePath, public_url: publicUrl } as never)
-    .eq("concept_id", opts.conceptId)
-    .eq("kind", "voiceover");
+  if (!result.ok) throw new Error(result.error);
 }
 
 export async function regenerateCaptions(opts: {
@@ -213,7 +302,7 @@ export async function rerenderVideo(opts: {
 
   await supabase.from("videos").update({ status: "rendering" }).eq("id", opts.videoId);
 
-  await renderConceptVideo({
+  const result = await renderConceptVideo({
     projectId: opts.projectId,
     growthRunId: opts.growthRunId,
     conceptId: opts.conceptId,
@@ -221,8 +310,20 @@ export async function rerenderVideo(opts: {
     finalAssetId: video.final_asset_id,
   });
 
+  if (!result.qualityPassed) {
+    if (job?.id) {
+      await setProductionJobStage(
+        job.id,
+        "quality_check",
+        "quality_gate_failed",
+        result.qualityBlockReason ?? "Quality gate failed"
+      );
+    }
+    throw new Error(result.qualityBlockReason ?? "Video failed quality gate");
+  }
+
   if (job?.id) {
-    await setProductionJobStage(job.id, "quality_check", "quality_check");
+    await setProductionJobStage(job.id, "quality_check", "quality_gate");
     await setProductionJobStage(job.id, "ready", "ready");
   }
 }

@@ -1,5 +1,8 @@
 import type { CrawledPageContent, ProductSiteFact, ProductPageType } from "../types";
 import { classifyPage } from "./classify-page";
+import { llmClassifyPage, llmExtractPageFacts } from "./llm-extract";
+import { pageFactsToProductFacts } from "./llm-facts-mapper";
+import type { CrawlMode } from "./get-crawl-mode";
 
 const PRICING_PATTERN = /(\$\d+[\d,]*(?:\.\d{2})?|\d+\s*(?:\/\s*)?(?:month|mo|year|yr)|free plan|enterprise plan|per user|per seat)/i;
 
@@ -100,6 +103,108 @@ export function classifyAndExtractFacts(
     const facts = extractFactsFromPage(page, pageType, isHomepage);
     return { page, pageType, facts };
   });
+}
+
+export async function classifyAndExtractFactsAsync(
+  pages: CrawledPageContent[],
+  homepageUrl: string,
+  opts: {
+    crawlMode: CrawlMode;
+    projectId?: string;
+    ownerId?: string;
+    onPageExtracted?: (info: {
+      url: string;
+      pageType: ProductPageType;
+      factCount: number;
+      index: number;
+      total: number;
+    }) => void | Promise<void>;
+  }
+): Promise<
+  Array<{
+    page: CrawledPageContent;
+    pageType: ProductPageType;
+    facts: ProductSiteFact[];
+    relevance?: number;
+  }>
+> {
+  if (opts.crawlMode === "heuristic") {
+    const classified = classifyAndExtractFacts(pages, homepageUrl);
+    for (let index = 0; index < classified.length; index += 1) {
+      const item = classified[index];
+      if (item.page.fetchStatus !== "success") continue;
+      await opts.onPageExtracted?.({
+        url: item.page.finalUrl || item.page.url,
+        pageType: item.pageType,
+        factCount: item.facts.length,
+        index,
+        total: classified.length,
+      });
+    }
+    return classified;
+  }
+
+  const homepageNormalized = normalizeUrl(homepageUrl);
+  const results: Array<{
+    page: CrawledPageContent;
+    pageType: ProductPageType;
+    facts: ProductSiteFact[];
+    relevance?: number;
+  }> = [];
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const page = pages[index];
+    if (page.fetchStatus !== "success") {
+      results.push({ page, pageType: "other", facts: [] });
+      continue;
+    }
+
+    const isHomepage = normalizeUrl(page.finalUrl || page.url) === homepageNormalized;
+    const sourceUrl = page.finalUrl || page.url;
+
+    const llmClass = await llmClassifyPage(page, {
+      projectId: opts.projectId,
+      ownerId: opts.ownerId,
+    });
+    const pageType = llmClass?.pageType ?? classifyPage(page, isHomepage);
+    const relevance = llmClass?.relevance;
+
+    const heuristicFacts = extractFactsFromPage(page, pageType, isHomepage);
+    let llmFacts: ProductSiteFact[] = [];
+
+    try {
+      const extracted = await llmExtractPageFacts({
+        page,
+        url: sourceUrl,
+        projectId: opts.projectId,
+        ownerId: opts.ownerId,
+        existingFacts: {
+          features: heuristicFacts
+            .filter((f) => f.factType === "feature")
+            .map((f) => f.factValue),
+          value_props: heuristicFacts
+            .filter((f) => f.factType === "benefit")
+            .map((f) => f.factValue),
+        },
+      });
+      llmFacts = pageFactsToProductFacts(extracted.facts, sourceUrl);
+    } catch (err) {
+      console.warn("[product-crawl] llmExtractPageFacts failed, using heuristic facts", err);
+    }
+
+    const facts = dedupeFacts([...heuristicFacts, ...llmFacts]);
+    results.push({ page, pageType, facts, relevance });
+
+    await opts.onPageExtracted?.({
+      url: sourceUrl,
+      pageType,
+      factCount: facts.length,
+      index,
+      total: pages.length,
+    });
+  }
+
+  return results;
 }
 
 function surroundingSnippet(text: string, needle: string, radius = 80): string {

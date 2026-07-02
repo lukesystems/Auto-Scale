@@ -1,108 +1,137 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Globe, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { createProjectAction } from "./actions";
+import {
+  beginUnifiedRunAction,
+} from "@/app/(app)/unified-run/actions";
+import {
+  OnboardingPipelineShell,
+  type PipelineStage,
+} from "@/components/onboarding/onboarding-pipeline-shell";
+import { useAutobriefProgress } from "@/hooks/use-autobrief-progress";
+import { useGrowthRunProgress } from "@/hooks/use-growth-run-progress";
+import {
+  ModelPicker,
+  getDefaultModelPickerValue,
+  type ModelPickerValue,
+} from "@/components/ai/model-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
-const PLATFORMS = [
-  { id: "tiktok", label: "TikTok" },
-  { id: "instagram", label: "Instagram" },
-  { id: "x", label: "X / Twitter" },
-  { id: "linkedin", label: "LinkedIn" },
-  { id: "youtube", label: "YouTube Shorts" },
-  { id: "threads", label: "Threads" },
-];
-
-export function NewProjectForm() {
+export function NewProjectForm({
+  onSuccess,
+}: {
+  onSuccess?: () => void;
+} = {}) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string[]>(["linkedin", "x"]);
+  const [productUrl, setProductUrl] = useState("");
+  const [aiModel, setAiModel] = useState<ModelPickerValue>(getDefaultModelPickerValue);
+  const [isBootstrapping, setIsBootstrapping] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [crawlId, setCrawlId] = useState<string | null>(null);
+  const [growthRunId, setGrowthRunId] = useState<string | null>(null);
+  const [stage, setStage] = useState<PipelineStage>("crawl");
+  const runIdRef = useRef(0);
 
-  function togglePlatform(id: string) {
-    setSelected((s) => (s.includes(id) ? s.filter((p) => p !== id) : [...s, id]));
-  }
+  const autobriefProgress = useAutobriefProgress(
+    projectId,
+    crawlId,
+    isBootstrapping && (stage === "crawl" || stage === "brief")
+  );
+  const growthProgress = useGrowthRunProgress(
+    projectId,
+    growthRunId,
+    isBootstrapping && (stage === "growth" || stage === "done")
+  );
 
-  function onSubmit(formData: FormData) {
+  function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const url = productUrl.trim();
+    if (!url) {
+      toast.error("Enter your product URL.");
+      return;
+    }
+
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
     setError(null);
-    for (const id of selected) formData.append("preferred_platforms", id);
+    setIsBootstrapping(true);
+    setProjectId(null);
+    setCrawlId(null);
+    setGrowthRunId(null);
+    setStage("crawl");
 
-    startTransition(async () => {
-      const result = await createProjectAction(formData);
-      if (!result.ok) {
-        setError(result.error);
-        toast.error(result.error);
+    void (async () => {
+      const begin = await beginUnifiedRunAction({
+        productUrl: url,
+        aiModel,
+        profile: "project",
+      });
+      if (runIdRef.current !== runId) return;
+
+      if (!begin.ok) {
+        setError(begin.error);
+        setIsBootstrapping(false);
+        toast.error(begin.error);
         return;
       }
-      toast.success("Project created.");
-      router.push(`/projects/${result.projectId}/brief`);
-      router.refresh();
-    });
+
+      flushSync(() => {
+        setProjectId(begin.projectId);
+        setCrawlId(begin.crawlId);
+        setGrowthRunId(begin.growthRunId);
+        setStage("growth");
+      });
+
+      toast.success("Project created — starting AutoScale run…");
+      onSuccess?.();
+      router.push(
+        `/projects/${begin.projectId}/growth/${begin.growthRunId}?autoExecute=1`
+      );
+      setIsBootstrapping(false);
+    })();
+  }
+
+  if (isBootstrapping) {
+    return (
+      <OnboardingPipelineShell
+        stage={stage}
+        autobriefProgress={autobriefProgress}
+        growthProgress={growthProgress}
+        brief={null}
+        title="Starting AutoScale…"
+        subtitle="Understanding your product, discovering evidence, and producing your first video experiments."
+      />
+    );
   }
 
   return (
-    <form action={onSubmit} className="space-y-6">
-      <div className="grid sm:grid-cols-2 gap-5">
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="name">Project name *</Label>
-          <Input id="name" name="name" required placeholder="Acme — Solo SaaS Growth" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="product_url">Product URL</Label>
-          <Input id="product_url" name="product_url" type="url" placeholder="https://acme.com" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="niche">Niche</Label>
-          <Input id="niche" name="niche" placeholder="B2C AI productivity app" />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="description">Description</Label>
-          <Textarea id="description" name="description" rows={3} placeholder="What does your product do, in 1-2 sentences?" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="target_audience">Target audience</Label>
-          <Input id="target_audience" name="target_audience" placeholder="Solo SaaS founders post-launch" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="offer">Offer</Label>
-          <Input id="offer" name="offer" placeholder="$149/month for the full growth loop" />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="cta">Preferred CTA</Label>
-          <Input id="cta" name="cta" placeholder="Run TrendWatch on your startup" />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="competitors">Competitors (one per line)</Label>
-          <Textarea id="competitors" name="competitors" rows={4} placeholder={"Linear\nNotion\nBuffer"} />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label>Preferred platforms</Label>
-          <div className="flex flex-wrap gap-2">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => togglePlatform(p.id)}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-md border transition-all",
-                  selected.includes(p.id)
-                    ? "bg-primary/10 border-primary/40 text-primary"
-                    : "border-border hover:border-foreground/20 text-foreground/70"
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+    <form onSubmit={onSubmit} className="space-y-6">
+      <div className="space-y-1.5">
+        <Label htmlFor="product_url">Product URL</Label>
+        <div className="relative">
+          <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="product_url"
+            name="product_url"
+            type="url"
+            required
+            value={productUrl}
+            onChange={(e) => setProductUrl(e.target.value)}
+            placeholder="https://yourproduct.com"
+            className="pl-9"
+            disabled={isBootstrapping}
+          />
         </div>
       </div>
+
+      <ModelPicker value={aiModel} onChange={setAiModel} disabled={isBootstrapping} />
 
       {error && (
         <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
@@ -111,9 +140,22 @@ export function NewProjectForm() {
       )}
 
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" disabled={pending} size="lg" variant="glow">
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create project"}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => (onSuccess ? onSuccess() : router.back())}
+          disabled={isBootstrapping}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={isBootstrapping || !productUrl.trim()}
+          size="lg"
+          variant="glow"
+        >
+          {isBootstrapping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          Start AutoScale
         </Button>
       </div>
     </form>

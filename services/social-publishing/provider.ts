@@ -142,6 +142,3 @@ export function isExportOnlyCredentials(
 ): credentials is PublishingCredentials & { provider: "export_only" } {
   return credentials.provider === "export_only";
 }
-
-export const POSTBRIDGE_PROVIDER_STUB_REASON =
-  "Post Bridge provider is stubbed until API docs, auth, upload, scheduling, status, limits, and pricing are confirmed.";

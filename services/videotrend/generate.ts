@@ -9,6 +9,7 @@ import {
   loadProductBrief,
 } from "@/services/growth-run/repository";
 import { VideoTrendReportSchema, type VideoTrendReport } from "@/services/growth-run/schema";
+import { validateHookPatterns } from "./validate-hook-patterns";
 
 /**
  * VideoTrend Agent.
@@ -27,7 +28,41 @@ export async function generateVideoTrendReport(opts: {
   projectId: string;
   growthRunId: string;
   ownerId: string;
-}): Promise<{ report: VideoTrendReport; evidenceVideoIds: string[]; recordId: string }> {
+  lowConfidenceEvidence?: boolean;
+  evidenceCount?: number;
+}): Promise<{
+  report: VideoTrendReport;
+  evidenceVideoIds: string[];
+  recordId: string;
+  hookValidation?: ReturnType<typeof validateHookPatterns>["validation"];
+}> {
+  const supabase = createSupabaseServerClient();
+  const { data: existingRow } = await supabase
+    .from("video_trend_reports")
+    .select("*")
+    .eq("growth_run_id", opts.growthRunId)
+    .maybeSingle();
+
+  if (existingRow) {
+    const report: VideoTrendReport = {
+      winning_structures: existingRow.winning_structures as never,
+      hook_patterns: existingRow.hook_patterns as never,
+      opening_frames: existingRow.opening_frames as never,
+      cta_patterns: existingRow.cta_patterns as never,
+      audience_language: existingRow.audience_language as never,
+      platform_patterns: existingRow.platform_patterns as never,
+      recommended_experiments: existingRow.recommended_experiments as never,
+      competitor_gaps: existingRow.competitor_gaps as never,
+      repurposable_formats: existingRow.repurposable_formats as never,
+      confidence: existingRow.confidence ?? 0.5,
+    };
+    return {
+      report,
+      evidenceVideoIds: (existingRow.evidence_video_ids as string[]) ?? [],
+      recordId: existingRow.id,
+    };
+  }
+
   const [brief, evidence, patterns] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadVideoEvidence(opts.projectId, 80),
@@ -37,6 +72,7 @@ export async function generateVideoTrendReport(opts: {
   // Compact evidence packets so the prompt stays small.
   const evidencePackets = evidence.slice(0, 40).map((e) => ({
     id: e.id,
+    url: e.video_url,
     platform: e.platform,
     handle: e.account_handle ?? null,
     hook: e.detected_hook ?? null,
@@ -83,7 +119,7 @@ export async function generateVideoTrendReport(opts: {
     "",
     "Produce a strict JSON object matching the VideoTrendReport schema:",
     "- winning_structures[]: named beat sequences (e.g. 'Painful manual → product shortcut → result reveal')",
-    "- hook_patterns[]: reusable opening hook templates",
+    "- hook_patterns[]: reusable opening hook templates — every item MUST include reference_url (a video_url from the evidence packets that inspired the hook)",
     "- opening_frames[]: 0-2s visual ideas that earn the watch",
     "- cta_patterns[]: closing calls to action",
     "- platform_patterns[]: per-platform length/aspect/notes",
@@ -92,10 +128,15 @@ export async function generateVideoTrendReport(opts: {
     "- repurposable_formats[]: formats that translate across platforms",
     "- audience_language[]: phrases the target actually uses",
     "- confidence: 0..1, lower when evidence is sparse.",
+    "",
+    "Nadia rules:",
+    "- Prefer hooks derived from shadow/creator accounts (10k–250k followers) over mega-account distortion.",
+    "- Every hook_patterns[].reference_url must be an exact url from the evidence packets — never invent URLs.",
   ].join("\n");
 
   let result: VideoTrendReport;
   let raw = "";
+  let hookValidation: ReturnType<typeof validateHookPatterns>["validation"] | undefined;
   try {
     const res = await generateObject({
       schema: VideoTrendReportSchema,
@@ -103,7 +144,7 @@ export async function generateVideoTrendReport(opts: {
         `VideoTrendReport with this exact shape and lowercase enum values:
 {
   "winning_structures": [{"name":"string","beats":["beat 1","beat 2"],"ideal_length_seconds":22,"why_it_works":"string"}],
-  "hook_patterns": [{"label":"string","pattern":"string","example":"string","when_to_use":"string"}],
+  "hook_patterns": [{"label":"string","pattern":"string","reference_url":"https://...","example":"string","when_to_use":"string"}],
   "opening_frames": ["string"],
   "cta_patterns": [{"label":"string","pattern":"string","best_for":["string"]}],
   "audience_language": ["string"],
@@ -113,14 +154,20 @@ export async function generateVideoTrendReport(opts: {
   "repurposable_formats": ["string"],
   "confidence": 0.5
 }`,
-      taskType: "trendwatch",
+      taskType: "videotrend_reasoning",
       system:
-        "You convert real video evidence into reusable short-form video patterns. Never invent. Cite via the recommended_experiments rationale field.",
+        "You convert real video evidence into reusable short-form video patterns. Never invent metrics or URLs. Every hook_patterns item must cite a reference_url from the supplied evidence packets.",
       prompt,
       temperature: 0.4,
       maxTokens: 5000,
     });
-    result = res.object;
+    const validated = validateHookPatterns(res.object, evidencePackets);
+    hookValidation = validated.validation;
+    result = {
+      ...res.object,
+      hook_patterns: validated.hook_patterns,
+      confidence: validated.confidence,
+    };
     raw = res.raw;
     await logAIRun({
       ownerId: opts.ownerId,
@@ -148,7 +195,13 @@ export async function generateVideoTrendReport(opts: {
     throw err;
   }
 
-  const supabase = createSupabaseServerClient();
+  if (opts.lowConfidenceEvidence) {
+    result = {
+      ...result,
+      confidence: Math.min(result.confidence, 0.35),
+    };
+  }
+
   const evidenceVideoIds = evidence.slice(0, 40).map((e) => e.id);
   const { data, error } = await supabase
     .from("video_trend_reports")
@@ -166,11 +219,16 @@ export async function generateVideoTrendReport(opts: {
       repurposable_formats: result.repurposable_formats as never,
       evidence_video_ids: evidenceVideoIds as never,
       confidence: result.confidence,
-      raw_output: { text: raw } as never,
+      raw_output: {
+        text: raw,
+        low_confidence_evidence: opts.lowConfidenceEvidence ?? false,
+        evidence_count: opts.evidenceCount ?? evidencePackets.length,
+        hook_validation: hookValidation ?? null,
+      } as never,
     })
     .select("id")
     .single();
   if (error) throw new Error(`video_trend_reports insert failed: ${error.message}`);
 
-  return { report: result, evidenceVideoIds, recordId: data!.id };
+  return { report: result, evidenceVideoIds, recordId: data!.id, hookValidation };
 }

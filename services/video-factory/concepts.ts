@@ -9,6 +9,11 @@ import {
 } from "@/services/growth-run/repository";
 import { resolveProductionMode } from "./production-modes";
 import {
+  enforceFormatEvidence,
+  normalizeFormatEvidence,
+  rankEvidenceRows,
+} from "./enforce-format-evidence";
+import {
   WinningFormatPlanSchema,
   type FormatHypothesis,
 } from "@/services/winning-format/schema";
@@ -36,7 +41,7 @@ export async function generateVideoConcepts(opts: {
   options: GrowthRunOptions;
 }): Promise<{ conceptIds: string[]; formatFingerprintIds: string[] }> {
   const supabase = createSupabaseServerClient();
-  const [brief, patterns, reportRow] = await Promise.all([
+  const [brief, patterns, reportRow, growthRun] = await Promise.all([
     loadProductBrief(opts.projectId),
     loadVideoPatterns(opts.projectId),
     supabase
@@ -44,17 +49,78 @@ export async function generateVideoConcepts(opts: {
       .select("evidence_video_ids")
       .eq("growth_run_id", opts.growthRunId)
       .maybeSingle(),
+    supabase.from("growth_runs").select("batch_kind").eq("id", opts.growthRunId).single(),
   ]);
+
+  const batchKind = growthRun.data?.batch_kind ?? "exploration";
+  let winnerSeeds: Array<{ hook: string; platform: string; cta: string | null; video_type: string }> = [];
+
+  if (batchKind === "exploitation") {
+    const { data: winnerRows } = await supabase
+      .from("growth_experiment_results")
+      .select("video_id, classification, metric_summary")
+      .eq("project_id", opts.projectId)
+      .eq("classification", "winner")
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    const videoIds = (winnerRows ?? []).map((r) => r.video_id);
+    if (videoIds.length) {
+      const { data: winnerVideos } = await supabase
+        .from("videos")
+        .select("id, concept_id")
+        .in("id", videoIds);
+      const conceptIds = (winnerVideos ?? []).map((v) => v.concept_id).filter(Boolean) as string[];
+      if (conceptIds.length) {
+        const { data: concepts } = await supabase
+          .from("video_concepts")
+          .select("hook, platform, cta, video_type")
+          .in("id", conceptIds);
+        winnerSeeds = concepts ?? [];
+      }
+    }
+  }
+
+  // Adopt TrendHop / queued concepts for this run.
+  const { data: queued } = await supabase
+    .from("video_concepts")
+    .select("id")
+    .eq("project_id", opts.projectId)
+    .eq("queued_for_next_run", true)
+    .is("growth_run_id", null);
+  if (queued?.length) {
+    await supabase
+      .from("video_concepts")
+      .update({ growth_run_id: opts.growthRunId, queued_for_next_run: false })
+      .in(
+        "id",
+        queued.map((q) => q.id)
+      );
+  }
 
   const availableEvidenceIds = asStringArray(reportRow.data?.evidence_video_ids);
   const availablePatternIds = patterns.slice(0, 30).map((pattern) => pattern.id);
   const allowedEvidence = new Set(availableEvidenceIds);
   const allowedPatterns = new Set(availablePatternIds);
+
+  const { data: evidenceRows } = availableEvidenceIds.length
+    ? await supabase
+        .from("video_evidence")
+        .select("id, platform, view_count, source_confidence")
+        .in("id", availableEvidenceIds)
+    : { data: [] as Array<{ id: string; platform: string; view_count: number | null; source_confidence: number | null }> };
+  const rankedEvidence = rankEvidenceRows(evidenceRows ?? []);
   const formatCount = opts.options.concept_target_count >= 6 ? 2 : 1;
   const brandCta =
     (opts.options.brand_constraints?.primary_cta_label as string | undefined) ??
     brief?.cta ??
     "Start free";
+
+  const productionConstraints = brief?.production_constraints as
+    | { can_make_carousels?: boolean }
+    | null
+    | undefined;
+  const canMakeCarousels = productionConstraints?.can_make_carousels !== false;
 
   const platformPriority = Object.entries(opts.strategy.platform_mix)
     .sort((a, b) => Number(b[1]) - Number(a[1]))
@@ -72,7 +138,10 @@ export async function generateVideoConcepts(opts: {
     "Do not generate unrelated video ideas. This is a controlled experiment.",
     "Separate observed evidence from strategic inference. Never invent metrics or source IDs.",
     "Use only evidence_video_ids and source_pattern_ids provided below. Leave arrays empty when support is missing.",
-    "Prefer SaaS-native formats: demo, pain-led slide, founder POV, objection, or comparison.",
+    "Prefer SaaS-native formats: pain-led slide, ai b-roll, founder POV, objection, or comparison. Do not propose demo or screen-recording formats.",
+    canMakeCarousels
+      ? "Carousel production is enabled: you may include one carousel format hypothesis (video_type: carousel, platform: instagram). Carousels are planned as slide sequences — rendered via the slide video path, not a separate carousel exporter."
+      : "Do not propose carousel formats — production_constraints.can_make_carousels is false.",
     "AI b-roll is allowed only when it strengthens the message.",
     `Hold CTA constant across variants: "${brandCta}".`,
     "",
@@ -106,6 +175,14 @@ export async function generateVideoConcepts(opts: {
     "",
     "Strategy priority:",
     JSON.stringify({ platformPriority, typePriority }),
+    batchKind === "exploitation" && winnerSeeds.length
+      ? [
+          "",
+          "EXPLOITATION BATCH — seed from proven winners first:",
+          JSON.stringify(winnerSeeds),
+          "At least one format must remix a winning hook/format/CTA from the list above.",
+        ].join("\n")
+      : "",
     "",
     "The plan must include one audience pain, fixed body, fixed CTA, fixed audience, a 3-7 day evaluation window,",
     "and 1-2 format fingerprints with transferability, distortion risk, confidence, missing evidence, and three variants.",
@@ -119,23 +196,23 @@ export async function generateVideoConcepts(opts: {
       evaluation_window_days: 3,
       formats: [
         {
-          format_name: "Pain to product demo",
-          video_type: "demo",
+          format_name: "Pain to product walkthrough",
+          video_type: "pain_led",
           platform: "youtube",
           target_length_seconds: 24,
           hook_mechanism: "Call out wasted production time.",
-          visual_grammar: "Problem screen, rapid product demo, finished HUD reveal, CTA end card.",
+          visual_grammar: "Problem slide, product screenshot beats, result reveal, CTA end card.",
           script_structure: ["pain", "manual workflow", "product shortcut", "result", "cta"],
           cta_pattern: "Invite qualified creators to join the waitlist.",
-          business_hypothesis: "A concrete workflow demonstration will drive qualified product clicks.",
+          business_hypothesis: "A concrete workflow walkthrough will drive qualified product clicks.",
           transferability_score: 0.7,
           distortion_risk: "low",
           confidence: 0.6,
           missing_evidence: ["No linked source video performance metrics."],
           evidence_video_ids: [],
           source_pattern_ids: [],
-          observed_evidence: ["The supplied trend report recommends product demonstrations."],
-          strategic_inference: ["Showing the workflow should make the product promise tangible."],
+          observed_evidence: ["The supplied trend report recommends product walkthrough formats."],
+          strategic_inference: ["Showing the workflow via screenshots should make the product promise tangible."],
           variants: [
             { variant_label: "A", hook: "Still building every Roblox HUD from scratch?", angle: "Time cost", promise: "Move from idea to a production-ready direction faster.", hypothesis: "A time-loss hook will attract creators with urgent production pain.", expected_signal: "Qualified product link clicks." },
             { variant_label: "B", hook: "Your Roblox UI should not take an entire sprint.", angle: "Sprint delay", promise: "Shorten the path from concept to Studio handoff.", hypothesis: "A delivery-speed hook will attract small teams.", expected_signal: "Qualified product link clicks." },
@@ -151,7 +228,7 @@ export async function generateVideoConcepts(opts: {
     schema: WinningFormatPlanSchema,
     schemaDescription:
       "WinningFormatPlan JSON. Top-level: audience_pain, fixed_body, fixed_cta, fixed_audience, tested_variable ('hook'), evaluation_window_days, formats. Every format requires format_name, lowercase video_type, lowercase platform, target_length_seconds, hook_mechanism, visual_grammar, script_structure, cta_pattern, business_hypothesis, transferability_score, lowercase distortion_risk, confidence, missing_evidence, evidence_video_ids, source_pattern_ids, observed_evidence, strategic_inference, and exactly 3 variants. Every variant requires variant_label, hook, angle, promise, hypothesis, expected_signal.",
-    taskType: "content",
+    taskType: "hook_generation",
     system:
       "You design controlled short-form video experiments. You optimize for causal learning and business signals, not output volume.",
     prompt,
@@ -182,7 +259,11 @@ export async function generateVideoConcepts(opts: {
   const formatFingerprintIds: string[] = [];
 
   for (const format of response.object.formats) {
-    const normalized = normalizeEvidence(format, allowedEvidence, allowedPatterns);
+    const normalized = enforceFormatEvidence(
+      normalizeFormatEvidence(format, allowedEvidence, allowedPatterns),
+      availableEvidenceIds,
+      rankedEvidence
+    );
     const fingerprintKey = createFingerprintKey(normalized);
     const { data: fingerprint, error: fingerprintError } = await supabase
       .from("format_fingerprints")
@@ -314,18 +395,6 @@ export async function generateVideoConcepts(opts: {
   }
 
   return { conceptIds, formatFingerprintIds };
-}
-
-function normalizeEvidence(
-  format: FormatHypothesis,
-  allowedEvidence: Set<string>,
-  allowedPatterns: Set<string>
-): FormatHypothesis {
-  return {
-    ...format,
-    evidence_video_ids: format.evidence_video_ids.filter((id) => allowedEvidence.has(id)),
-    source_pattern_ids: format.source_pattern_ids.filter((id) => allowedPatterns.has(id)),
-  };
 }
 
 export function createFingerprintKey(format: Pick<FormatHypothesis, "video_type" | "platform" | "format_name">) {

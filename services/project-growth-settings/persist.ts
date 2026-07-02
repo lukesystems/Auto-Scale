@@ -30,6 +30,8 @@ export async function upsertProjectGrowthSettings(
       run_cooldown_hours: parsed.run_cooldown_hours,
       max_active_runs: parsed.max_active_runs,
       onboarding_completed: parsed.onboarding_completed,
+      production_format: parsed.production_format,
+      audio_mode: parsed.audio_mode,
     } as never,
     { onConflict: "project_id" }
   );

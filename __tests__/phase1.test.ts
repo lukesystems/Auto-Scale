@@ -15,16 +15,21 @@ describe("Phase 1: Stabilization & Security Tests", () => {
         scheduledCount: 0,
         experimentCount: 0,
         winnerCount: 0,
+        growthRunCompletedCount: 1,
+        growthVideoReadyCount: 3,
+        growthScheduledCount: 0,
+        growthPostedCount: 0,
+        videoEvidenceCount: 0,
+        patternRunCount: 0,
+        dailyPackCount: 0,
       };
       const pipeline = buildPipelineSteps(stats, true);
       
-      const briefStep = pipeline.find((p) => p.key === "brief");
-      const sourcesStep = pipeline.find((p) => p.key === "sources");
-      const ideasStep = pipeline.find((p) => p.key === "ideas");
+      const growthStep = pipeline.find((p) => p.key === "growth");
+      const winnersStep = pipeline.find((p) => p.key === "winners");
 
-      expect(briefStep?.done).toBe(true);
-      expect(sourcesStep?.done).toBe(true);
-      expect(ideasStep?.done).toBe(false);
+      expect(growthStep?.done).toBe(true);
+      expect(winnersStep?.done).toBe(false);
     });
   });
 

@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, Sparkles } from "lucide-react";
+import { Loader2, Save, Sparkles, Globe } from "lucide-react";
 import { toast } from "sonner";
-import { aiGenerateBriefAction, saveBriefAction } from "./actions";
+import { aiGenerateBriefAction, fetchBriefFromUrlAction, saveBriefAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +51,7 @@ export function BriefForm({ projectId, initial }: BriefFormProps) {
   const [state, setState] = useState(initial);
   const [saving, startSaving] = useTransition();
   const [generating, startGenerating] = useTransition();
+  const [fetchingUrl, startFetchingUrl] = useTransition();
 
   function update<K extends keyof BriefFormState>(key: K, value: string) {
     setState((s) => ({ ...s, [key]: value }));
@@ -65,6 +66,60 @@ export function BriefForm({ projectId, initial }: BriefFormProps) {
         return;
       }
       toast.success("Brief saved as project source of truth.");
+      router.refresh();
+    });
+  }
+
+  function onFetchFromUrl() {
+    const url = state.source_url.trim();
+    if (!url) {
+      toast.error("Enter a source URL first.");
+      return;
+    }
+    startFetchingUrl(async () => {
+      const result = await fetchBriefFromUrlAction({ projectId, productUrl: url });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const brief = result.brief;
+      setState({
+        source_url: brief.product_url ?? url,
+        product_name: brief.product_name ?? "",
+        one_line_description: brief.one_line_description ?? brief.product_summary ?? "",
+        category: brief.category ?? brief.niche ?? "",
+        product_type: brief.product_type ?? "",
+        product_summary: brief.product_summary ?? "",
+        what_it_does: brief.what_it_does ?? "",
+        target_customer: brief.target_customer ?? "",
+        target_audience: (brief.target_audience ?? []).join("\n"),
+        primary_pain: brief.primary_pain ?? "",
+        user_pain_points: (brief.user_pain_points ?? []).join("\n"),
+        core_promise: brief.core_promise ?? "",
+        key_features: (brief.key_features ?? []).join("\n"),
+        key_benefits: (brief.key_benefits ?? []).join("\n"),
+        offer: brief.offer ?? "",
+        cta: brief.cta ?? "",
+        competitors: (brief.suggested_competitors ?? []).map((c) => c.name).join("\n"),
+        alternative_solutions: (brief.alternative_solutions ?? []).join("\n"),
+        market_category: brief.market_category ?? "",
+        content_angles: (brief.content_angles ?? []).join("\n"),
+        platform_recommendations: (brief.platform_recommendations ?? [])
+          .map((p) => `${p.platform}: ${p.reason}`)
+          .join("\n"),
+        cta_suggestions: (brief.cta_suggestions ?? []).join("\n"),
+        founder_led_opportunities: (brief.founder_led_opportunities ?? []).join("\n"),
+        positioning_gaps: (brief.positioning_gaps ?? []).join("\n"),
+        extraction_notes: (brief.extraction_notes ?? []).join("\n"),
+        brand_voice: brief.brand_voice ?? "",
+        content_pillars: (brief.content_pillars ?? []).join("\n"),
+        positioning_angles: (brief.positioning_angles ?? []).join("\n"),
+      });
+      if (result.fetchWarning) {
+        toast.warning(result.fetchWarning);
+      } else {
+        toast.success("Brief fetched from URL and saved.");
+      }
       router.refresh();
     });
   }
@@ -106,10 +161,21 @@ export function BriefForm({ projectId, initial }: BriefFormProps) {
             This brief anchors TrendWatch, hooks, posts, experiments, and future weekly plans.
           </p>
         </div>
-        <Button type="button" onClick={onGenerate} disabled={generating}>
-          {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {generating ? "Generating..." : "Regenerate with AI"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onFetchFromUrl}
+            disabled={fetchingUrl || !state.source_url.trim()}
+          >
+            {fetchingUrl ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+            {fetchingUrl ? "Fetching..." : "Fetch from URL"}
+          </Button>
+          <Button type="button" onClick={onGenerate} disabled={generating}>
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {generating ? "Generating..." : "Regenerate with AI"}
+          </Button>
+        </div>
       </div>
 
       <Section title="Product Summary">

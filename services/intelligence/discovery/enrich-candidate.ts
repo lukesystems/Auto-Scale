@@ -9,7 +9,7 @@ import {
 export type CandidateEnrichStatus = "pending" | "enriched" | "failed" | "skipped" | "deep_enriched";
 
 /** Max candidates that receive multi-page deep enrichment per discovery run (×4 pages each). */
-export const MAX_DEEP_ENRICH_PER_RUN = 5;
+export const MAX_DEEP_ENRICH_PER_RUN = 8;
 
 export function pickDeepEnrichCandidateIndices(
   candidates: NormalizedCandidate[],

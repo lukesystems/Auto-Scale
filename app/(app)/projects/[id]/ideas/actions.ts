@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { generateContentIdeas, generateHooks } from "@/services/content-conveyor/generate";
+import { matchInsightForHook } from "@/lib/match-hook-insight";
 import { logAIRun } from "@/services/ai/logger";
 
 const Schema = z.object({
@@ -72,12 +73,11 @@ export async function generateIdeasAction(formData: FormData): Promise<GenerateI
       latencyMs: hookResult.latencyMs,
     });
 
-    // Find best matching insight per hook based on similarity (simple: first insight with hook_pattern)
-    const insightWithHook = insights?.find((i) => i.hook_pattern);
+    const insightRows = insights ?? [];
 
     const hookInserts = hookResult.hooks.map((h) => ({
       project_id: projectId,
-      insight_id: insightWithHook?.id ?? null,
+      insight_id: matchInsightForHook(h.hook, insightRows),
       hook: h.hook,
       angle: h.angle || null,
       format_hint: h.format_hint || null,
@@ -117,7 +117,7 @@ export async function generateIdeasAction(formData: FormData): Promise<GenerateI
       const matchedHook = insertedHooks?.find((h) => h.hook.toLowerCase().trim() === idea.hook.toLowerCase().trim());
       return {
         project_id: projectId,
-        insight_id: insightWithHook?.id ?? null,
+        insight_id: matchInsightForHook(idea.hook, insightRows),
         hook_id: matchedHook?.id ?? null,
         format: idea.format,
         hook: idea.hook,

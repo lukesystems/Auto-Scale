@@ -2,16 +2,17 @@
 
 import { useFormStatus } from "react-dom";
 
-export function StartRunSubmit() {
+export function StartRunSubmit({ disabled = false }: { disabled?: boolean }) {
   const { pending } = useFormStatus();
+  const isDisabled = pending || disabled;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <button
         type="submit"
-        disabled={pending}
+        disabled={isDisabled}
         aria-describedby="growth-run-submit-status"
-        className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+        className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? "Running evidence → strategy → videos…" : "Start Growth Run"}
       </button>

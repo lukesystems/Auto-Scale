@@ -2,9 +2,21 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { startGrowthRunAction, syncPostizAccountsAction, importReferenceVideoAction } from "./actions";
+import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
 import { StartRunSubmit } from "./start-run-submit";
+import { StageOnlyRunButtons } from "@/components/growth/stage-only-run-buttons";
+import { ProviderReadinessChip } from "@/components/growth/provider-readiness-chip";
+import { VideoOutputModePicker, VisualPipelinePicker } from "@/components/growth/production-format-picker";
+import { AudioModePicker } from "@/components/growth/audio-mode-picker";
+import { ProductionProviderBar } from "@/components/growth/production-provider-bar";
+import { getProductionProviderStatus } from "@/lib/production-provider-status";
+import { NextMoveBanner } from "@/components/app/next-move-banner";
+import { getNextMove } from "@/lib/next-move";
+import { getProjectStats } from "../queries";
+import { loadGrowthRunFormDefaults } from "@/lib/growth-run-defaults";
+import { projectHasRepeatRunEligibility } from "@/lib/growth-run/stage-preconditions";
 
 interface GrowthIndexProps {
   params: { id: string };
@@ -28,7 +40,8 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
   }
 
   const supabase = createSupabaseServerClient();
-  const [runs, accounts, project] = await Promise.all([
+  const [runs, accounts, project, brief, stats, formDefaults, canRunStages] =
+    await Promise.all([
     supabase
       .from("growth_runs")
       .select("id, status, phase, trigger, created_at, started_at, completed_at, error")
@@ -37,10 +50,28 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       .limit(20),
     supabase.from("connected_accounts").select("id, platform, handle, status").eq("project_id", projectId),
     supabase.from("projects").select("name, product_url").eq("id", projectId).single(),
+    supabase.from("product_briefs").select("*").eq("project_id", projectId).maybeSingle(),
+    getProjectStats(projectId),
+    loadGrowthRunFormDefaults(projectId),
+    projectHasRepeatRunEligibility(supabase, projectId),
   ]);
+
+  const activeRun = runs.data?.find((r) =>
+    ["pending", "running", "awaiting_user_input", "awaiting_approval", "live"].includes(r.status)
+  );
 
   const accountCount = accounts.data?.length ?? 0;
   const publishingLabel = getPublishingProviderLabel();
+  const ffmpegHealth = checkFfmpegHealth();
+  const productionProviderStatus = getProductionProviderStatus();
+  const hasProductUrl = Boolean(project.data?.product_url?.trim());
+  const canStartRun = hasProductUrl;
+
+  const nextMove = getNextMove({
+    projectId,
+    activeRunId: activeRun?.id ?? runs.data?.[0]?.id,
+    stats,
+  });
   const byPlatform = (accounts.data ?? []).reduce<Record<string, number>>((acc, a) => {
     acc[a.platform] = (acc[a.platform] ?? 0) + 1;
     return acc;
@@ -51,12 +82,15 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">Growth Runs</h1>
-          <Link
-            href={`/projects/${projectId}/growth/settings`}
-            className="text-xs rounded-md border px-3 py-1.5 hover:bg-muted"
-          >
-            Growth settings
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <ProviderReadinessChip projectId={projectId} />
+            <Link
+              href={`/projects/${projectId}/growth/settings`}
+              className="text-xs rounded-md border px-3 py-1.5 hover:bg-muted"
+            >
+              Growth settings
+            </Link>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Find the formats worth scaling for {project.data?.name ?? "this project"}, turn them into short-form video
@@ -75,15 +109,13 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </a>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              No product URL saved.{" "}
-              <Link href={`/projects/${projectId}/brief`} className="underline">
-                Set it in the Brief
-              </Link>{" "}
-              so the run can understand your product.
+              No product URL saved. Create a new project from your product URL to start AutoScale.
             </span>
           )}
         </div>
       </header>
+
+      <NextMoveBanner move={nextMove} />
 
       <GrowthLoop className="rounded-xl border bg-card/60 p-4" compact />
 
@@ -140,11 +172,27 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
         <div>
           <h2 className="text-sm font-semibold">Start a Growth Run</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            AutoScale uses your saved product URL to find the formats worth testing and build a production plan.
+            AutoScale runs end to end: brief, discovery, trend hops, video production, and scheduling.
           </p>
+          {!ffmpegHealth.available ? (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              {ffmpegHealth.message} Video rendering may fail until FFmpeg is available.
+            </p>
+          ) : null}
         </div>
+
         <form action={startGrowthRunAction} className="grid gap-4 sm:grid-cols-2">
           <input type="hidden" name="projectId" value={projectId} />
+
+          <div className="sm:col-span-2 space-y-4">
+            <ProductionProviderBar status={productionProviderStatus} />
+            <VideoOutputModePicker defaultValue={formDefaults.videoOutputMode} />
+            <VisualPipelinePicker
+              defaultValue={formDefaults.visualPipeline}
+              falConfigured={productionProviderStatus.fal.ok}
+            />
+            <AudioModePicker defaultValue={formDefaults.audioMode} />
+          </div>
 
           <div className="sm:col-span-2 rounded-lg border border-primary/25 bg-primary/[0.04] p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-primary">Product URL</p>
@@ -155,6 +203,9 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
 
           <details className="sm:col-span-2 rounded-lg border bg-background/60 p-4">
             <summary className="cursor-pointer text-sm font-medium">Advanced Growth Run settings</summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Defaults are tuned for a fast first run — expand to add platforms, formats, or duration.
+            </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <fieldset className="space-y-2 sm:col-span-2">
             <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -163,7 +214,12 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             <div className="flex flex-wrap gap-2">
               {(["tiktok", "instagram", "youtube"] as const).map((p) => (
                 <label key={p} className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
-                  <input type="checkbox" name="targetPlatforms" value={p} defaultChecked />
+                  <input
+                    type="checkbox"
+                    name="targetPlatforms"
+                    value={p}
+                    defaultChecked={formDefaults.targetPlatforms.includes(p)}
+                  />
                   {p}
                 </label>
               ))}
@@ -176,7 +232,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </span>
             <select
               name="approvalMode"
-              defaultValue="manual"
+              defaultValue={formDefaults.approvalMode}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="manual">Manual (review each video)</option>
@@ -191,7 +247,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </span>
             <select
               name="postingAggressiveness"
-              defaultValue="balanced"
+              defaultValue={formDefaults.postingAggressiveness}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               <option value="conservative">Conservative (1/day per account)</option>
@@ -209,7 +265,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
               name="durationDays"
               min={1}
               max={60}
-              defaultValue={7}
+              defaultValue={formDefaults.durationDays}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
           </label>
@@ -223,7 +279,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
               name="formatHypothesisCount"
               min={1}
               max={2}
-              defaultValue={2}
+              defaultValue={formDefaults.formatHypothesisCount}
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             />
             <span className="block text-[11px] text-muted-foreground">
@@ -235,14 +291,19 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
           </details>
 
           <div className="sm:col-span-2">
-            <StartRunSubmit />
+            <StartRunSubmit disabled={!canStartRun} />
             <p className="mt-2 text-xs text-muted-foreground">
-              First runs stay in manual approval. AutoScale generates the trend report, strategy, concepts, scripts,
-              storyboards, video assets, and captions before anything is scheduled.
+              Discovery and evidence gathering happen automatically inside the run.
             </p>
           </div>
         </form>
       </section>
+
+      {canRunStages ? (
+        <section className="rounded-lg border bg-card p-4">
+          <StageOnlyRunButtons projectId={projectId} disabled={Boolean(activeRun)} />
+        </section>
+      ) : null}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Past runs</h2>

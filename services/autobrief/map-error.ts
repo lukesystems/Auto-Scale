@@ -29,7 +29,7 @@ export function mapAutoBriefError(err: unknown, fetchFailed: boolean): string {
     }
     if (err.message.includes("request failed")) {
       if (err.message.includes("404") || err.message.match(/\bmodel\b/i)) {
-        return "The configured AI model is invalid or unavailable. Check your model slug in settings or use manual entry.";
+        return "The configured AI model is invalid or no longer available on OpenRouter (retired models like Gemini 2.0 Flash were removed in June 2026). Pick a current model when creating a project, or retry — deprecated slugs are auto-mapped when possible.";
       }
       return "AI provider request failed. Try again, use manual entry, or check provider status.";
     }

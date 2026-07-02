@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ProviderMode } from "@/lib/provider-mode";
 import { isManagedMode } from "@/lib/provider-mode";
+import { resolvePostBridgeCredentials } from "@/lib/postbridge-credentials";
 import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { exportPublishingProvider } from "./export-provider";
 import { postBridgePublishingProvider } from "./postbridge-provider";
@@ -37,8 +38,14 @@ export async function resolvePublishingCredentials(
   }
 
   if (providerId === "postbridge") {
-    // Stub sprint: credentials are not resolved until Post Bridge is confirmed.
-    return null;
+    const postBridge = await resolvePostBridgeCredentials(userId, providerMode);
+    if (!postBridge) return null;
+    return {
+      provider: "postbridge",
+      apiKey: postBridge.apiKey,
+      apiUrl: postBridge.apiUrl,
+      source: postBridge.source,
+    };
   }
 
   const postiz = await resolvePostizCredentials(userId, providerMode);
@@ -57,7 +64,9 @@ export function isPublishingConfigured(
 ): credentials is PublishingCredentials {
   if (!credentials) return false;
   if (credentials.provider === "export_only") return true;
-  if (credentials.provider === "postbridge") return false;
+  if (credentials.provider === "postbridge") {
+    return Boolean(credentials.apiKey?.trim());
+  }
   if (credentials.provider === "postiz") {
     return Boolean(credentials.apiUrl?.trim() && credentials.apiKey?.trim());
   }
@@ -69,6 +78,11 @@ export function isRemotePublishingEnabled(
   credentials: PublishingCredentials | null | undefined
 ): boolean {
   if (!credentials) return false;
-  if (credentials.provider !== "postiz") return false;
-  return Boolean(credentials.apiUrl?.trim() && credentials.apiKey?.trim());
+  if (credentials.provider === "postbridge") {
+    return Boolean(credentials.apiKey?.trim());
+  }
+  if (credentials.provider === "postiz") {
+    return Boolean(credentials.apiUrl?.trim() && credentials.apiKey?.trim());
+  }
+  return false;
 }
