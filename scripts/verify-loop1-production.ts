@@ -25,6 +25,14 @@ interface Check {
 
 const checks: Check[] = [];
 
+function hasArg(name: string): boolean {
+  return process.argv.includes(name);
+}
+
+function strictProduction(): boolean {
+  return process.env.LOOP1_STRICT_PRODUCTION === "1" || hasArg("--strict");
+}
+
 function loadLocalEnv() {
   for (const filename of [".env.local", ".env"]) {
     const filePath = join(process.cwd(), filename);
@@ -46,6 +54,10 @@ function add(group: string, name: string, status: CheckStatus, detail: string) {
   checks.push({ group, name, status, detail });
 }
 
+function warnOrFailStrict(): CheckStatus {
+  return strictProduction() ? "fail" : "warn";
+}
+
 function env(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -61,6 +73,77 @@ function optionalEnv(group: string, name: string, reason: string) {
   const value = env(name);
   add(group, name, value ? "pass" : "warn", value ? "configured" : reason);
   return value;
+}
+
+function checkPositiveIntEnv(
+  group: string,
+  name: string,
+  opts: { recommendedMin?: number; missingDetail: string }
+) {
+  const value = env(name);
+  if (!value) {
+    add(group, name, warnOrFailStrict(), opts.missingDetail);
+    return null;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    add(group, name, "fail", `expected a positive integer, got ${value}`);
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    add(group, name, "fail", `expected a positive integer, got ${value}`);
+    return null;
+  }
+
+  if (opts.recommendedMin != null && parsed < opts.recommendedMin) {
+    add(
+      group,
+      name,
+      warnOrFailStrict(),
+      `configured as ${parsed}; recommended >= ${opts.recommendedMin} for first-loop SLA`
+    );
+    return parsed;
+  }
+
+  add(group, name, "pass", `configured as ${parsed}`);
+  return parsed;
+}
+
+function checkSecretStrength(group: string, name: string, value: string | null) {
+  if (!value) return;
+  const obviousPlaceholder =
+    /^(change-me|changeme|secret|password|test|dev|local|placeholder)$/i.test(value) ||
+    value.toLowerCase().includes("use-a-long-random-secret");
+  if (obviousPlaceholder) {
+    add(group, `${name} strength`, "fail", "placeholder value; generate a real random secret");
+    return;
+  }
+  if (value.length < 32) {
+    add(group, `${name} strength`, "fail", `too short (${value.length} chars); use at least 32 random chars`);
+    return;
+  }
+  add(group, `${name} strength`, "pass", `${value.length} chars`);
+}
+
+function checkUrlShape(group: string, name: string, value: string | null, opts?: { requireHttps?: boolean; disallowLocalhost?: boolean }) {
+  if (!value) return;
+  try {
+    const url = new URL(value);
+    const localHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
+    if (opts?.requireHttps && url.protocol !== "https:") {
+      add(group, `${name} URL`, warnOrFailStrict(), `expected https URL, got ${url.protocol}`);
+      return;
+    }
+    if (opts?.disallowLocalhost && localHostnames.has(url.hostname)) {
+      add(group, `${name} URL`, warnOrFailStrict(), `localhost is not valid for production (${url.origin})`);
+      return;
+    }
+    add(group, `${name} URL`, "pass", url.origin);
+  } catch {
+    add(group, `${name} URL`, "fail", "invalid URL");
+  }
 }
 
 function redactUrl(url: string | null): string {
@@ -187,11 +270,11 @@ async function checkWorkerLive() {
   const workerUrl = env("AUTOSCALE_RENDER_WORKER_URL");
   const workerSecret = env("AUTOSCALE_RENDER_WORKER_SECRET");
   if (!workerUrl) return;
-  if (process.env.VERIFY_WORKER_LIVE !== "1") {
+  if (process.env.VERIFY_WORKER_LIVE !== "1" && !hasArg("--worker-live")) {
     add(
       "cloud-run",
       "worker live checks",
-      "warn",
+      warnOrFailStrict(),
       "skipped; set VERIFY_WORKER_LIVE=1 to call /health and authenticated /run"
     );
     return;
@@ -258,11 +341,11 @@ async function checkR2Live() {
   const publicBaseUrl = env("CLOUDFLARE_R2_PUBLIC_BASE_URL");
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) return;
 
-  if (process.env.VERIFY_R2_LIVE !== "1") {
+  if (process.env.VERIFY_R2_LIVE !== "1" && !hasArg("--r2-live")) {
     add(
       "r2",
       "live write/read check",
-      "warn",
+      warnOrFailStrict(),
       "skipped; set VERIFY_R2_LIVE=1 to write, verify, and delete a probe object"
     );
     return;
@@ -320,22 +403,35 @@ async function main() {
     env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL");
   const serviceRole = env("SUPABASE_SERVICE_ROLE_KEY");
 
+  const appUrl = env("NEXT_PUBLIC_APP_URL");
   add(
     "vercel-app",
     "NEXT_PUBLIC_APP_URL",
-    env("NEXT_PUBLIC_APP_URL") ? "pass" : "warn",
-    env("NEXT_PUBLIC_APP_URL") ?? "missing; required before final Vercel production verification"
+    appUrl ? "pass" : "warn",
+    appUrl ?? "missing; required before final Vercel production verification"
   );
+  checkUrlShape("vercel-app", "NEXT_PUBLIC_APP_URL", appUrl, {
+    requireHttps: strictProduction(),
+    disallowLocalhost: strictProduction(),
+  });
   checkVercelCronConfig();
-  requireEnv("supabase", "NEXT_PUBLIC_SUPABASE_URL");
+  const publicSupabaseUrl = requireEnv("supabase", "NEXT_PUBLIC_SUPABASE_URL");
+  checkUrlShape("supabase", "NEXT_PUBLIC_SUPABASE_URL", publicSupabaseUrl, {
+    requireHttps: strictProduction(),
+    disallowLocalhost: strictProduction(),
+  });
   requireEnv("supabase", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
   requireEnv("supabase", "SUPABASE_SERVICE_ROLE_KEY");
+  checkPositiveIntEnv("stage-2", "AUTOSCALE_SCRIPT_STORYBOARD_CONCURRENCY", {
+    recommendedMin: 3,
+    missingDetail: "missing; set to 3 so first-loop scripts/storyboards run in parallel",
+  });
 
   const storageProvider = env("GROWTH_MEDIA_STORAGE_PROVIDER") ?? "supabase";
   add(
     "r2",
     "GROWTH_MEDIA_STORAGE_PROVIDER",
-    storageProvider === "r2" ? "pass" : "warn",
+    storageProvider === "r2" ? "pass" : warnOrFailStrict(),
     storageProvider === "r2"
       ? "r2 selected"
       : "not r2; rendered media will use Supabase Storage fallback"
@@ -345,19 +441,31 @@ async function main() {
     requireEnv("r2", "CLOUDFLARE_R2_ACCESS_KEY_ID");
     requireEnv("r2", "CLOUDFLARE_R2_SECRET_ACCESS_KEY");
     requireEnv("r2", "CLOUDFLARE_R2_BUCKET");
-    requireEnv("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL");
+    const r2PublicBaseUrl = requireEnv("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL");
+    checkUrlShape("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL", r2PublicBaseUrl, {
+      requireHttps: strictProduction(),
+      disallowLocalhost: strictProduction(),
+    });
   } else {
-    optionalEnv("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL", "missing because r2 is not selected");
+    const r2PublicBaseUrl = optionalEnv("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL", "missing because r2 is not selected");
+    checkUrlShape("r2", "CLOUDFLARE_R2_PUBLIC_BASE_URL", r2PublicBaseUrl, {
+      requireHttps: strictProduction(),
+      disallowLocalhost: strictProduction(),
+    });
   }
   await checkR2Live();
 
-  requireEnv("cloud-run", "AUTOSCALE_RENDER_WORKER_URL");
-  requireEnv("cloud-run", "AUTOSCALE_RENDER_WORKER_SECRET");
-  optionalEnv(
-    "cloud-run",
-    "AUTOSCALE_RENDER_CONCEPT_CONCURRENCY",
-    "missing; default render worker concurrency will be used"
-  );
+  const workerUrl = requireEnv("cloud-run", "AUTOSCALE_RENDER_WORKER_URL");
+  checkUrlShape("cloud-run", "AUTOSCALE_RENDER_WORKER_URL", workerUrl, {
+    requireHttps: strictProduction(),
+    disallowLocalhost: strictProduction(),
+  });
+  const workerSecret = requireEnv("cloud-run", "AUTOSCALE_RENDER_WORKER_SECRET");
+  checkSecretStrength("cloud-run", "AUTOSCALE_RENDER_WORKER_SECRET", workerSecret);
+  checkPositiveIntEnv("cloud-run", "AUTOSCALE_RENDER_CONCEPT_CONCURRENCY", {
+    recommendedMin: 4,
+    missingDetail: "missing; set to 4 for Stage 3 turbo render parallelism",
+  });
 
   const hasReasoningProvider = Boolean(
     env("OPENROUTER_API_KEY") || env("OPENAI_API_KEY") || env("ANTHROPIC_API_KEY")

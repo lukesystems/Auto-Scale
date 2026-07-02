@@ -14,7 +14,7 @@ export interface MetricsIngestionCronSummary {
 
 /**
  * Daily metrics pull for all projects with recently posted schedule items.
- * Intended for Vercel cron / external scheduler hitting /api/cron/metrics-ingestion.
+ * Intended for an external scheduler hitting /api/cron/metrics-ingestion.
  */
 export async function runDueMetricsIngestion(opts?: {
   sinceDays?: number;

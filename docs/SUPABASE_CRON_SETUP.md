@@ -101,6 +101,6 @@ If you prefer Edge Functions over `pg_cron`:
 
 ## Notes
 
-- Vercel Cron (`vercel.json`) also triggers these routes when deployed on Vercel; use **either** Vercel Cron **or** Supabase pg_cron to avoid duplicate runs unless intentional.
+- This repo does not configure Vercel Cron; use **one** external scheduler path only to avoid duplicate runs unless intentional.
 - Routes return `401` if the secret is wrong and `503` if Supabase is not configured in the app env.
 - Local dev: call with `curl -H "Authorization: Bearer $AUTOSCALE_CRON_SECRET" http://localhost:3000/api/cron/trendhop`.

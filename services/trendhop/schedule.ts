@@ -5,14 +5,12 @@ import { runTrendHop } from "./run";
 
 /**
  * Run any trendwatch_schedules whose next_run_at is due. Intended to be wired
- * to a Vercel Cron or Supabase scheduled function:
+ * to an external scheduler or Supabase scheduled function:
  *
  *   // app/api/cron/trendhop/route.ts
  *   import { runDueTrendHops } from "@/services/trendhop/schedule";
  *   export async function GET() { return Response.json(await runDueTrendHops()); }
  *
- * Add to vercel.json:
- *   { "crons": [{ "path": "/api/cron/trendhop", "schedule": "0 * * * *" }] }
  */
 export async function runDueTrendHops(): Promise<{
   triggered: number;
