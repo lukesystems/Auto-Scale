@@ -2,8 +2,8 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { runCompound } from "@/services/compound/classify";
-import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
-import { syncPostizScheduleStatus } from "@/services/postiz/sync-status";
+import { scheduleApprovedVideos } from "@/services/social-publishing/multi-account";
+import { syncPublishingScheduleStatus } from "@/services/social-publishing/sync-status";
 import { getManagedProviderConfig } from "@/services/providers/config";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 import { maybeAutoStartGrowthRun, logAutopilotDecision } from "./start-run";
@@ -105,8 +105,7 @@ export async function runAutopilotTick(opts: {
 
   const shouldAutoSchedule =
     settings.operation_mode === "managed" &&
-    settings.autopilot_enabled &&
-    latestRun.distribution_mode !== "export_only";
+    settings.autopilot_enabled;
 
   if (
     latestRun.id &&
@@ -155,7 +154,7 @@ export async function runAutopilotTick(opts: {
     }
   }
 
-  const sync = await syncPostizScheduleStatus({
+  const sync = await syncPublishingScheduleStatus({
     projectId: opts.projectId,
     ownerId: opts.ownerId,
     growthRunId: latestRun.id,

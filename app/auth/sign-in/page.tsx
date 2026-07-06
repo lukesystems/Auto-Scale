@@ -12,7 +12,7 @@ export default function SignInPage({ searchParams }: { searchParams: { next?: st
       </Badge>
       <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in to AutoScale</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Pick up where you left off — your growth loop is waiting.
+        Your winners are waiting to compound. Pick up where you left off.
       </p>
 
       <div className="mt-7">

@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-export type VoiceProviderId = "elevenlabs" | "openai" | "silent_dev_fallback";
+export type VoiceProviderId = "elevenlabs" | "silent_dev_fallback";
 
 export interface VoiceoverResult {
   buffer: Buffer;
@@ -121,14 +121,11 @@ export function buildElevenLabsVoiceRetryQueue(): string[] {
 
 /** True when at least one real TTS provider is configured. */
 export function isVoiceoverTtsConfigured(): boolean {
-  return Boolean(
-    process.env.ELEVENLABS_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
-  );
+  return Boolean(process.env.ELEVENLABS_API_KEY?.trim());
 }
 
 function configuredProvider(): VoiceProviderId {
   const env = (process.env.VOICE_PROVIDER ?? "elevenlabs").trim().toLowerCase();
-  if (env === "openai") return "openai";
   if (env === "silent") return "silent_dev_fallback";
   return "elevenlabs";
 }
@@ -144,7 +141,6 @@ export async function synthesizeWithProvider(opts: {
   const order: VoiceProviderId[] = [];
   const primary = configuredProvider();
   order.push(primary);
-  if (primary !== "openai" && process.env.OPENAI_API_KEY) order.push("openai");
   if (primary !== "elevenlabs" && process.env.ELEVENLABS_API_KEY) order.push("elevenlabs");
   if (allowSilent) order.push("silent_dev_fallback");
 
@@ -166,11 +162,6 @@ export async function synthesizeWithProvider(opts: {
           alignment: withTimestamps.alignment,
         };
       }
-      if (provider === "openai" && process.env.OPENAI_API_KEY && text) {
-        const buffer = await openAiTts(text);
-        attemptLog.push({ provider, ok: true });
-        return { buffer, provider, isSilent: false, qualityPenalty: 0, attemptLog };
-      }
       if (provider === "silent_dev_fallback") {
         const buffer = await silentAudio(opts.durationSeconds);
         attemptLog.push({ provider, ok: true });
@@ -178,8 +169,6 @@ export async function synthesizeWithProvider(opts: {
       }
       if (provider === "elevenlabs" && !process.env.ELEVENLABS_API_KEY) {
         attemptLog.push({ provider, ok: false, error: "ELEVENLABS_API_KEY missing" });
-      } else if (provider === "openai" && !process.env.OPENAI_API_KEY) {
-        attemptLog.push({ provider, ok: false, error: "OPENAI_API_KEY missing" });
       } else if (!text) {
         attemptLog.push({ provider, ok: false, error: "Empty script text" });
       }
@@ -211,7 +200,6 @@ function buildVoiceoverUnavailableMessage(
   summary: string
 ): string {
   const hasElevenLabsKey = Boolean(process.env.ELEVENLABS_API_KEY?.trim());
-  const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
   const failed = attemptLog.filter((entry) => !entry.ok);
   const voiceIdErrors = failed.some(
     (entry) =>
@@ -224,12 +212,12 @@ function buildVoiceoverUnavailableMessage(
       entry.error?.includes("payment_required")
   );
 
-  if (paidPlanErrors && hasElevenLabsKey && !hasOpenAiKey) {
+  if (paidPlanErrors && hasElevenLabsKey) {
     const configured = getConfiguredElevenLabsVoiceId();
     return (
       `ElevenLabs voice requires a paid plan on free accounts (${configured}). ` +
       `Use a premade voice ID such as Rachel (${ELEVENLABS_BUILTIN_DEFAULT_VOICE_ID}), ` +
-      `upgrade your ElevenLabs subscription, or set OPENAI_API_KEY for OpenAI TTS fallback. ${summary}`
+      `or upgrade your ElevenLabs subscription. ${summary}`
     );
   }
   if (voiceIdErrors && hasElevenLabsKey) {
@@ -239,10 +227,10 @@ function buildVoiceoverUnavailableMessage(
       `Update ELEVENLABS_VOICE_ID or DEFAULT_VOICE_ID, or remove it to use the default Rachel voice. ${summary}`
     );
   }
-  if (hasElevenLabsKey || hasOpenAiKey) {
+  if (hasElevenLabsKey) {
     return `Voiceover synthesis failed. ${summary}`;
   }
-  return `Voiceover unavailable — configure ELEVENLABS_API_KEY or OPENAI_API_KEY. ${summary}`;
+  return `Voiceover unavailable — configure ELEVENLABS_API_KEY. ${summary}`;
 }
 
 function formatVoiceoverFailureSummary(
@@ -362,27 +350,6 @@ async function callElevenLabsTts(
   }
 
   return { buffer: Buffer.from(await res.arrayBuffer()), alignment: null };
-}
-
-async function openAiTts(text: string): Promise<Buffer> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) throw new Error("OPENAI_API_KEY missing");
-  const res = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_TTS_MODEL ?? "tts-1-hd",
-      voice: process.env.OPENAI_TTS_VOICE ?? "alloy",
-      input: text.slice(0, 4096),
-      response_format: "aac",
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!res.ok) throw new Error(`OpenAI TTS failed: ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
 }
 
 async function silentAudio(durationSeconds: number): Promise<Buffer> {

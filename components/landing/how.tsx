@@ -1,24 +1,28 @@
-import { Globe2, TrendingUp, Video, Trophy } from "lucide-react";
+import { Clock, Globe2, TrendingUp, Trophy, Video } from "lucide-react";
 
 const STEPS = [
   {
     icon: Globe2,
     title: "Paste your URL",
+    time: "~2 min",
     desc: "AutoScale crawls your site and saves a product brief — ICP, pain, competitors, and positioning. No 30-question onboarding form.",
   },
   {
     icon: TrendingUp,
     title: "Deep discovery on your niche",
-    desc: "Before generating anything, the engine hunts competitors, shadow accounts, Reddit threads, and mid-tier TikTok/Reels/Shorts creators — then mines patterns with cited evidence.",
+    time: "Runs while you work",
+    desc: "Before generating anything, the engine hunts competitors, shadow accounts, Reddit threads, and mid-tier creators — with cited evidence, not vibes.",
   },
   {
     icon: Video,
     title: "Run your first Growth Run",
-    desc: "VideoTrend reverse-engineers hooks from real reference URLs. Growth Run ships 5–10 short videos (and carousels when enabled), schedules via Post Bridge, and tracks save rate from day one.",
+    time: "First batch in hours",
+    desc: "VideoTrend reverse-engineers hooks from real reference URLs. Growth Run ships 5–10 short videos, schedules via Post Bridge, and tracks save rate from day one.",
   },
   {
     icon: Trophy,
     title: "Compound the winners",
+    time: "Automatic after metrics",
     desc: "Top performers are classified by save rate and signups. AutoScale spins hook variants from proven formats, kills flat posts, and learns your audience batch by batch.",
   },
 ] as const;
@@ -54,8 +58,14 @@ export function How() {
                       {String(i + 1).padStart(2, "0")}
                     </span>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-semibold tracking-tight">{step.title}</h3>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold tracking-tight">{step.title}</h3>
+                      <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/80 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {step.time}
+                      </span>
+                    </div>
                     <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.desc}</p>
                   </div>
                 </div>

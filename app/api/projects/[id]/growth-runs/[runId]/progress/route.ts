@@ -7,7 +7,6 @@ import { getNextStageCta, getStageByBoundaryPhase } from "@/lib/growth-run/stage
 import { syncStage3RunPhase } from "@/services/growth-run/sync-stage3";
 import {
   kickRenderWorker,
-  kickRenderWorkerInProcess,
   runRenderWorkerUntilIdle,
 } from "@/services/video-factory/render-worker";
 
@@ -59,11 +58,7 @@ export async function GET(
 
     try {
       if ((pendingJobs ?? 0) > 0) {
-        if (process.env.AUTOSCALE_CRON_SECRET || process.env.CRON_SECRET) {
-          kickRenderWorker(run.id);
-        } else {
-          kickRenderWorkerInProcess(run.id);
-        }
+        kickRenderWorker(run.id);
       } else {
         void runRenderWorkerUntilIdle({ growthRunId: run.id, maxBatches: 1 }).catch(() => undefined);
       }

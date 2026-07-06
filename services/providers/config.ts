@@ -9,17 +9,12 @@ export interface ManagedProviderConfig {
     apiKey: string | null;
     configured: boolean;
   };
-  postiz: {
-    apiUrl: string | null;
-    apiKey: string | null;
-    configured: boolean;
-  };
   postBridge: {
     apiUrl: string | null;
     apiKey: string | null;
     configured: boolean;
   };
-  publishingProvider: "postiz" | "postbridge";
+  publishingProvider: "postbridge";
   fal: {
     apiKey: string | null;
     configured: boolean;
@@ -44,7 +39,7 @@ export interface ManagedProviderConfig {
 export class ProviderSetupError extends Error {
   constructor(
     message: string,
-    public readonly code: "openrouter_missing" | "postiz_missing" | "postbridge_missing" | "fal_missing"
+    public readonly code: "openrouter_missing" | "postbridge_missing" | "fal_missing"
   ) {
     super(message);
     this.name = "ProviderSetupError";
@@ -56,15 +51,12 @@ function readEnv(key: string): string | null {
   return value ? value : null;
 }
 
-function readPublishingProvider(): "postiz" | "postbridge" {
-  const configured = readEnv("PUBLISHING_PROVIDER");
-  return configured?.toLowerCase() === "postbridge" ? "postbridge" : "postiz";
+function readPublishingProvider(): "postbridge" {
+  return "postbridge";
 }
 
 export function getManagedProviderConfig(): ManagedProviderConfig {
   const openrouterKey = readEnv("OPENROUTER_API_KEY");
-  const postizUrl = readEnv("POSTIZ_API_URL");
-  const postizKey = readEnv("POSTIZ_API_KEY");
   const postBridgeUrl = readEnv("POST_BRIDGE_API_URL");
   const postBridgeKey = readEnv("POST_BRIDGE_API_KEY");
   const falKey = readEnv("FAL_KEY");
@@ -75,11 +67,6 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
     openrouter: {
       apiKey: openrouterKey,
       configured: Boolean(openrouterKey),
-    },
-    postiz: {
-      apiUrl: postizUrl,
-      apiKey: postizKey,
-      configured: Boolean(postizUrl && postizKey),
     },
     postBridge: {
       apiUrl: postBridgeUrl,
@@ -116,24 +103,6 @@ export function assertManagedOpenRouterConfigured(): void {
       "openrouter_missing"
     );
   }
-}
-
-export function assertManagedPostizConfigured(): void {
-  const config = getManagedProviderConfig();
-  if (!config.postiz.configured) {
-    throw new ProviderSetupError(
-      "Managed Postiz is not configured. Set POSTIZ_API_URL and POSTIZ_API_KEY on the server.",
-      "postiz_missing"
-    );
-  }
-}
-
-export function getManagedPostizCredentials(): { apiUrl: string; apiKey: string } | null {
-  const config = getManagedProviderConfig();
-  if (!config.postiz.configured || !config.postiz.apiUrl || !config.postiz.apiKey) {
-    return null;
-  }
-  return { apiUrl: config.postiz.apiUrl, apiKey: config.postiz.apiKey };
 }
 
 export function assertManagedPostBridgeConfigured(): void {

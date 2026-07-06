@@ -1,10 +1,12 @@
 import { LandingNav } from "@/components/landing/nav";
 import { Hero } from "@/components/landing/hero";
 import { Pain } from "@/components/landing/pain";
+import { EvidenceChain } from "@/components/landing/evidence-chain";
 import { Loop } from "@/components/landing/loop";
 import { How } from "@/components/landing/how";
 import { Modules } from "@/components/landing/modules";
 import { Differentiation } from "@/components/landing/differentiation";
+import { Comparison } from "@/components/landing/comparison";
 import { Pricing } from "@/components/landing/pricing";
 import { FAQ } from "@/components/landing/faq";
 import { FinalCTA } from "@/components/landing/cta";
@@ -17,10 +19,12 @@ export default function LandingPage() {
       <main className="flex-1">
         <Hero />
         <Pain />
+        <EvidenceChain />
         <Loop />
         <How />
         <Modules />
         <Differentiation />
+        <Comparison />
         <Pricing />
         <FAQ />
         <FinalCTA />

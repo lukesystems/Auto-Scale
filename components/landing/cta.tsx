@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UrlCta } from "@/components/landing/url-cta";
 
 export function FinalCTA() {
   return (
@@ -17,18 +17,16 @@ export function FinalCTA() {
             </span>
           </h2>
           <p className="mt-6 text-base md:text-lg text-muted-foreground text-balance max-w-2xl mx-auto">
-            AutoScale reads your site, hops the trends that matter, and ships an exploration batch of short-form videos —
-            so you can stop guessing what to post and start compounding what works.
+            Every week without a distribution loop is another week of guessing. AutoScale reads your site, hops the
+            trends that matter, and ships an exploration batch — so you can start compounding what works.
           </p>
 
-          <div className="mt-10 flex flex-col sm:flex-row gap-3 items-center justify-center">
-            <Button asChild size="xl" variant="glow">
-              <Link href="/auth/sign-up">
-                Start your first Growth Run
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild size="xl" variant="outline">
+          <div className="mt-10 mx-auto max-w-xl">
+            <UrlCta size="large" buttonLabel="Start your first Growth Run" />
+          </div>
+
+          <div className="mt-5">
+            <Button asChild size="lg" variant="ghost">
               <Link href="/auth/sign-in">I already have an account</Link>
             </Button>
           </div>

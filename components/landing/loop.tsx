@@ -9,6 +9,7 @@ import {
   Trophy,
   Video,
 } from "lucide-react";
+import { LoopBatchToggle } from "@/components/landing/loop-batch-toggle";
 
 const LOOP = [
   { icon: Globe2, title: "Product URL", desc: "Drop a link to your site." },
@@ -32,8 +33,8 @@ export function Loop() {
             One loop. Compounding video distribution.
           </h2>
           <p className="mt-5 text-base text-muted-foreground text-balance md:text-lg">
-            Your first Growth Run is an exploration batch — wide, varied, designed to learn. Every run after that
-            exploits what worked, compounding winners into more variants and killing what didn&apos;t.
+            Without a loop, every Monday resets to zero. Your first Growth Run explores broadly. Every run after
+            exploits what worked — compounding winners into variants and killing what didn&apos;t.
           </p>
         </div>
 
@@ -58,19 +59,7 @@ export function Loop() {
               ))}
             </ol>
 
-            <div className="mt-8 flex flex-col gap-4 rounded-xl border border-primary/20 bg-primary/[0.04] p-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Exploration → Exploitation</p>
-                <p className="mt-2 text-sm text-foreground/90">
-                  Run 1 explores broadly. Runs 2+ exploit winners into variant batches you&apos;d never script by hand.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-                <span className="rounded-md border border-border bg-background px-2 py-1">batch 1: explore</span>
-                <span className="text-primary">→</span>
-                <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-primary">batch 2+: compound</span>
-              </div>
-            </div>
+            <LoopBatchToggle />
           </div>
         </div>
       </div>

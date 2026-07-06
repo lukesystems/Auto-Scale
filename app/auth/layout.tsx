@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
-import { Sparkles, TrendingUp, Zap } from "lucide-react";
+import { Globe2, Shield, Sparkles, TrendingUp } from "lucide-react";
+
+const STEPS = [
+  { icon: Globe2, label: "Paste your URL", desc: "No long onboarding form" },
+  { icon: TrendingUp, label: "Evidence + brief", desc: "Runs while you work" },
+  { icon: Sparkles, label: "First Growth Run", desc: "Exploration batch ships" },
+] as const;
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
-      {/* Left panel — brand story (desktop) */}
       <div className="relative hidden lg:flex flex-col justify-between p-12 overflow-hidden">
         <div className="absolute inset-0 -z-10 gradient-mesh" />
         <div className="absolute inset-0 -z-10 bg-grid opacity-30 [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_80%)]" />
@@ -16,20 +21,37 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-primary">AutoScale</p>
             <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight leading-tight">
-              Crack distribution
+              Find the format that brings users.
               <br />
-              with videos that compound.
+              Then automate the winner.
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              Find the formats that bring users, ship the variants, and compound the winners.
+              Evidence → controlled tests → business signals → winner variants. Built for founders who measure
+              signups, not impressions.
             </p>
           </div>
 
-          <ul className="space-y-4">
-            <Feature icon={<TrendingUp className="h-4 w-4" />} title="TrendWatch" desc="Reverse-engineer what already works in your niche" />
-            <Feature icon={<Zap className="h-4 w-4" />} title="Trend-backed videos" desc="Turn proven formats into short-form video experiments" />
-            <Feature icon={<Sparkles className="h-4 w-4" />} title="Compound winners" desc="Generate variants from videos that bring users" />
-          </ul>
+          <ol className="space-y-4">
+            {STEPS.map((step, i) => (
+              <li key={step.label} className="flex items-start gap-3">
+                <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <step.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
+                    <div className="text-sm font-medium">{step.label}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{step.desc}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="flex items-start gap-2 rounded-lg border border-border/80 bg-card/50 px-3 py-2.5 text-xs text-muted-foreground">
+            <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <span>You approve videos before anything posts. Approval policy is yours to set.</span>
+          </div>
         </div>
 
         <p className="text-xs text-muted-foreground">
@@ -37,7 +59,6 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </p>
       </div>
 
-      {/* Right panel — auth form */}
       <div className="flex flex-col min-h-screen">
         <header className="container py-6 lg:hidden">
           <Logo />
@@ -60,19 +81,5 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </footer>
       </div>
     </div>
-  );
-}
-
-function Feature({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <li className="flex items-start gap-3">
-      <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        {icon}
-      </div>
-      <div>
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
-      </div>
-    </li>
   );
 }

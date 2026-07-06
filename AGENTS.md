@@ -125,8 +125,8 @@ Never generate disconnected content and never state competitor intelligence as f
 14. Sidebar navigation + **Run Center** (`/projects/[id]/runs`) with header status pill
 15. Evidence chain drawer on video evidence, TrendHop, and growth video cards
 16. `getNextMove` banner on Brief, Sources, Video Intelligence, Growth hub, Winners
-17. Metrics ingestion via Post Bridge API (`services/metrics-ingestion/`): cron at `/api/cron/metrics-ingestion` + `metrics_snapshots`; auto-creates `growth_experiment_results` on schedule
-18. TrendHop cron at `/api/cron/trendhop` (Vercel + Supabase pg_cron guide in `docs/SUPABASE_CRON_SETUP.md`)
+17. Metrics ingestion via Post Bridge API (`services/metrics-ingestion/`): scheduler endpoint at `/api/cron/metrics-ingestion` + `metrics_snapshots`; auto-creates `growth_experiment_results` on schedule
+18. TrendHop scheduler endpoint at `/api/cron/trendhop`; use Supabase `pg_cron` or another external scheduler, not Vercel Cron on the free tier (`docs/SUPABASE_CRON_SETUP.md`)
 19. AI run debugger + provider visibility settings shell
 
 ## What is not built yet

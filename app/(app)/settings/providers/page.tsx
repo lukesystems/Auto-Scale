@@ -48,7 +48,7 @@ export default async function ProvidersSettingsPage() {
         description={
           isManagedMode(mode)
             ? "Managed Mode: AutoScale handles the technical setup. You do not need API keys."
-            : "Advanced Mode: Bring your own OpenRouter, Postiz, or media provider keys. Recommended only for technical users."
+            : "Advanced Mode: Bring your own OpenRouter, Post Bridge, or media provider keys. Recommended only for technical users."
         }
         badge={
           <Badge variant={isManagedMode(mode) ? "success" : "outline"}>
@@ -91,16 +91,13 @@ export default async function ProvidersSettingsPage() {
             <h3 className="font-semibold">{status.publishing.label} (scheduling)</h3>
             <StatusRow label="Active provider" ok={true} customValue={status.publishing.label} />
             <StatusRow label="Configured" ok={status.publishing.configured} />
-            {status.publishing.provider === "postiz" && (
-              <StatusRow label="API URL set" ok={status.postiz.apiUrlConfigured} />
-            )}
             {isManagedMode(mode) ? (
               <p className="text-sm text-muted-foreground">
                 Managed by AutoScale — no API key required in the UI.
               </p>
             ) : (
               <Button asChild variant="outline" size="sm">
-                <Link href="/settings/postiz">Manage {status.publishing.label} connection</Link>
+                <Link href="/settings/publishing">Manage {status.publishing.label} connection</Link>
               </Button>
             )}
           </div>

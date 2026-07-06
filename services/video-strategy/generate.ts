@@ -292,7 +292,7 @@ export async function generateVideoStrategy(opts: {
       total_videos_planned: loadout.total_videos_planned,
       duration_days: loadout.duration_days,
       connected_account_ids: (opts.options.connected_account_ids ?? []) as never,
-      distribution_mode: opts.options.distribution_mode ?? "postiz",
+      distribution_mode: opts.options.distribution_mode ?? "postbridge",
     } as never)
     .select("id")
     .single();

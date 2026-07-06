@@ -189,7 +189,7 @@ export async function renderConceptVideo(opts: {
     if (audioModeUsesVoiceover(audioMode)) {
       if (!isVoiceoverTtsConfigured()) {
         throw new Error(
-          "Voiceover required but no TTS provider configured — set ELEVENLABS_API_KEY or OPENAI_API_KEY"
+          "Voiceover required but no TTS provider configured — set ELEVENLABS_API_KEY"
         );
       }
       const scriptText = script?.voiceover_full ?? "";

@@ -1,18 +1,11 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
-import { getPublishingProviderId } from "@/services/social-publishing";
 import { getManagedPostBridgeCredentials } from "@/services/providers/config";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export async function ProviderReadinessChip({ projectId }: { projectId: string }) {
-  const provider = getPublishingProviderId();
-  const label = provider === "postbridge" ? "Post Bridge" : provider === "postiz" ? "Postiz" : "Export";
-  const configured =
-    provider === "postbridge"
-      ? Boolean(getManagedPostBridgeCredentials())
-      : provider === "postiz"
-        ? Boolean(process.env.POSTIZ_API_KEY || process.env.AUTOSCALE_POSTIZ_API_KEY)
-        : true;
+  const label = "Post Bridge";
+  const configured = Boolean(getManagedPostBridgeCredentials());
 
   if (!isSupabaseConfigured()) return null;
 

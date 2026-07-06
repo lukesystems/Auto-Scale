@@ -187,7 +187,7 @@ export async function generateDailyGrowthPack(projectId: string): Promise<DailyG
   const postingRecommendation =
     capacity > 0
       ? `Post up to ${capacity} video(s) today across ${accounts!.length} active account(s). Prioritize ready videos with quality scores ≥ 0.55.`
-      : "No connected accounts — export pack and post manually, or connect Postiz accounts in Settings.";
+      : "No connected accounts — connect Post Bridge accounts in Settings.";
 
   items.push({
     item_type: "posting_recommendation",

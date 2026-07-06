@@ -7,9 +7,10 @@ import { X } from "lucide-react";
 interface NewProjectDialogProps {
   open: boolean;
   onClose: () => void;
+  initialUrl?: string;
 }
 
-export function NewProjectDialog({ open, onClose }: NewProjectDialogProps) {
+export function NewProjectDialog({ open, onClose, initialUrl }: NewProjectDialogProps) {
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -35,7 +36,7 @@ export function NewProjectDialog({ open, onClose }: NewProjectDialogProps) {
           </button>
         </div>
         <div className="p-5">
-          <NewProjectForm onSuccess={onClose} />
+          <NewProjectForm onSuccess={onClose} initialUrl={initialUrl} />
         </div>
       </div>
     </div>

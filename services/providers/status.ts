@@ -19,14 +19,10 @@ export interface ProviderStatus {
     };
   };
   publishing: {
-    provider: "postiz" | "postbridge" | "export_only";
-    label: "Postiz" | "Post Bridge" | "Export";
+    provider: "postbridge";
+    label: "Post Bridge";
     configured: boolean;
     remoteEnabled: boolean;
-  };
-  postiz: {
-    configured: boolean;
-    apiUrlConfigured: boolean;
   };
   postbridge: {
     configured: boolean;
@@ -44,18 +40,7 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
   const warnings: string[] = [];
   const publishingProvider = getPublishingProviderId();
   const publishingLabel = getPublishingProviderLabel(publishingProvider);
-  const postizConfigured = config.postiz.configured;
   const postBridgeConfigured = config.postBridge.configured;
-  const publishingConfigured =
-    publishingProvider === "export_only"
-      ? true
-      : publishingProvider === "postbridge"
-        ? postBridgeConfigured
-        : postizConfigured;
-  const remoteEnabled =
-    publishingProvider === "postbridge"
-      ? postBridgeConfigured
-      : publishingProvider === "postiz" && postizConfigured;
 
   if (mode === "managed") {
     if (!config.openrouter.configured) {
@@ -63,14 +48,9 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
         "Managed OpenRouter is not configured. AI generation will fail until OPENROUTER_API_KEY is set."
       );
     }
-    if (publishingProvider === "postiz" && !postizConfigured) {
+    if (!postBridgeConfigured) {
       warnings.push(
-        "Managed Postiz is not configured. Scheduling will queue locally until POSTIZ_API_URL and POSTIZ_API_KEY are set."
-      );
-    }
-    if (publishingProvider === "postbridge" && !postBridgeConfigured) {
-      warnings.push(
-        "Managed Post Bridge is not configured. Scheduling will queue locally until POST_BRIDGE_API_KEY is set."
+        "Managed Post Bridge is not configured. Scheduling will fail until POST_BRIDGE_API_KEY is set."
       );
     }
   }
@@ -84,16 +64,12 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
     publishing: {
       provider: publishingProvider,
       label: publishingLabel,
-      configured: publishingConfigured,
-      remoteEnabled,
-    },
-    postiz: {
-      configured: postizConfigured,
-      apiUrlConfigured: Boolean(config.postiz.apiUrl),
+      configured: postBridgeConfigured,
+      remoteEnabled: postBridgeConfigured,
     },
     postbridge: {
       configured: postBridgeConfigured,
-      enabled: publishingProvider === "postbridge" && postBridgeConfigured,
+      enabled: postBridgeConfigured,
     },
     fal: {
       configured: config.fal.configured,
@@ -103,7 +79,6 @@ export function getProviderStatus(mode: ProviderMode): ProviderStatus {
   };
 }
 
-/** Client-safe JSON — never includes API keys. */
 export function getClientSafeProviderStatus(mode: ProviderMode): ProviderStatus {
   return getProviderStatus(mode);
 }

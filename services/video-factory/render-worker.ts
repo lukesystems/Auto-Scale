@@ -21,6 +21,7 @@ import {
 } from "./production-job";
 import { normalizeProductionMode, resolveProductionMode } from "./production-modes";
 import { syncStage3RunPhase } from "@/services/growth-run/sync-stage3";
+import { resolveRenderWorkerKickTarget } from "./render-worker-kick";
 
 import {
   AWAITING_WORKER_STAGE,
@@ -493,51 +494,38 @@ export async function runRenderWorkerUntilIdle(opts?: {
   return total;
 }
 
-function resolveWorkerBaseUrl(): string | null {
-  const externalWorker = process.env.AUTOSCALE_RENDER_WORKER_URL?.trim();
-  if (externalWorker) return externalWorker.replace(/\/$/, "");
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (appUrl) return appUrl.replace(/\/$/, "");
-  if (process.env.NODE_ENV === "development") return "http://localhost:3000";
-  return null;
-}
-
-function resolveCronSecret(): string | null {
-  return (
-    process.env.AUTOSCALE_RENDER_WORKER_SECRET?.trim() ||
-    process.env.AUTOSCALE_CRON_SECRET?.trim() ||
-    process.env.CRON_SECRET?.trim() ||
-    null
-  );
-}
-
 /** Fire-and-forget HTTP kick — used after orchestrator enqueue. */
 export function kickRenderWorker(growthRunId?: string): void {
-  const base = resolveWorkerBaseUrl();
-  const secret = resolveCronSecret();
-  if (!base || !secret) {
+  const target = resolveRenderWorkerKickTarget(growthRunId);
+  if ("error" in target) {
     if (
       process.env.NODE_ENV === "development" ||
       process.env.AUTOSCALE_RENDER_WORKER_LOCAL === "1"
     ) {
       kickRenderWorkerInProcess(growthRunId);
+    } else {
+      console.error(`[render-worker] kick skipped: ${target.error}`);
     }
     return;
   }
 
-  const externalWorker = Boolean(process.env.AUTOSCALE_RENDER_WORKER_URL?.trim());
-  const url = new URL(externalWorker ? "/run" : "/api/cron/render-worker", base);
-  if (growthRunId) url.searchParams.set("growthRunId", growthRunId);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  timeout.unref?.();
 
-  void fetch(url.toString(), {
+  void fetch(target.url.toString(), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${secret}`,
+      Authorization: `Bearer ${target.secret}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ growthRunId }),
-  }).catch(() => undefined);
+    signal: controller.signal,
+  })
+    .catch((err) => {
+      console.error("[render-worker] kick failed:", err);
+    })
+    .finally(() => clearTimeout(timeout));
 }
 
 /** In-process worker kick for dev progress polling (no cron secret required). */

@@ -5,14 +5,16 @@ import { Button } from "@/components/ui/button";
 const PLANS = [
   {
     name: "Launch",
+    verb: "Learn",
     price: 49,
     tagline: "For solo founders shipping their first Growth Run.",
+    weekOne: "1 exploration batch",
     features: [
       "1 project",
       "2 Growth Runs / month",
       "5–8 videos per batch",
       "TrendWatch refresh weekly",
-      "Postiz scheduling (1 account / platform)",
+      "Post Bridge scheduling (1 account / platform)",
       "ZIP / CSV export fallback",
     ],
     cta: "Start with Launch",
@@ -20,15 +22,17 @@ const PLANS = [
   },
   {
     name: "Growth",
+    verb: "Compound",
     price: 149,
     tagline: "For founders compounding winners weekly.",
+    weekOne: "2 batches + 1 variant run",
     features: [
       "3 projects",
       "6 Growth Runs / month",
       "8–10 videos per batch",
       "TrendWatch refresh every 3 days",
       "Variant batches from winners",
-      "Multi-account Postiz scheduling",
+      "Multi-account Post Bridge scheduling",
       "Per-video Growth Graph",
     ],
     cta: "Choose Growth",
@@ -36,8 +40,10 @@ const PLANS = [
   },
   {
     name: "Operator",
+    verb: "Scale",
     price: 399,
     tagline: "For teams running multi-product distribution.",
+    weekOne: "Unlimited runs + concierge",
     features: [
       "10 projects",
       "Unlimited Growth Runs",
@@ -50,6 +56,12 @@ const PLANS = [
     cta: "Go Operator",
     highlight: false,
   },
+];
+
+const ANCHORS = [
+  { label: "Freelance UGC creator", value: "$3–5k/mo" },
+  { label: "Growth agency retainer", value: "$8k+/mo" },
+  { label: "AutoScale Growth", value: "$149/mo", accent: true },
 ];
 
 export function Pricing() {
@@ -66,8 +78,18 @@ export function Pricing() {
             <span className="text-muted-foreground">Faster than learning TikTok yourself.</span>
           </h2>
           <p className="mt-5 text-base md:text-lg text-muted-foreground text-balance">
-            Start with one Growth Run. Move up when the loop starts compounding.
+            One winning format can pay for a year of Growth. Start with one exploration batch — move up when the loop
+            compounds.
           </p>
+        </div>
+
+        <div className="mx-auto mt-10 flex max-w-2xl flex-wrap items-center justify-center gap-4 md:gap-8">
+          {ANCHORS.map((a) => (
+            <div key={a.label} className="text-center">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{a.label}</p>
+              <p className={`mt-1 text-lg font-semibold ${a.accent ? "text-primary" : ""}`}>{a.value}</p>
+            </div>
+          ))}
         </div>
 
         <div className="mt-14 grid md:grid-cols-3 gap-5 max-w-6xl mx-auto">
@@ -88,13 +110,21 @@ export function Pricing() {
                 </div>
               )}
 
-              <h3 className="font-display text-xl font-semibold tracking-tight">{plan.name}</h3>
+              <div className="flex items-baseline gap-2">
+                <h3 className="font-display text-xl font-semibold tracking-tight">{plan.name}</h3>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-primary">{plan.verb}</span>
+              </div>
               <p className="mt-2 text-sm text-muted-foreground text-balance">{plan.tagline}</p>
 
               <div className="mt-6 flex items-baseline gap-1">
                 <span className="text-4xl font-semibold tracking-tight">${plan.price}</span>
                 <span className="text-sm text-muted-foreground">/month</span>
               </div>
+
+              <p className="mt-4 rounded-lg border border-border/80 bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground/80">Week 1: </span>
+                {plan.weekOne}
+              </p>
 
               <Button
                 asChild

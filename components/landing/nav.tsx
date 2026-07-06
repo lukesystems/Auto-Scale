@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { label: "The loop", href: "#loop" },
+  { label: "Evidence", href: "#evidence" },
   { label: "How it works", href: "#how" },
   { label: "Engine", href: "#modules" },
   { label: "Pricing", href: "#pricing" },
@@ -56,7 +57,7 @@ export function LandingNav() {
             <Link href="/auth/sign-in">Sign in</Link>
           </Button>
           <Button asChild size="sm">
-            <Link href="/auth/sign-up">Start your first Growth Run</Link>
+            <Link href="/auth/sign-up">Paste your URL — free</Link>
           </Button>
         </div>
 
@@ -88,7 +89,7 @@ export function LandingNav() {
                 <Link href="/auth/sign-in">Sign in</Link>
               </Button>
               <Button asChild size="sm" className="flex-1">
-                <Link href="/auth/sign-up">Start your first Growth Run</Link>
+                <Link href="/auth/sign-up">Paste your URL</Link>
               </Button>
             </div>
           </div>

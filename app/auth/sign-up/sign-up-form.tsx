@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function SignUpForm() {
+export function SignUpForm({ productUrl = "" }: { productUrl?: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +31,8 @@ export function SignUpForm() {
 
   return (
     <form action={onSubmit} className="space-y-4">
+      {productUrl ? <input type="hidden" name="product_url" value={productUrl} /> : null}
+
       <div className="space-y-1.5">
         <Label htmlFor="display_name">Your name</Label>
         <Input id="display_name" name="display_name" autoComplete="name" placeholder="Founder name" />
@@ -51,7 +53,7 @@ export function SignUpForm() {
       )}
 
       <Button type="submit" size="lg" className="w-full" disabled={pending} variant="glow">
-        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create account"}
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : productUrl ? "Create account & continue" : "Create account"}
       </Button>
     </form>
   );

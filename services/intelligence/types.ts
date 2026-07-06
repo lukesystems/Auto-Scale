@@ -1,5 +1,5 @@
-export type CrawlAdapterName = "crawl4ai" | "playwright" | "firecrawl" | "browser-use";
-export type SearchAdapterName = "exa" | "brave" | "firecrawl";
+export type CrawlAdapterName = "crawl4ai" | "firecrawl";
+export type SearchAdapterName = "firecrawl";
 
 export type ProductPageType =
   | "home"

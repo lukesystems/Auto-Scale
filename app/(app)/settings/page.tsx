@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 
 import { Badge } from "@/components/ui/badge";
 
-import { listProviders, getDefaultProvider } from "@/services/ai/runtime";
+import { detectConfiguredProvider, listProviders } from "@/services/ai/runtime";
 
 import { getProviderModeForUser } from "@/lib/provider-mode";
 
@@ -25,13 +25,15 @@ import type { ApprovalPolicy } from "@/lib/approval-policy";
 
 export const metadata = { title: "Settings" };
 
+export const dynamic = "force-dynamic";
+
 
 
 export default async function SettingsPage() {
 
   const providers = listProviders();
 
-  const active = getDefaultProvider();
+  const active = detectConfiguredProvider();
 
   let mode = "managed" as "managed" | "byok";
   let crawlMode: "llm" | "heuristic" = "llm";
@@ -111,7 +113,7 @@ export default async function SettingsPage() {
 
                 ? "AutoScale handles the technical setup. You do not need API keys."
 
-                : "Bring your own OpenRouter, Postiz, or media provider keys. Recommended only for technical users."}
+                : "Bring your own OpenRouter, Post Bridge, or media provider keys. Recommended only for technical users."}
 
             </p>
 
@@ -189,9 +191,13 @@ export default async function SettingsPage() {
 
 
             <p className="mt-4 text-xs text-muted-foreground">
-
-              Active default: <code className="font-mono text-foreground">{active}</code>
-
+              {active ? (
+                <>
+                  Active default: <code className="font-mono text-foreground">{active}</code>
+                </>
+              ) : (
+                <>No server-side AI provider configured. Set OPENROUTER_API_KEY.</>
+              )}
             </p>
 
           </div>
@@ -214,21 +220,21 @@ export default async function SettingsPage() {
 
           <div className="flex-1">
 
-            <h3 className="font-semibold tracking-tight">Postiz connection</h3>
+            <h3 className="font-semibold tracking-tight">Post Bridge connection</h3>
 
             <p className="mt-1 text-sm text-muted-foreground">
 
               {isManagedMode(mode)
 
-                ? "Scheduling uses AutoScale-managed Postiz credentials in Managed Mode."
+                ? "Scheduling uses AutoScale-managed Post Bridge credentials in Managed Mode."
 
-                : "Connect your Postiz account to push approved posts to your scheduler."}
+                : "Connect Post Bridge to push approved posts to your scheduler."}
 
             </p>
 
             <Button asChild variant="outline" className="mt-4">
 
-              <Link href="/settings/postiz">Manage Postiz</Link>
+              <Link href="/settings/publishing">Manage publishing</Link>
 
             </Button>
 

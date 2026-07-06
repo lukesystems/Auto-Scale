@@ -58,7 +58,8 @@ export async function loadProjectGrowthSettings(
     blocked_topics: Array.isArray(data.blocked_topics) ? data.blocked_topics : [],
     blocked_claims: Array.isArray(data.blocked_claims) ? data.blocked_claims : [],
     blocked_competitors: Array.isArray(data.blocked_competitors) ? data.blocked_competitors : [],
-    distribution_preference: data.distribution_preference,
+    distribution_preference:
+      data.distribution_preference === "selected" ? "selected" : "all_accounts",
     selected_account_ids: Array.isArray(data.selected_account_ids)
       ? (data.selected_account_ids as string[])
       : [],
@@ -84,7 +85,7 @@ export async function resolveConnectedAccountIds(
   projectId: string,
   settings: ProjectGrowthSettings,
   opts?: { useServiceRole?: boolean }
-): Promise<{ accountIds: string[]; distributionMode: "postiz" | "export_only" }> {
+): Promise<{ accountIds: string[]; distributionMode: "postbridge" }> {
   const supabase = opts?.useServiceRole
     ? createSupabaseAdminClient()
     : createSupabaseServerClient();
@@ -96,17 +97,17 @@ export async function resolveConnectedAccountIds(
 
   const activeIds = (accounts ?? []).map((a) => a.id);
 
-  if (settings.distribution_preference === "export_only" || activeIds.length === 0) {
-    return { accountIds: [], distributionMode: "export_only" };
+  if (activeIds.length === 0) {
+    return { accountIds: [], distributionMode: "postbridge" };
   }
 
   if (settings.distribution_preference === "selected") {
     const selected = settings.selected_account_ids.filter((id) => activeIds.includes(id));
     if (!selected.length) {
-      return { accountIds: [], distributionMode: "export_only" };
+      return { accountIds: [], distributionMode: "postbridge" };
     }
-    return { accountIds: selected, distributionMode: "postiz" };
+    return { accountIds: selected, distributionMode: "postbridge" };
   }
 
-  return { accountIds: activeIds, distributionMode: "postiz" };
+  return { accountIds: activeIds, distributionMode: "postbridge" };
 }

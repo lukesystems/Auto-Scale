@@ -40,8 +40,3 @@ export async function generateFalImagePlaceholder(prompt: string): Promise<{ ima
   const result = await generateFalImage({ prompt, modelId: selected.modelId });
   return { imageUrl: result.imageUrl };
 }
-
-/** Placeholder for future video generation — not implemented in V1.1. */
-export async function generateFalVideoPlaceholder(_prompt: string): Promise<never> {
-  throw new Error("Fal video generation is not implemented yet. See docs/MEDIA_PROVIDER_PLAN.md.");
-}
