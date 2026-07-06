@@ -1,35 +1,26 @@
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, Download } from "lucide-react";
+import { CheckCircle2, Clock } from "lucide-react";
 
-export type ScheduleStatusState = "posted" | "queued" | "exported" | "unknown";
+export type ScheduleStatusState = "posted" | "queued" | "unknown";
 
-export type PublishingProviderLabel = "Postiz" | "Post Bridge" | "Export";
+export type PublishingProviderLabel = "Post Bridge";
 
 interface ScheduleStatusBadgeProps {
   state: ScheduleStatusState;
   detail?: string | null;
   className?: string;
-  /** Remote publisher label when state is posted (defaults to Postiz). */
   providerLabel?: PublishingProviderLabel;
 }
 
-export function getPostedViaLabel(providerLabel: PublishingProviderLabel = "Postiz"): string {
-  if (providerLabel === "Post Bridge") return "Posted via Post Bridge";
-  if (providerLabel === "Export") return "Exported manually";
-  return "Posted via Postiz";
+export function getPostedViaLabel(_providerLabel: PublishingProviderLabel = "Post Bridge"): string {
+  return "Posted via Post Bridge";
 }
 
-/**
- * Three explicit states used wherever schedule status appears:
- *  - Posted via active publisher (green)
- *  - Queued locally (amber)
- *  - Exported manually (slate)
- */
 export function ScheduleStatusBadge({
   state,
   detail,
   className,
-  providerLabel = "Postiz",
+  providerLabel = "Post Bridge",
 }: ScheduleStatusBadgeProps) {
   if (state === "posted") {
     return (
@@ -47,16 +38,7 @@ export function ScheduleStatusBadge({
         className={`border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100 ${className ?? ""}`}
       >
         <Clock className="h-3 w-3" />
-        Queued locally
-        {detail ? <span className="ml-1 opacity-80">· {detail}</span> : null}
-      </Badge>
-    );
-  }
-  if (state === "exported") {
-    return (
-      <Badge variant="secondary" className={className}>
-        <Download className="h-3 w-3" />
-        Exported manually
+        Queued remotely
         {detail ? <span className="ml-1 opacity-80">· {detail}</span> : null}
       </Badge>
     );
@@ -77,9 +59,6 @@ export function mapScheduleItemStatusToState(status: string | null | undefined):
     case "queued":
     case "sending":
       return "queued";
-    case "exported":
-    case "manual_export":
-      return "exported";
     default:
       return "unknown";
   }

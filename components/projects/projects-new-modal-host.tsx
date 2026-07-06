@@ -8,10 +8,11 @@ export function ProjectsNewModalHost() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const open = searchParams.get("new") === "1";
+  const initialUrl = searchParams.get("url")?.trim() ?? "";
 
   const onClose = useCallback(() => {
     router.replace("/projects");
   }, [router]);
 
-  return <NewProjectDialog open={open} onClose={onClose} />;
+  return <NewProjectDialog open={open} onClose={onClose} initialUrl={initialUrl || undefined} />;
 }

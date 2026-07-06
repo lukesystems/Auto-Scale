@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Globe, Loader2, Sparkles } from "lucide-react";
@@ -25,12 +25,14 @@ import { Label } from "@/components/ui/label";
 
 export function NewProjectForm({
   onSuccess,
+  initialUrl = "",
 }: {
   onSuccess?: () => void;
+  initialUrl?: string;
 } = {}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [productUrl, setProductUrl] = useState("");
+  const [productUrl, setProductUrl] = useState(initialUrl);
   const [aiModel, setAiModel] = useState<ModelPickerValue>(getDefaultModelPickerValue);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -38,6 +40,10 @@ export function NewProjectForm({
   const [growthRunId, setGrowthRunId] = useState<string | null>(null);
   const [stage, setStage] = useState<PipelineStage>("crawl");
   const runIdRef = useRef(0);
+
+  useEffect(() => {
+    if (initialUrl) setProductUrl(initialUrl);
+  }, [initialUrl]);
 
   const autobriefProgress = useAutobriefProgress(
     projectId,

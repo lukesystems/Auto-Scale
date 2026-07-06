@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   getManagedPostBridgeCredentials,
-  getManagedPostizCredentials,
 } from "@/services/providers/config";
 import type {
   PublishingCredentials,
@@ -39,10 +38,8 @@ export type {
 
 export {
   GROWTH_PUBLISHING_PLATFORMS,
-  isExportOnlyCredentials,
   isGrowthPublishingPlatform,
   isPostBridgeCredentials,
-  isPostizCredentials,
   normalizePublishingPlatform,
 } from "./provider";
 
@@ -88,10 +85,7 @@ export async function getPublishingPostStatus(
 
 /** Managed-mode credential probe for remote publishing (active provider). */
 export function getActiveManagedPublishingConfigured(): boolean {
-  const providerId = getPublishingProviderId();
-  if (providerId === "postbridge") return Boolean(getManagedPostBridgeCredentials());
-  if (providerId === "postiz") return Boolean(getManagedPostizCredentials());
-  return false;
+  return Boolean(getManagedPostBridgeCredentials());
 }
 
 export {

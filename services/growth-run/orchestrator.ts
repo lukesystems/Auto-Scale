@@ -716,7 +716,7 @@ export interface RunGrowthRunStageOnlyInput {
   postingAggressiveness?: "conservative" | "balanced" | "aggressive";
   targetPlatforms?: Array<"tiktok" | "instagram" | "youtube">;
   brandConstraints?: Record<string, unknown>;
-  distributionMode?: "postiz" | "export_only";
+  distributionMode?: "postbridge";
   productUrl?: string;
 }
 

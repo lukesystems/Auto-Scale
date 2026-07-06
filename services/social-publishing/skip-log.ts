@@ -12,7 +12,7 @@ export type AutopilotSkipReason =
   | "duplicate_hook_risk"
   | "duplicate_format_risk"
   | "account_health_paused"
-  | "postiz_missing"
+  | "postbridge_missing"
   | "platform_unsupported"
   | "no_final_mp4"
   | "no_captions";

@@ -7,7 +7,7 @@ import "server-only";
  * → PostBridge adapter (later) → export-only fallback (always).
  */
 
-export type PublishingProviderName = "postiz" | "postbridge" | "export_only";
+export type PublishingProviderName = "postbridge";
 
 /** @deprecated Use PublishingProviderName */
 export type PublishingProviderId = PublishingProviderName;
@@ -125,20 +125,8 @@ export function isGrowthPublishingPlatform(platform: string): platform is Growth
   return (GROWTH_PUBLISHING_PLATFORMS as readonly string[]).includes(normalized);
 }
 
-export function isPostizCredentials(
-  credentials: PublishingCredentials
-): credentials is PublishingCredentials & { provider: "postiz"; apiUrl: string; apiKey: string } {
-  return credentials.provider === "postiz";
-}
-
 export function isPostBridgeCredentials(
   credentials: PublishingCredentials
 ): credentials is PublishingCredentials & { provider: "postbridge"; apiKey: string } {
   return credentials.provider === "postbridge";
-}
-
-export function isExportOnlyCredentials(
-  credentials: PublishingCredentials
-): credentials is PublishingCredentials & { provider: "export_only" } {
-  return credentials.provider === "export_only";
 }

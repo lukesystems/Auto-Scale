@@ -18,7 +18,7 @@ export interface CreateGrowthRunInput {
   targetPlatforms?: Array<"tiktok" | "instagram" | "youtube">;
   brandConstraints?: Record<string, unknown>;
   parentRunId?: string | null;
-  distributionMode?: "postiz" | "export_only";
+  distributionMode?: "postbridge";
   executionMode?: "sequential_first" | "stage_only";
   targetStage?: 1 | 2 | 3 | 4;
   client?: SupabaseClientType;
@@ -38,7 +38,7 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
       posting_aggressiveness: input.postingAggressiveness ?? "balanced",
       target_platforms: (input.targetPlatforms ?? ["tiktok", "instagram", "youtube"]) as never,
       brand_constraints: (input.brandConstraints ?? {}) as never,
-      distribution_mode: input.distributionMode ?? "postiz",
+      distribution_mode: input.distributionMode ?? "postbridge",
       parent_run_id: input.parentRunId ?? null,
       execution_mode: input.executionMode ?? "sequential_first",
       target_stage: input.targetStage ?? null,

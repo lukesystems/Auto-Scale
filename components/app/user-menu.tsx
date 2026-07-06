@@ -38,7 +38,7 @@ export function UserMenu({ email, displayName }: { email: string; displayName: s
           <Link href="/settings"><Settings className="h-4 w-4" /> Settings</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/settings/postiz"><UserIcon className="h-4 w-4" /> Postiz connection</Link>
+          <Link href="/settings/publishing"><UserIcon className="h-4 w-4" /> Publishing connection</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/debug/ai-runs"><Bug className="h-4 w-4" /> AI runs (debug)</Link>

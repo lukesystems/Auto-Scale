@@ -64,6 +64,7 @@ function jobsTableHandlers(candidates: Array<Record<string, unknown>>) {
 describe("render worker", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     vi.resetModules();
   });
 
@@ -139,5 +140,32 @@ describe("render worker", () => {
     );
 
     expect(existing).toEqual({ jobId: "job-existing", videoId: "video-existing" });
+  });
+
+  it("resolves external Cloud Run kicks with the render worker secret", async () => {
+    const { resolveRenderWorkerKickTarget } = await import("@/services/video-factory/render-worker-kick");
+    const target = resolveRenderWorkerKickTarget("run-1", {
+      AUTOSCALE_RENDER_WORKER_URL: "https://worker.example",
+      AUTOSCALE_RENDER_WORKER_SECRET: "worker-secret",
+      AUTOSCALE_CRON_SECRET: "cron-secret",
+      NODE_ENV: "production",
+    });
+
+    expect(target).not.toHaveProperty("error");
+    expect("error" in target ? null : target.url.toString()).toBe("https://worker.example/run?growthRunId=run-1");
+    expect("error" in target ? null : target.secret).toBe("worker-secret");
+    expect("error" in target ? null : target.externalWorker).toBe(true);
+  });
+
+  it("does not resolve external Cloud Run kicks with the scheduler secret", async () => {
+    const { resolveRenderWorkerKickTarget } = await import("@/services/video-factory/render-worker-kick");
+    const target = resolveRenderWorkerKickTarget("run-1", {
+      AUTOSCALE_RENDER_WORKER_URL: "https://worker.example",
+      AUTOSCALE_RENDER_WORKER_SECRET: "",
+      AUTOSCALE_CRON_SECRET: "cron-secret",
+      NODE_ENV: "production",
+    });
+
+    expect(target).toEqual({ error: "AUTOSCALE_RENDER_WORKER_SECRET is not configured" });
   });
 });

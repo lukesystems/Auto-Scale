@@ -69,6 +69,17 @@ function requireEnv(group: string, name: string) {
   return value;
 }
 
+function requireAnyEnv(group: string, names: string[], detail: string) {
+  const configured = names.find((name) => Boolean(env(name)));
+  add(
+    group,
+    names.join(" or "),
+    configured ? "pass" : "fail",
+    configured ? `${configured} configured` : detail
+  );
+  return configured ? env(configured) : null;
+}
+
 function optionalEnv(group: string, name: string, reason: string) {
   const value = env(name);
   add(group, name, value ? "pass" : "warn", value ? "configured" : reason);
@@ -159,7 +170,7 @@ function redactUrl(url: string | null): string {
 function checkVercelCronConfig() {
   const filePath = join(process.cwd(), "vercel.json");
   if (!existsSync(filePath)) {
-    add("vercel-cron", "vercel.json", "warn", "missing; use Supabase pg_cron or another scheduler");
+    add("scheduler", "vercel.json", "pass", "Vercel Cron not configured; use Supabase pg_cron or another external scheduler");
     return;
   }
 
@@ -168,24 +179,27 @@ function checkVercelCronConfig() {
       crons?: Array<{ path?: string; schedule?: string }>;
     };
     const crons = parsed.crons ?? [];
-    const required = [
-      "/api/cron/metrics-ingestion",
-      "/api/cron/trendhop",
-      "/api/cron/render-worker",
-    ];
-
-    for (const path of required) {
-      const cron = crons.find((entry) => entry.path === path);
+    if (crons.length === 0) {
       add(
-        "vercel-cron",
-        path,
-        cron ? "pass" : "warn",
-        cron?.schedule ? `scheduled ${cron.schedule}` : "not present in vercel.json"
+        "scheduler",
+        "vercel.json",
+        "pass",
+        "Vercel Cron intentionally empty for free tier; use Supabase pg_cron or another external scheduler"
+      );
+      return;
+    }
+
+    for (const cron of crons) {
+      add(
+        "scheduler",
+        cron.path ?? "unknown cron path",
+        "warn",
+        `Vercel Cron entry present (${cron.schedule ?? "no schedule"}); remove on free tier or confirm paid plan`
       );
     }
   } catch (err) {
     add(
-      "vercel-cron",
+      "scheduler",
       "vercel.json",
       "warn",
       `could not parse vercel.json: ${err instanceof Error ? err.message : String(err)}`
@@ -415,6 +429,12 @@ async function main() {
     disallowLocalhost: strictProduction(),
   });
   checkVercelCronConfig();
+  const schedulerSecret = requireAnyEnv(
+    "scheduler",
+    ["AUTOSCALE_CRON_SECRET", "CRON_SECRET"],
+    "missing; required for Supabase pg_cron or another external scheduler to call /api/cron/* routes"
+  );
+  checkSecretStrength("scheduler", "AUTOSCALE_CRON_SECRET or CRON_SECRET", schedulerSecret);
   const publicSupabaseUrl = requireEnv("supabase", "NEXT_PUBLIC_SUPABASE_URL");
   checkUrlShape("supabase", "NEXT_PUBLIC_SUPABASE_URL", publicSupabaseUrl, {
     requireHttps: strictProduction(),

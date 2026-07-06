@@ -9,7 +9,6 @@ import { getProviderModeForUser } from "@/lib/provider-mode";
 import {
   getPublishingNotConfiguredMessage,
   getPublishingProviderLabel,
-  getPublishingProviderId,
   isRemotePublishingEnabled,
   resolvePublishingCredentials,
   schedulePostViaProvider,
@@ -137,10 +136,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       .eq("id", row.id);
   } else {
     finalStatus = "queued_local";
-    errorMessage =
-      getPublishingProviderId() === "export_only"
-        ? "Export-only mode — saved locally for manual export."
-        : getPublishingNotConfiguredMessage(providerMode);
+    errorMessage = getPublishingNotConfiguredMessage(providerMode);
   }
 
   await supabase

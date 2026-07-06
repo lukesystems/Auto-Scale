@@ -268,7 +268,7 @@ export const PerAccountPlanSchema = z.object({
 
 export const PostingLoadoutSchema = z.object({
   // May be empty: AutoScale still generates videos and keeps them in an
-  // internal queue / export mode when no Postiz accounts are connected.
+  // Remote scheduling mode.
   per_account_plan: z.array(PerAccountPlanSchema).default([]),
   total_videos_planned: z.number().int().min(1),
   duration_days: z.number().int().min(1).max(60).default(7),
@@ -364,7 +364,7 @@ export const GrowthRunOptionsSchema = z.object({
   duration_days: z.number().int().min(1).max(60).default(1),
   brand_constraints: z.record(z.unknown()).default({}),
   connected_account_ids: z.array(z.string().uuid()).default([]),
-  distribution_mode: z.enum(["postiz", "export_only"]).default("postiz"),
+  distribution_mode: z.enum(["postbridge"]).default("postbridge"),
   concept_target_count: z.number().int().min(1).max(40).default(3),
   /** Dev / emergency: allow scheduling videos with silent TTS fallback */
   allow_silent_voiceover: z.boolean().default(false),

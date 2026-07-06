@@ -12,7 +12,7 @@ The goal is high experiment throughput for founders, not cinematic perfection on
 
 | Layer | Production choice | Role |
 | --- | --- | --- |
-| App | Vercel | Next.js UI, auth, server actions, lightweight cron routes |
+| App | Vercel | Next.js UI, auth, server actions, secured job endpoints |
 | State | Supabase Postgres | Source of truth for projects, evidence, runs, jobs, experiments, metrics |
 | Queue v1 | Supabase-backed `video_production_jobs` | Durable Stage 3 work queue and status graph |
 | Render worker | Google Cloud Run | Warm container service with FFmpeg for media jobs |
@@ -62,6 +62,7 @@ Do setup in this order. Later platforms depend on values created by earlier plat
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | yes | Public anon key, RLS-protected |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes, server only | yes | Required for trusted queue/worker paths |
 | `NEXT_PUBLIC_APP_URL` | yes | no | Production app origin |
+| `AUTOSCALE_CRON_SECRET` / `CRON_SECRET` | yes | no | Required for Supabase `pg_cron` or external scheduler calls to `/api/cron/*` |
 | `AUTOSCALE_RENDER_WORKER_URL` | yes | no | Vercel uses this to kick Cloud Run |
 | `AUTOSCALE_RENDER_WORKER_SECRET` | yes | yes | Required in production for `POST /run` |
 | `AUTOSCALE_SCRIPT_STORYBOARD_CONCURRENCY` | yes | no | Stage 2 speed control |
@@ -192,7 +193,7 @@ Generate one shared worker secret before deploy:
 npm run generate:render-worker-secret -- autoscale-render-worker us-central1
 ```
 
-Use the generated value for `AUTOSCALE_RENDER_WORKER_SECRET` in both Cloud Run and Vercel. If those values differ, Vercel cron and Growth Run kicks will reach Cloud Run but fail authorization.
+Use the generated value for `AUTOSCALE_RENDER_WORKER_SECRET` in both Cloud Run and Vercel. If those values differ, scheduler calls and Growth Run kicks will reach Cloud Run but fail authorization.
 
 The production preflight rejects placeholder values and secrets shorter than 32 characters. Use the helper output instead of a memorable phrase.
 
@@ -299,6 +300,7 @@ NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 
 AUTOSCALE_RENDER_WORKER_URL=https://YOUR_WORKER_URL
 AUTOSCALE_RENDER_WORKER_SECRET=...
+AUTOSCALE_CRON_SECRET=...
 AUTOSCALE_SCRIPT_STORYBOARD_CONCURRENCY=3
 
 GROWTH_MEDIA_STORAGE_PROVIDER=r2
@@ -317,7 +319,7 @@ POST_BRIDGE_API_KEY=...
 POSTIZ_API_KEY=...
 ```
 
-Vercel should not run FFmpeg-heavy rendering. Its job is to enqueue Stage 3 jobs and kick Cloud Run with `POST /run`.
+Vercel should not run FFmpeg-heavy rendering. Its job is to enqueue Stage 3 jobs and kick Cloud Run with `POST /run` when the app/orchestrator requests it.
 
 After local env values are set, print the exact Vercel and Cloud Run env propagation commands:
 
@@ -329,6 +331,14 @@ Review the output before running it. It marks missing variables with `# MISSING`
 Values are redacted by default so secrets do not end up in logs. Use `--show-values` only in a private terminal if you intentionally want copy-paste commands with values.
 The command prints PowerShell-safe Vercel input by default; add `--shell bash` if you are applying values from a Bash terminal.
 
+Free-tier scheduling model:
+
+- Keep `vercel.json` as `{}`. Do not configure Vercel Cron unless the project is on a Vercel plan that supports it.
+- Use Supabase `pg_cron`, Supabase Edge Function schedules, or another external scheduler for recurring jobs.
+- Set `AUTOSCALE_CRON_SECRET` in Vercel and use the same value in the external scheduler `Authorization: Bearer ...` header.
+- Growth Runs should kick Cloud Run on demand after Stage 3 jobs are enqueued.
+- If queue draining needs a backup tick, schedule `/api/cron/render-worker` externally with `AUTOSCALE_CRON_SECRET`; do not put it in `vercel.json` on the free tier.
+
 External scheduler jobs:
 
 ```txt
@@ -337,7 +347,7 @@ External scheduler jobs:
 /api/cron/render-worker      every 5 minutes
 ```
 
-The render-worker cron route is only a Cloud Run kicker in production. If `AUTOSCALE_RENDER_WORKER_URL` is missing, it returns an error instead of running FFmpeg inside Vercel.
+The render-worker scheduler route is only a Cloud Run kicker in production. If `AUTOSCALE_RENDER_WORKER_URL` is missing, it returns an error instead of running FFmpeg inside Vercel.
 
 ## Loop 1 Acceptance Gate
 

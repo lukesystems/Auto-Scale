@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ArrowRight, Play, Sparkles, TrendingUp } from "lucide-react";
+import { Play, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { UrlCta } from "@/components/landing/url-cta";
 
 export function Hero() {
   return (
@@ -15,42 +16,42 @@ export function Hero() {
           <div className="inline-flex">
             <Badge variant="outline" className="px-3 py-1.5 text-xs font-medium border-primary/30 bg-primary/5 text-primary">
               <Sparkles className="h-3 w-3" />
-              Autonomous video growth engine for technical founders
+              AI short-form growth agent for SaaS founders
             </Badge>
           </div>
 
           <h1 className="mt-6 font-display text-5xl md:text-7xl lg:text-[5.25rem] font-semibold tracking-tight text-balance leading-[0.95]">
-            Ship the short-form videos that actually{" "}
+            Find the video format that{" "}
             <span className="text-gradient bg-[length:200%_auto] animate-gradient-shift">
-              bring users.
+              brings users.
             </span>
+            <br className="hidden sm:block" />
+            <span className="text-muted-foreground"> Then automate the winner.</span>
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            Paste your product URL. AutoScale reverse-engineers what&apos;s already working in your niche — competitor shadow
-            accounts, mid-tier creators, and proven short-form formats — then ships video experiments, measures save rate and
-            signups, and compounds the winners through Post Bridge.
+            Most founders burn months posting into the void. Paste your product URL — AutoScale studies what&apos;s
+            already working in your niche, ships controlled video experiments, measures signups, and compounds the
+            winners.
           </p>
 
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Button asChild size="xl" variant="glow" className="w-full sm:w-auto">
-              <Link href="/auth/sign-up">
-                Start your first Growth Run
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild size="xl" variant="outline" className="w-full sm:w-auto">
+          <div className="mt-10 mx-auto max-w-xl">
+            <UrlCta size="large" showTrustLine />
+          </div>
+
+          <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
               <Link href="#loop">See how the engine works</Link>
             </Button>
           </div>
 
           <p className="mt-6 text-sm font-medium text-foreground/75">
-            Deep discovery <span className="mx-1.5 text-primary">→</span> Video evidence{" "}
-            <span className="mx-1.5 text-primary">→</span> Generate &amp; post{" "}
-            <span className="mx-1.5 text-primary">→</span> Compound winners
+            Evidence <span className="mx-1.5 text-primary">→</span> Controlled tests{" "}
+            <span className="mx-1.5 text-primary">→</span> Business signals{" "}
+            <span className="mx-1.5 text-primary">→</span> Winner variants
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            For SaaS, dev tools, and AI founders who can&apos;t spend 4 hours a day on TikTok.
+            Built for founders who need to crack distribution — not automate more guessing.
           </p>
         </div>
 
@@ -122,7 +123,7 @@ function HeroVideoFan() {
 
         <div className="grid grid-cols-3 gap-3 md:gap-4 border-t border-border/60 pt-6 text-center">
           <Stat label="Videos shipped" value="9" />
-          <Stat label="Trends hopped" value="3" />
+          <Stat label="Formats tested" value="3" />
           <Stat label="Winners compounded" value="2" accent />
         </div>
       </div>

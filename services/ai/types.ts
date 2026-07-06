@@ -1,6 +1,6 @@
 import type { ZodTypeAny, z } from "zod";
 
-export type AIProvider = "openai" | "anthropic" | "openrouter";
+export type AIProvider = "openrouter";
 
 export type AITaskType =
   | "autobrief"

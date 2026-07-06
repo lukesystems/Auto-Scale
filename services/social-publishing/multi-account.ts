@@ -45,7 +45,7 @@ export interface MultiAccountScheduleInput {
   duplicateHookWindowDays?: number;
   /** Configurable duplicate-format window in days (default 3). */
   duplicateFormatWindowDays?: number;
-  /** Build preview only — no inserts or Postiz calls. */
+  /** Build preview only; no inserts or provider calls. */
   previewOnly?: boolean;
   intentType?: "product" | "demo_intent" | "lead_intent";
 }
@@ -197,14 +197,12 @@ export async function scheduleApprovedVideos(
   const providerMode = await getProviderModeForUser(input.ownerId);
   const credentials = await resolvePublishingCredentials(input.ownerId, providerMode);
   const remotePublishing = isRemotePublishingEnabled(credentials);
-  const exportOnly = getPublishingProviderId() === "export_only";
-
-  if (!remotePublishing && !exportOnly) {
+  if (!remotePublishing) {
     await logAutopilotSkip(admin, {
       projectId: input.projectId,
       growthRunId: input.growthRunId,
-      reason: "postiz_missing",
-      details: { note: "Videos queued for export pack fallback" },
+      reason: "postbridge_missing",
+      details: { note: "Post Bridge credentials are missing." },
     });
   }
 
@@ -430,14 +428,12 @@ export async function scheduleApprovedVideos(
         .eq("id", trackedLinkId);
 
       if (!remotePublishing) {
-        scheduledCount++;
+        failureCount++;
         diagnostics.push({
           videoId: video.id,
           accountId,
-          outcome: "queued",
-          reason: exportOnly
-            ? "export-only mode — queued for export pack"
-            : "publishing provider not configured — queued for export",
+          outcome: "failed",
+          reason: "Post Bridge is not configured",
         });
         continue;
       }
@@ -462,7 +458,7 @@ export async function scheduleApprovedVideos(
             postiz_response: (resp.raw ?? {}) as never,
           })
           .eq("id", scheduleRow!.id);
-        // The post is scheduled in Postiz, not yet live. Reflect that the
+        // The post is scheduled remotely, not yet live. Reflect that the
         // video is queued for publishing — do NOT mark it "posted" here.
         await supabase
           .from("videos")
@@ -476,13 +472,13 @@ export async function scheduleApprovedVideos(
           .update({
             status: "failed",
             postiz_response: (resp.raw ?? {}) as never,
-            failure_reason: resp.error ?? "postiz unknown error",
+            failure_reason: resp.error ?? "Post Bridge unknown error",
           })
           .eq("id", scheduleRow!.id);
         await admin.from("account_health_log").insert({
           connected_account_id: accountId,
           project_id: input.projectId,
-          event: "postiz_send_failed",
+          event: "postbridge_send_failed",
           severity: "warn",
           metadata: { error: resp.error } as never,
         });
@@ -490,7 +486,7 @@ export async function scheduleApprovedVideos(
           videoId: video.id,
           accountId,
           outcome: "failed",
-          reason: resp.error ?? "postiz unknown error",
+          reason: resp.error ?? "Post Bridge unknown error",
         });
       }
     }

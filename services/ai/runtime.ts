@@ -22,9 +22,7 @@ import type {
 
 import { AIError } from "./types";
 
-import { openaiAdapter } from "./adapters/openai";
-
-import { anthropicAdapter } from "./adapters/anthropic";
+import { openRouterAdapter } from "./adapters/openrouter";
 
 import { resolveModelForTask, resolveSafeStructuredModel, STRUCTURED_JSON_EMPTY_HINT } from "./model-router";
 
@@ -33,37 +31,42 @@ import { getManagedOpenRouterCredentials, getManagedProviderConfig, ProviderSetu
 
 
 const ADAPTERS: Record<AIProvider, AIAdapter> = {
-
-  openai: openaiAdapter,
-
-  anthropic: anthropicAdapter,
-
-  openrouter: openaiAdapter, // OpenRouter speaks OpenAI's chat completions API
+  openrouter: openRouterAdapter,
 
 };
 
 
 
-function defaultProvider(): AIProvider {
-
+function resolveConfiguredProvider(): AIProvider | null {
   const fromEnv = process.env.AUTOSCALE_AI_PROVIDER?.trim();
 
   if (fromEnv) {
     if (fromEnv in ADAPTERS) return fromEnv as AIProvider;
-    throw new AIError(`Unsupported AI provider "${fromEnv}". Configure openrouter, openai, or anthropic.`, "openrouter");
+    return null;
   }
 
   if (getManagedOpenRouterCredentials()) return "openrouter";
 
-  if (process.env.OPENAI_API_KEY) return "openai";
+  return null;
+}
 
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+export function detectConfiguredProvider(): AIProvider | null {
+  return resolveConfiguredProvider();
+}
+
+function defaultProvider(): AIProvider {
+  const fromEnv = process.env.AUTOSCALE_AI_PROVIDER?.trim();
+  if (fromEnv && !(fromEnv in ADAPTERS)) {
+    throw new AIError(`Unsupported AI provider "${fromEnv}". Configure openrouter.`, "openrouter");
+  }
+
+  const detected = resolveConfiguredProvider();
+  if (detected) return detected;
 
   throw new ProviderSetupError(
-    "No AI provider is configured. Set OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY on the server.",
+    "No AI provider is configured. Set OPENROUTER_API_KEY on the server.",
     "openrouter_missing"
   );
-
 }
 
 
@@ -78,24 +81,7 @@ function defaultModel(provider: AIProvider, taskType: AITaskType = "default"): s
 
   if (process.env.AUTOSCALE_DEFAULT_MODEL) return process.env.AUTOSCALE_DEFAULT_MODEL;
 
-  switch (provider) {
-
-    case "openai":
-
-      return "gpt-4o-mini";
-
-    case "anthropic":
-
-      return "claude-3-5-sonnet-20241022";
-
-    case "openrouter":
-
-      return "openrouter/auto";
-
-    default:
-      return "openrouter/auto";
-
-  }
+  return "openrouter/auto";
 
 }
 
@@ -106,27 +92,6 @@ function getCtx(provider: AIProvider) {
   const appConfig = getManagedProviderConfig();
 
   switch (provider) {
-
-    case "openai":
-
-      return {
-
-        apiKey: process.env.OPENAI_API_KEY ?? "",
-
-        providerLabel: "openai" as const,
-
-      };
-
-    case "anthropic":
-
-      return {
-
-        apiKey: process.env.ANTHROPIC_API_KEY ?? "",
-
-        providerLabel: "anthropic" as const,
-
-      };
-
     case "openrouter": {
 
       const creds = getManagedOpenRouterCredentials();
@@ -146,12 +111,6 @@ function getCtx(provider: AIProvider) {
       };
 
     }
-
-    default:
-      return {
-        apiKey: "",
-        providerLabel: provider,
-      };
 
   }
 

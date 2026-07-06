@@ -1,6 +1,6 @@
 "use client";
 
-import type { MultiAccountScheduleResult } from "@/services/postiz/multi-account";
+import type { MultiAccountScheduleResult } from "@/services/social-publishing/multi-account";
 import type { PublishingProviderLabel } from "@/components/schedule-status-badge";
 import { ScheduleStatusBadge } from "@/components/schedule-status-badge";
 
@@ -18,7 +18,7 @@ export function SchedulePreviewPanel({
   projectId,
   growthRunId,
   scheduleAction,
-  providerLabel = "Postiz",
+  providerLabel = "Post Bridge",
   hasSilentVoiceover = false,
 }: SchedulePreviewPanelProps) {
   if (!preview.preview.length) {
@@ -84,12 +84,6 @@ export function SchedulePreviewPanel({
         >
           Schedule all safe via {providerLabel}
         </button>
-        <a
-          href={`/api/projects/${projectId}/growth/${growthRunId}/export`}
-          className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
-        >
-          Export instead
-        </a>
       </form>
     </section>
   );

@@ -8,7 +8,7 @@ import { runRenderWorkerUntilIdle } from "@/services/video-factory/render-worker
  * Trigger options:
  * - Fire-and-forget POST from orchestrator after enqueue (`kickRenderWorker`)
  * - Lightweight kick from progress poll (`kickRenderWorkerInProcess` in dev, this route in prod)
- * - Vercel Cron / external scheduler: GET/POST with `Authorization: Bearer $CRON_SECRET`
+ * - External scheduler: GET/POST with `Authorization: Bearer $CRON_SECRET`
  */
 function resolveCronSecret(): string | null {
   return (

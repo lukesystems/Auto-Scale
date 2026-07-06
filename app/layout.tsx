@@ -19,11 +19,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: {
-    default: "AutoScale — Autonomous Video Growth Engine for Founders",
+    default: "AutoScale — Find the video format that brings users",
     template: "%s · AutoScale",
   },
   description:
-    "Paste your product URL. AutoScale reads your site, hops viral short-form trends on TikTok, Reels, and YouTube Shorts, ships an exploration batch of video experiments, and compounds the winners into variants.",
+    "Paste your product URL. AutoScale studies proven short-form patterns, ships controlled video experiments, tracks signups, and compounds the winners.",
   keywords: [
     "video growth engine",
     "short-form video for founders",

@@ -28,7 +28,6 @@ export const BookingProviderSchema = z.enum([
 export const DistributionPreferenceSchema = z.enum([
   "all_accounts",
   "selected",
-  "export_only",
 ]);
 
 export const ProjectGrowthSettingsSchema = z.object({

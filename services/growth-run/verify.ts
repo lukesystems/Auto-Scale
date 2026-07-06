@@ -1,8 +1,5 @@
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
-import { buildGrowthRunExportZip } from "@/services/export/growth-run-pack";
 import { isFfmpegAvailable } from "@/services/video-factory/ffmpeg";
-import { resolvePostBridgeCredentials } from "@/lib/postbridge-credentials";
-import { resolvePostizCredentials } from "@/lib/postiz-credentials";
 import { getProviderModeForUser } from "@/lib/provider-mode";
 import {
   getPublishingProviderId,
@@ -31,7 +28,6 @@ export interface VerifyGrowthRunReport {
   environment: {
     supabase: boolean;
     ffmpeg: boolean;
-    postiz: boolean;
     publishing: boolean;
     publishingProvider: string;
   };
@@ -49,8 +45,7 @@ const STEPS = [
   "final_mp4",
   "video_ready_status",
   "quality_score",
-  "export_pack",
-  "publishing_skip_safe",
+  "publishing_ready",
   "tracking_links",
   "compound_classifier",
 ] as const;
@@ -82,15 +77,6 @@ export async function verifyGrowthRun(opts: {
   const env = {
     supabase: true,
     ffmpeg: isFfmpegAvailable(),
-    postiz:
-      opts.ownerId != null
-        ? Boolean(
-            await resolvePostizCredentials(
-              opts.ownerId,
-              await getProviderModeForUser(opts.ownerId)
-            )
-          )
-        : false,
     publishing: publishingConfigured,
     publishingProvider,
   };
@@ -338,94 +324,36 @@ export async function verifyGrowthRun(opts: {
     });
   }
 
-  // 12. Export pack
-  try {
-    const exportVideos = [];
-    for (const v of videos ?? []) {
-      const { data: vrow } = await supabase
-        .from("videos")
-        .select("concept_id")
-        .eq("id", v.id)
-        .single();
-      const { data: concept } = vrow?.concept_id
-        ? await supabase
-            .from("video_concepts")
-            .select("hook, platform, video_type")
-            .eq("id", vrow.concept_id)
-            .maybeSingle()
-        : { data: null };
-      const { data: asset } = v.final_asset_id
-        ? await supabase
-            .from("generated_assets")
-            .select("public_url")
-            .eq("id", v.final_asset_id)
-            .maybeSingle()
-        : { data: null };
-      exportVideos.push({
-        videoId: v.id,
-        conceptId: vrow?.concept_id ?? "",
-        platform: concept?.platform ?? "tiktok",
-        videoType: concept?.video_type ?? "slide",
-        hook: concept?.hook ?? "",
-        caption: "",
-        hashtags: [],
-        mediaUrl: asset?.public_url ?? null,
-        scheduledFor: null,
-        accountHandle: null,
-      });
-    }
-    const zip = await buildGrowthRunExportZip({
-      projectName: "verify",
-      growthRunId: opts.growthRunId,
-      videos: exportVideos,
-    });
-    if (zip.byteLength > 100) {
-      record(11, "pass", `Export pack builds (${zip.byteLength} bytes).`, {
-        service: "services/export/growth-run-pack.ts",
-        route: `/api/projects/${opts.projectId}/growth/${opts.growthRunId}/export`,
-      });
-    } else {
-      record(11, "fail", "Export pack returned empty buffer.", {
-        service: "services/export/growth-run-pack.ts",
-      });
-    }
-  } catch (err) {
-    record(11, "fail", `Export pack error: ${err instanceof Error ? err.message : String(err)}`, {
-      service: "services/export/growth-run-pack.ts",
-    });
-  }
-
-  // 13. Publishing skip safe (Postiz or Post Bridge)
+  // 12. Publishing ready
   if (!publishingConfigured) {
-    record(12, "skip", "Publishing provider not configured — scheduling safely falls back to export queue.", {
+    record(11, "fail", "Post Bridge is not configured; scheduling cannot run.", {
       service: "services/social-publishing/resolver.ts",
     });
   } else {
-    record(12, "pass", `${publishingProvider} credentials present.`, {
+    record(11, "pass", `${publishingProvider} credentials present.`, {
       service: "services/social-publishing/resolver.ts",
     });
   }
 
-  // 14. Tracking links
+  // 13. Tracking links
   const { count: linkCount } = await supabase
     .from("tracked_links")
     .select("id", { count: "exact", head: true })
     .eq("growth_run_id", opts.growthRunId);
   if ((linkCount ?? 0) > 0) {
-    record(13, "pass", `${linkCount} tracked link(s) exist for this run.`, {
+    record(12, "pass", `${linkCount} tracked link(s) exist for this run.`, {
       table: "tracked_links",
       service: "services/tracking/links.ts",
     });
   } else {
-    record(
-      13,
+    record(12,
       linkCount === 0 && readyCount === 0 ? "skip" : "warn",
       "No tracked_links yet — minted at schedule time.",
       { table: "tracked_links", service: "services/tracking/links.ts" }
     );
   }
 
-  // 15. Compound classifier dry run
+  // 14. Compound classifier dry run
   if (opts.ownerId) {
     try {
       const result = await runCompound({
@@ -434,19 +362,18 @@ export async function verifyGrowthRun(opts: {
         ownerId: opts.ownerId,
         trustedServiceRole: opts.useServiceRole,
       });
-      record(
-        14,
+      record(13,
         "pass",
         `Compound classifier ran without crash (classified=${result.classifiedCount}).`,
         { service: "services/compound/classify.ts" }
       );
     } catch (err) {
-      record(14, "fail", `Compound crashed: ${err instanceof Error ? err.message : String(err)}`, {
+      record(13, "fail", `Compound crashed: ${err instanceof Error ? err.message : String(err)}`, {
         service: "services/compound/classify.ts",
       });
     }
   } else {
-    record(14, "skip", "ownerId not provided — compound step skipped.", {
+    record(13, "skip", "ownerId not provided — compound step skipped.", {
       service: "services/compound/classify.ts",
     });
   }

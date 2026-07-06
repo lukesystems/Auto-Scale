@@ -16,7 +16,7 @@ import {
   ScheduleStatusBadge,
   type PublishingProviderLabel,
 } from "@/components/schedule-status-badge";
-import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
+import { scheduleApprovedVideos } from "@/services/social-publishing/multi-account";
 import { requireUser } from "@/lib/supabase/server";
 import { loadProjectGrowthSettings } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
@@ -534,21 +534,6 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
             Schedule via {publishingProviderLabel}
           </button>
         </form>
-      ) : null}
-
-      {videosWithConcept.length > 0 ? (
-        <section className="rounded-lg border bg-card p-4 text-sm">
-          <p className="mb-3 text-muted-foreground">
-            {publishingProviderLabel} unavailable or you prefer manual posting? Download schedule CSV, captions, and
-            media URLs.
-          </p>
-          <a
-            href={`/api/projects/${projectId}/growth/${runId}/export`}
-            className="inline-flex rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Download export pack (ZIP)
-          </a>
-        </section>
       ) : null}
 
       <SchedulePanel

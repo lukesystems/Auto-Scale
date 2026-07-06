@@ -6,11 +6,10 @@ export interface SearchRunResult {
   results: SearchResult[];
 }
 
-const PREFERRED_ORDER: SearchAdapterName[] = ["exa", "brave", "firecrawl"];
+const PREFERRED_ORDER: SearchAdapterName[] = ["firecrawl"];
 
 /**
- * Run a single query through the available search adapters, preferring exa,
- * then brave, then firecrawl. Returns the first adapter that yields results.
+ * Run a single query through the configured search adapter.
  * Shared by single-pass discovery and the agentic deep-discovery loop.
  */
 export async function searchWithFallback(
@@ -29,7 +28,7 @@ export async function searchWithFallback(
     }
   }
 
-  const fallback = await getAvailableSearchAdapter("exa");
+  const fallback = await getAvailableSearchAdapter("firecrawl");
   if (!fallback) return null;
 
   try {

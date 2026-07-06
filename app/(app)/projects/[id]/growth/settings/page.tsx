@@ -100,7 +100,6 @@ export default async function GrowthSettingsPage({ params }: PageProps) {
           >
             <option value="all_accounts">All connected accounts</option>
             <option value="selected">Selected accounts only</option>
-            <option value="export_only">Export only (no Postiz)</option>
           </select>
         </label>
 
@@ -123,7 +122,7 @@ export default async function GrowthSettingsPage({ params }: PageProps) {
             ))}
           </fieldset>
         ) : (
-          <p className="text-xs text-muted-foreground">No connected accounts — runs will use export-only mode.</p>
+          <p className="text-xs text-muted-foreground">No connected accounts. Connect Post Bridge channels before scheduling.</p>
         )}
 
         <label className="flex items-center gap-2 text-sm">

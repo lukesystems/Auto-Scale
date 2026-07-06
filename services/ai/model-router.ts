@@ -41,16 +41,7 @@ export function isUnstableStructuredJsonModel(model: string): boolean {
 }
 
 export function getStableJsonFallbackModel(provider: AIProvider): string {
-  switch (provider) {
-    case "openrouter":
-      return "openai/gpt-4o-mini";
-    case "openai":
-      return "gpt-4o-mini";
-    case "anthropic":
-      return "claude-3-5-sonnet-20241022";
-    default:
-      return "gpt-4o-mini";
-  }
+  return "openai/gpt-4o-mini";
 }
 
 export function resolveSafeStructuredModel(

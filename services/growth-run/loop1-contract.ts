@@ -1,5 +1,3 @@
-import { buildGrowthRunExportZip, type GrowthRunExportVideo } from "@/services/export/growth-run-pack";
-
 export type Loop1CheckStatus = "pass" | "warn" | "fail";
 
 export interface Loop1Check {
@@ -320,59 +318,16 @@ export async function verifyLoop1Contract(
   if (scheduledCount >= targetVideos) {
     add(checks, "distribution", "schedule items", "pass", `${scheduledCount}/${targetVideos} scheduled`);
   } else if (exportableVideoCount >= targetVideos) {
-    const captionsByVideo = new Map(captions.map((caption) => [caption.video_id, caption]));
-    const schedulesByVideo = new Map(schedules.map((schedule) => [schedule.video_id, schedule]));
-    const conceptsById = new Map(concepts.map((concept) => [concept.id, concept]));
-    const exportVideos: GrowthRunExportVideo[] = videos.filter((video) => {
-      if (!isReadyOrApprovedVideo(video) || !video.final_asset_id) return false;
-      const asset = assetsById.get(video.final_asset_id);
-      return asset?.kind === "final_mp4" && asset.status === "succeeded" && Boolean(asset.public_url);
-    }).map((video) => {
-      const concept = video.concept_id ? conceptsById.get(video.concept_id) : undefined;
-      const caption = captionsByVideo.get(video.id);
-      const schedule = schedulesByVideo.get(video.id);
-      const asset = video.final_asset_id ? assetsById.get(video.final_asset_id) : undefined;
-      return {
-        videoId: video.id,
-        conceptId: video.concept_id ?? "",
-        platform: concept?.platform ?? schedule?.platform ?? "tiktok",
-        videoType: concept?.video_type ?? "slide",
-        hook: concept?.hook ?? "",
-        caption: caption?.caption ?? "",
-        hashtags: stringArray(caption?.hashtags),
-        mediaUrl: asset?.public_url ?? null,
-        scheduledFor: schedule?.scheduled_for ?? null,
-        accountHandle: null,
-      };
-    });
-    try {
-      const zip = await buildGrowthRunExportZip({
-        projectName: opts.projectName ?? "AutoScale project",
-        growthRunId: opts.growthRunId,
-        videos: exportVideos,
-      });
-      add(
-        checks,
-        "distribution",
-        "export fallback",
-        zip.byteLength > 100 ? "pass" : "fail",
-        zip.byteLength > 100
-          ? `export pack builds for ${exportVideos.length} video(s)`
-          : "export pack returned an empty buffer"
-      );
-    } catch (err) {
-      add(
-        checks,
-        "distribution",
-        "export fallback",
-        "fail",
-        err instanceof Error ? err.message : String(err)
-      );
-    }
+    add(
+      checks,
+      "distribution",
+      "schedule items",
+      "fail",
+      `${scheduledCount}/${targetVideos} scheduled; Post Bridge scheduling is required`
+    );
   } else {
-    add(checks, "distribution", "schedule or export", "fail", "not enough exportable videos for schedule/export");
+    add(checks, "distribution", "schedule items", "fail", "not enough final MP4 videos for Post Bridge scheduling");
   }
-
   const videoIds = videos.map((video) => video.id);
   const [metricsRes, trackedLinksRes] = await Promise.all([
     videoIds.length

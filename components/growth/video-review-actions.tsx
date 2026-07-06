@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   decideVideoAction,
   rerenderVideoAction,
@@ -106,12 +105,6 @@ export function VideoReviewActions({
           Update hook
         </button>
       </form>
-      <Link
-        href={`/api/projects/${projectId}/growth/${runId}/export`}
-        className="rounded border px-2 py-1 text-xs hover:bg-muted"
-      >
-        Export pack
-      </Link>
     </div>
   );
 }

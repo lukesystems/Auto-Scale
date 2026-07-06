@@ -13,7 +13,6 @@ function resolveCronSecret(): string | null {
 function isAuthorized(req: NextRequest, secret: string): boolean {
   const auth = req.headers.get("authorization");
   if (auth === `Bearer ${secret}`) return true;
-  // Vercel Cron may send CRON_SECRET in Authorization when CRON_SECRET env is set.
   const cronHeader = req.headers.get("x-cron-secret");
   return cronHeader === secret;
 }
@@ -49,7 +48,7 @@ async function handleCron(req: NextRequest) {
   return NextResponse.json({ ok: true, ...result });
 }
 
-/** Vercel Cron uses GET; external schedulers may POST with JSON body. */
+/** External schedulers may use GET or POST with a JSON body. */
 export async function GET(req: NextRequest) {
   return handleCron(req);
 }

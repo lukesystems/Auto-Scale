@@ -8,7 +8,7 @@ import {
   resolvePublishingCredentials,
 } from "@/services/social-publishing";
 
-export interface PostizSyncResult {
+export interface PublishingSyncResult {
   checked: number;
   updated: number;
   unknown: number;
@@ -19,11 +19,11 @@ export interface PostizSyncResult {
  * Sync schedule_items status from the active publishing provider where possible.
  * When the provider API does not expose post status, marks postiz_status = unknown.
  */
-export async function syncPostizScheduleStatus(opts: {
+export async function syncPublishingScheduleStatus(opts: {
   projectId: string;
   ownerId: string;
   growthRunId?: string;
-}): Promise<PostizSyncResult> {
+}): Promise<PublishingSyncResult> {
   const admin = createSupabaseAdminClient();
   const mode = await getProviderModeForUser(opts.ownerId);
   const credentials = await resolvePublishingCredentials(opts.ownerId, mode);
@@ -39,7 +39,7 @@ export async function syncPostizScheduleStatus(opts: {
   }
 
   const { data: items } = await query;
-  const result: PostizSyncResult = { checked: items?.length ?? 0, updated: 0, unknown: 0, errors: [] };
+  const result: PublishingSyncResult = { checked: items?.length ?? 0, updated: 0, unknown: 0, errors: [] };
 
   if (!items?.length) return result;
 

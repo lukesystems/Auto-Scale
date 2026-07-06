@@ -1,5 +1,5 @@
 import "server-only";
-import { exaSearchAdapter } from "@/services/intelligence/adapters/exa-search-adapter";
+import { searchWithFallback } from "@/services/intelligence/discovery/search-runner";
 import type {
   DiscoveredTrendCandidate,
   TrendHopPlatform,
@@ -39,8 +39,8 @@ const TREND_TRACKER_QUERIES = (niche: string) => [
 ];
 
 /**
- * Pull a deduped list of trending content candidates from the public web via
- * the Exa adapter. Falls back to an empty list when EXA is not configured.
+ * Pull a deduped list of trending content candidates from the configured
+ * public search adapter. Falls back to an empty list when search is not configured.
  *
  * This is intentionally simple. Adapter slots for TokAudit / Tokboard / Exolyt
  * can be added by exporting another adapter that returns the same shape.
@@ -48,15 +48,14 @@ const TREND_TRACKER_QUERIES = (niche: string) => [
 export async function discoverTrendCandidates(
   input: DiscoverInput
 ): Promise<DiscoveredTrendCandidate[]> {
-  if (!exaSearchAdapter.isAvailable()) return [];
   const niche = (input.niche || input.productCategory || "growth marketing").trim();
   const limit = input.limitPerPlatform ?? 6;
 
   const platformResults = await Promise.all(
     PLATFORM_QUERIES.map(async ({ platform, query }) => {
       try {
-        const results = await exaSearchAdapter.search(query(niche), { limit });
-        return results.map(
+        const search = await searchWithFallback(query(niche), limit);
+        return (search?.results ?? []).map(
           (r): DiscoveredTrendCandidate => ({
             platform,
             url: r.url,
@@ -75,8 +74,8 @@ export async function discoverTrendCandidates(
   const trackerResults = await Promise.all(
     TREND_TRACKER_QUERIES(niche).map(async (q) => {
       try {
-        const results = await exaSearchAdapter.search(q, { limit: 6 });
-        return results.map(
+        const search = await searchWithFallback(q, 6);
+        return (search?.results ?? []).map(
           (r): DiscoveredTrendCandidate => ({
             platform: "other",
             url: r.url,

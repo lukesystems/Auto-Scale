@@ -4,26 +4,37 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const FAQS = [
+const FAQS_BEFORE = [
   {
     q: "Does AutoScale actually post the videos?",
-    a: "Yes. Approved videos can be scheduled and posted through the Postiz integration to your connected TikTok, YouTube Shorts, and Instagram Reels accounts. If you'd rather post by hand, every batch comes with a clean export pack as a fallback.",
-  },
-  {
-    q: "Do I need to be on camera?",
-    a: "No. AutoScale supports multiple production modes — including reference-remix and trend-style videos that don't require your face. Founder-POV is an option, not a requirement. UGC-presenter modes are on the roadmap.",
-  },
-  {
-    q: "How does it know what's trending?",
-    a: "TrendWatch pulls from public platform trend signals across TikTok, YouTube Shorts, and Instagram Reels, then proposes specific trend-hop angles tied to your product. It can run on demand or refresh on a 3, 7, or 14-day schedule.",
+    a: "Yes. Approved videos can be scheduled and posted through Post Bridge to your connected TikTok, YouTube Shorts, and Instagram Reels accounts.",
   },
   {
     q: "What if my first batch flops?",
     a: "That's expected — and it's the whole point of the exploration batch. AutoScale's classifier turns flat or failing videos into learnings, while winners get compounded into variant batches. The system is designed to learn from failure, not be defeated by it.",
   },
   {
-    q: "What about LinkedIn carousels or X threads?",
-    a: "Deprecated. AutoScale used to ship a text/carousel content loop and we cut it. Short-form video is where founder distribution lives right now, and we'd rather build one engine extremely well than five mediocre ones.",
+    q: "How is this different from ChatGPT + CapCut?",
+    a: "Generic video tools start with a blank prompt and stop at an output. AutoScale starts with your product and today's trends, runs videos as experiments, measures what worked, and compounds the winners. It's a growth engine, not a generator.",
+  },
+  {
+    q: "Is this spammy autopilot?",
+    a: "No. Approval gates pause runs until you continue — auto, at critical stages, or at every stage. You control what ships. Nothing posts without your policy allowing it.",
+  },
+];
+
+const FAQS_AFTER = [
+  {
+    q: "Do I need to be on camera?",
+    a: "No. AutoScale supports multiple production modes — including reference-remix and trend-style videos that don't require your face. Founder-POV is an option, not a requirement.",
+  },
+  {
+    q: "How does it know what's trending?",
+    a: "TrendWatch pulls from public platform trend signals across TikTok, YouTube Shorts, and Instagram Reels, then proposes specific trend-hop angles tied to your product. It can run on demand or refresh on a 3, 7, or 14-day schedule.",
+  },
+  {
+    q: "What metrics do you track?",
+    a: "Save rate, views, clicks, and signups — tied back to each video's evidence chain. The Growth Graph shows which formats compound and which to kill.",
   },
   {
     q: "What happens after I paste my product URL?",
@@ -34,8 +45,8 @@ const FAQS = [
     a: "Yes. AutoScale uses a model abstraction across supported providers and OpenRouter-style routing. Configure once in settings — you should never be locked to one model.",
   },
   {
-    q: "How is this different from a generic AI video tool?",
-    a: "Generic video tools start with a blank prompt and stop at an output. AutoScale starts with your product and today's trends, runs videos as experiments, measures what worked, and compounds the winners. It's a growth engine, not a generator.",
+    q: "What about LinkedIn carousels or X threads?",
+    a: "Deprecated. AutoScale used to ship a text/carousel content loop and we cut it. Short-form video is where founder distribution lives right now, and we'd rather build one engine extremely well than five mediocre ones.",
   },
 ];
 
@@ -54,28 +65,68 @@ export function FAQ() {
           </h2>
         </div>
 
-        <div className="mt-12 mx-auto max-w-3xl divide-y divide-border border border-border rounded-xl bg-card">
-          {FAQS.map((item, i) => (
-            <div key={i}>
+        <div className="mt-12 mx-auto max-w-5xl grid gap-8 lg:grid-cols-2">
+          <FaqColumn
+            title="Before you sign up"
+            items={FAQS_BEFORE}
+            open={open}
+            setOpen={setOpen}
+            offset={0}
+          />
+          <FaqColumn
+            title="After your first run"
+            items={FAQS_AFTER}
+            open={open}
+            setOpen={setOpen}
+            offset={FAQS_BEFORE.length}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FaqColumn({
+  title,
+  items,
+  open,
+  setOpen,
+  offset,
+}: {
+  title: string;
+  items: { q: string; a: string }[];
+  open: number | null;
+  setOpen: (v: number | null) => void;
+  offset: number;
+}) {
+  return (
+    <div>
+      <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{title}</h3>
+      <div className="divide-y divide-border border border-border rounded-xl bg-card">
+        {items.map((item, i) => {
+          const index = offset + i;
+          return (
+            <div key={item.q}>
               <button
-                onClick={() => setOpen(open === i ? null : i)}
-                className="w-full flex items-center justify-between gap-4 px-6 py-5 text-left hover:bg-secondary/50 transition-colors"
-                aria-expanded={open === i}
+                type="button"
+                onClick={() => setOpen(open === index ? null : index)}
+                className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-secondary/50 transition-colors"
+                aria-expanded={open === index}
               >
-                <span className="font-semibold text-foreground">{item.q}</span>
+                <span className="text-sm font-semibold text-foreground">{item.q}</span>
                 <ChevronDown
-                  className={cn("h-4 w-4 text-muted-foreground transition-transform shrink-0", open === i && "rotate-180")}
+                  className={cn("h-4 w-4 text-muted-foreground transition-transform shrink-0", open === index && "rotate-180")}
                 />
               </button>
-              {open === i && (
-                <div className="px-6 pb-5 text-sm text-muted-foreground leading-relaxed animate-fade-in">
+              {open === index && (
+                <div className="px-5 pb-4 text-sm text-muted-foreground leading-relaxed animate-fade-in">
                   {item.a}
                 </div>
               )}
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
-    </section>
+    </div>
   );
 }

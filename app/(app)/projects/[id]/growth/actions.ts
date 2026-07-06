@@ -26,7 +26,7 @@ import {
 } from "@/lib/growth-run/stage-preconditions";
 import type { GrowthRunStageId } from "@/lib/growth-run/stages";
 import { createGrowthRun } from "@/services/growth-run/repository";
-import { scheduleApprovedVideos } from "@/services/postiz/multi-account";
+import { scheduleApprovedVideos } from "@/services/social-publishing/multi-account";
 import { runCompound } from "@/services/compound/classify";
 import {
   reviseHook,
@@ -124,7 +124,7 @@ const StartRunSchema = z.object({
   audioMode: AudioModeSchema.optional(),
   visualPipeline: z.union([VisualPipelineSchema, z.literal("auto")]).optional(),
   distributionPreference: z
-    .enum(["all_accounts", "selected", "export_only"])
+    .enum(["all_accounts", "selected"])
     .optional(),
   selectedAccountIds: z.array(z.string().uuid()).optional(),
 });
@@ -835,7 +835,7 @@ const SaveGrowthSettingsSchema = z.object({
   bookingProvider: z.enum(["google_calendar", "calendly", "manual", "none"]),
   defaultCtaLabel: z.string().optional(),
   defaultCtaUrl: z.string().url().optional().or(z.literal("")),
-  distributionPreference: z.enum(["all_accounts", "selected", "export_only"]),
+  distributionPreference: z.enum(["all_accounts", "selected"]),
   autopilotEnabled: z.coerce.boolean().optional(),
   maxRunsPerDay: z.coerce.number().int().min(0).max(10).optional(),
   onboardingCompleted: z.coerce.boolean().optional(),

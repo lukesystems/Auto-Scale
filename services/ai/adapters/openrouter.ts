@@ -21,17 +21,17 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-export const openaiAdapter: AIAdapter = {
-  name: "openai",
+export const openRouterAdapter: AIAdapter = {
+  name: "openrouter",
 
   async generateText(params: GenerateTextParams, ctx: AdapterContext): Promise<GenerateTextResult> {
     const started = Date.now();
-    const provider = ctx.providerLabel ?? "openai";
-    const url = `${ctx.baseUrl ?? "https://api.openai.com/v1"}/chat/completions`;
+    const provider = "openrouter";
+    const url = `${ctx.baseUrl ?? "https://openrouter.ai/api/v1"}/chat/completions`;
     const responseMode = params.responseMode ?? "text";
 
     const body: Record<string, unknown> = {
-      model: params.model ?? "gpt-4o-mini",
+      model: params.model ?? "openrouter/auto",
       temperature: params.temperature ?? 0.6,
       max_tokens: params.maxTokens ?? 2048,
       messages: [
@@ -49,10 +49,8 @@ export const openaiAdapter: AIAdapter = {
       Authorization: `Bearer ${ctx.apiKey}`,
     };
 
-    if (ctx.baseUrl?.includes("openrouter.ai")) {
-      if (ctx.appUrl) headers["HTTP-Referer"] = ctx.appUrl;
-      if (ctx.appTitle) headers["X-OpenRouter-Title"] = ctx.appTitle;
-    }
+    if (ctx.appUrl) headers["HTTP-Referer"] = ctx.appUrl;
+    if (ctx.appTitle) headers["X-OpenRouter-Title"] = ctx.appTitle;
 
     const timeoutMs = getRequestTimeoutMs();
     let response: Response | null = null;

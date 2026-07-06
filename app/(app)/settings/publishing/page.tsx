@@ -1,17 +1,16 @@
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/app/page-header";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getProviderModeForUser, isManagedMode } from "@/lib/provider-mode";
 import { getClientSafeProviderStatus } from "@/services/providers/status";
-import { getPublishingProviderId } from "@/services/social-publishing";
-import { PostizForm } from "./postiz-form";
-import { PostizControls } from "./postiz-controls";
-import { redirect } from "next/navigation";
+import { PublishingControls } from "./publishing-controls";
+import { PublishingForm } from "./publishing-form";
 
 export const metadata = { title: "Publishing" };
 
-export default async function PostizSettingsPage() {
+export default async function PublishingSettingsPage() {
   if (!isSupabaseConfigured()) {
     return (
       <div className="container py-10 max-w-2xl">
@@ -28,26 +27,18 @@ export default async function PostizSettingsPage() {
 
   const mode = await getProviderModeForUser(user.id);
   const status = getClientSafeProviderStatus(mode);
-  const providerId = getPublishingProviderId();
-  const providerLabel = status.publishing.label;
-  const postizConnection = await loadPostizConnection(user.id);
   const postBridgeConnection = await loadPostBridgeConnection(user.id);
   const channels = await loadChannels(user.id);
-
-  const connected = isManagedMode(mode)
-    ? status.publishing.configured
-    : providerId === "postbridge"
-      ? Boolean(postBridgeConnection?.api_key)
-      : Boolean(postizConnection?.api_url && postizConnection?.api_key);
+  const connected = isManagedMode(mode) ? status.publishing.configured : Boolean(postBridgeConnection?.api_key);
 
   return (
     <div className="container py-10 max-w-2xl space-y-8">
       <PageHeader
-        title={`${providerLabel} connection`}
+        title="Post Bridge connection"
         description={
           isManagedMode(mode)
-            ? `Managed Mode uses AutoScale's ${providerLabel} integration. You do not need to enter an API key.`
-            : `Connect ${providerLabel} to push approved posts directly to your scheduler. AutoScale falls back to manual exports if publishing is offline.`
+            ? "Managed Mode uses AutoScale's Post Bridge integration. You do not need to enter an API key."
+            : "Connect Post Bridge to publish approved videos directly to your scheduler."
         }
         badge={
           <Badge variant={connected ? "success" : "secondary"}>
@@ -63,13 +54,10 @@ export default async function PostizSettingsPage() {
         <div className="rounded-xl border border-border bg-card p-6 space-y-4">
           <h3 className="font-semibold">Managed by AutoScale</h3>
           <p className="text-sm text-muted-foreground">
-            {providerLabel} scheduling runs through AutoScale-managed server credentials. No API key is stored in your
+            Post Bridge scheduling runs through AutoScale-managed server credentials. No API key is stored in your
             account or shown in the browser.
           </p>
           <div className="text-sm space-y-1">
-            <p>
-              Active provider: <span className="text-foreground">{providerLabel}</span>
-            </p>
             <p>
               Status:{" "}
               <span className={status.publishing.configured ? "text-foreground" : "text-muted-foreground"}>
@@ -77,36 +65,21 @@ export default async function PostizSettingsPage() {
               </span>
             </p>
             {!status.publishing.configured && (
-              <p className="text-muted-foreground text-xs">
-                {providerId === "postbridge"
-                  ? "Set POST_BRIDGE_API_KEY in server environment. Until then, schedules queue locally."
-                  : "Set POSTIZ_API_URL and POSTIZ_API_KEY in server environment. Until then, schedules queue locally."}
-              </p>
+              <p className="text-muted-foreground text-xs">Set POST_BRIDGE_API_KEY in server environment.</p>
             )}
           </div>
-          {status.publishing.configured && <PostizControls />}
+          {status.publishing.configured && <PublishingControls />}
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card p-6">
-          <PostizForm
-            providerId={providerId}
-            initial={{
-              api_url: postizConnection?.api_url ?? "",
-              has_key:
-                providerId === "postbridge"
-                  ? Boolean(postBridgeConnection?.api_key)
-                  : Boolean(postizConnection?.api_key),
-            }}
-          />
+          <PublishingForm initial={{ has_key: Boolean(postBridgeConnection?.api_key) }} />
         </div>
       )}
 
       <div className="rounded-xl border border-border bg-card p-6">
         <h3 className="font-semibold">Synced channels ({channels.length})</h3>
         {channels.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Test the connection, then sync channels from {providerLabel}.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">Test the connection, then sync channels from Post Bridge.</p>
         ) : (
           <div className="mt-3 space-y-2">
             {channels.map((channel) => (
@@ -121,25 +94,6 @@ export default async function PostizSettingsPage() {
           </div>
         )}
       </div>
-
-      <div className="rounded-xl border border-border bg-secondary/30 p-5 text-sm text-muted-foreground">
-        <h4 className="font-semibold text-foreground">Heads up</h4>
-        {isManagedMode(mode) ? (
-          <p className="mt-2">
-            Switch to Advanced Mode in onboarding or provider settings (future) to bring your own {providerLabel}{" "}
-            credentials.
-          </p>
-        ) : (
-          <p className="mt-2">
-            Your {providerLabel} API key is encrypted on the server before it is stored in Supabase and remains protected
-            by RLS.
-          </p>
-        )}
-        <p className="mt-2">
-          For best results, configure channels in your {providerLabel} workspace first, then choose a synced channel
-          when scheduling from /schedule.
-        </p>
-      </div>
     </div>
   );
 }
@@ -152,16 +106,6 @@ async function loadChannels(userId: string) {
     .eq("owner_id", userId)
     .order("name");
   return data ?? [];
-}
-
-async function loadPostizConnection(userId: string) {
-  const supabase = createSupabaseServerClient();
-  const { data } = await supabase
-    .from("postiz_connections")
-    .select("api_url, api_key")
-    .eq("owner_id", userId)
-    .maybeSingle();
-  return data;
 }
 
 async function loadPostBridgeConnection(userId: string) {
