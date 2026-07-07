@@ -1,6 +1,7 @@
 import type { Json } from "@/lib/supabase/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { primaryEntityKey } from "../entity-resolution/entity-key";
+import type { SearchResultEngagement } from "../types";
 
 export interface SourceCandidateInput {
   discoveryRunId: string;
@@ -16,6 +17,9 @@ export interface SourceCandidateInput {
   discoveryReason?: string | null;
   relevanceScore?: number;
   enrichStatus?: "pending" | "enriched" | "failed" | "skipped" | "deep_enriched";
+  accountType?: string | null;
+  engagement?: SearchResultEngagement | null;
+  postedAt?: string | null;
   metadata?: Json;
 }
 
@@ -40,11 +44,14 @@ export async function saveSourceCandidates(candidates: SourceCandidateInput[]): 
     snippet: candidate.snippet ?? null,
     source_type: candidate.sourceType ?? "unknown",
     platform: candidate.platform ?? "other",
-    adapter: candidate.adapter ?? "exa",
+    adapter: candidate.adapter ?? "firecrawl",
     discovery_query: candidate.discoveryQuery ?? null,
     discovery_reason: candidate.discoveryReason ?? null,
     relevance_score: candidate.relevanceScore ?? 0,
     enrich_status: normalizeEnrichStatus(candidate.enrichStatus),
+    account_type: candidate.accountType ?? null,
+    engagement: (candidate.engagement ?? null) as Json,
+    posted_at: candidate.postedAt ?? null,
     metadata: (candidate.metadata ?? {}) as Json,
     entity_key: primaryEntityKey({
       urls: [candidate.canonicalUrl ?? candidate.url, candidate.url],

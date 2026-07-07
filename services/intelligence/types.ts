@@ -1,5 +1,5 @@
 export type CrawlAdapterName = "crawl4ai" | "firecrawl";
-export type SearchAdapterName = "firecrawl";
+export type SearchAdapterName = "firecrawl" | "apify-x";
 
 export type ProductPageType =
   | "home"
@@ -83,11 +83,22 @@ export interface ProductCrawlResult {
   error: string | null;
 }
 
+export interface SearchResultEngagement {
+  likes: number | null;
+  reposts: number | null;
+  replies: number | null;
+  views: number | null;
+}
+
 export interface SearchResult {
   url: string;
   title: string | null;
   snippet: string | null;
   publishedAt: string | null;
+  /** Populated by platform-native adapters (e.g. apify-x). Absent for generic web search. */
+  accountHandle?: string | null;
+  accountType?: "official" | "creator" | "shadow" | "unknown";
+  engagement?: SearchResultEngagement | null;
 }
 
 export interface CrawlPageInput {

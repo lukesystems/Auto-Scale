@@ -864,6 +864,9 @@ export interface Database {
           relevance_score: number;
           enrich_status: "pending" | "enriched" | "failed" | "skipped";
           review_status: "pending" | "accepted" | "rejected";
+          account_type: string | null;
+          engagement: Json;
+          posted_at: string | null;
           metadata: Json;
           competitor_id: string | null;
           entity_key: string | null;

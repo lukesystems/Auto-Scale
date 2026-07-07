@@ -8,6 +8,9 @@ import type { NormalizedCandidate } from "./dedupe-candidates";
 /** Firecrawl-first: richer page discovery through the adapters available in this build. */
 const ADAPTER_ORDER: SearchAdapterName[] = ["firecrawl"];
 
+/** X-intent queries get real engagement data from Apify first; Firecrawl generic search is the fallback if Apify is unavailable or errors. */
+const X_ADAPTER_ORDER: SearchAdapterName[] = ["apify-x", "firecrawl"];
+
 /** Per-URL hit after merging results from one or more search adapters. */
 export interface MergedSearchHit extends SearchResult {
   adapters: string[];
@@ -75,14 +78,17 @@ export function mergeSearchHits(batches: AdapterBatch[], limit: number): MergedS
  */
 export async function searchWithCoverage(
   query: string,
-  limit: number
+  limit: number,
+  platformHint?: string | null
 ): Promise<SearchCoverageRun> {
   const adaptersUsed: string[] = [];
   const adapterErrors: Partial<Record<SearchAdapterName, string>> = {};
   const batches: AdapterBatch[] = [];
 
+  const adapterOrder = platformHint === "x" ? X_ADAPTER_ORDER : ADAPTER_ORDER;
+
   const runs = await Promise.allSettled(
-    ADAPTER_ORDER.map(async (name) => {
+    adapterOrder.map(async (name) => {
       const adapter = searchAdapters.find((item) => item.name === name);
       if (!adapter?.isAvailable()) return { name, results: [] as SearchResult[], skipped: true };
 
@@ -133,7 +139,10 @@ export function normalizeCoverageResults(input: {
       discoveryQuery: input.query,
       discoveryReason: input.reason,
       relevanceScore: hit.coverageScore,
-      accountHandle: extractAccountHandle(hit.url, platform),
+      accountHandle: hit.accountHandle ?? extractAccountHandle(hit.url, platform),
+      accountType: hit.accountType,
+      engagement: hit.engagement,
+      postedAt: hit.publishedAt,
     };
   });
 }

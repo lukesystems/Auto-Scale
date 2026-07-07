@@ -49,7 +49,13 @@ function coerceRequiredString(value: unknown, fallback: string): string {
         return (record[key] as string).trim();
       }
     }
-    return JSON.stringify(value).slice(0, 500);
+    // Model returned a structured shape (e.g. {role, stage, context}) instead of prose.
+    // Compose a readable sentence from its string values rather than dumping raw JSON.
+    const parts = Object.values(record).filter(
+      (v): v is string => typeof v === "string" && v.trim().length > 0
+    );
+    if (parts.length) return parts.join(" — ").slice(0, 500);
+    return fallback;
   }
   return fallback;
 }
@@ -58,18 +64,47 @@ function requiredStringField(fallback: string) {
   return z.preprocess((value) => coerceRequiredString(value, fallback), z.string());
 }
 
-export const AutoBriefCompetitorSchema = z.object({
-  name: z.string(),
-  url: z.string().nullable().optional(),
-  reason: defaultReasonField("Likely alternative or competitor in this product category"),
-  confidence: z.union([z.number().min(0).max(1), BriefConfidenceLevelSchema]),
-});
+/** Models frequently return array items as bare strings instead of the requested object shape. */
+function coerceStringToObject(key: string) {
+  return (value: unknown) => (typeof value === "string" ? { [key]: value } : value);
+}
 
-export const AutoBriefSourceSchema = z.object({
-  platform: z.string().nullable().optional(),
-  url: z.string().nullable().optional(),
-  reason: defaultReasonField("Public source worth monitoring for this niche"),
-  confidence: confidenceScoreField,
+export const AutoBriefCompetitorSchema = z.preprocess(
+  coerceStringToObject("name"),
+  z.object({
+    name: z.string(),
+    url: z.string().nullable().optional(),
+    reason: defaultReasonField("Likely alternative or competitor in this product category"),
+    confidence: z.union([z.number().min(0).max(1), BriefConfidenceLevelSchema]).default("low"),
+  })
+);
+
+export const AutoBriefSourceSchema = z.preprocess(
+  coerceStringToObject("platform"),
+  z.object({
+    platform: z.string().nullable().optional(),
+    url: z.string().nullable().optional(),
+    reason: defaultReasonField("Public source worth monitoring for this niche"),
+    confidence: confidenceScoreField,
+  })
+);
+
+export const AutoBriefPricingTierSchema = z.preprocess(
+  coerceStringToObject("name"),
+  z.object({
+    name: z.string(),
+    price: z.string().nullable().optional(),
+    billing_period: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
+);
+
+export const AutoBriefPricingSchema = z.object({
+  model: z.string().nullable().optional(),
+  has_free_tier: z.boolean().default(false),
+  has_free_trial: z.boolean().default(false),
+  tiers: z.array(AutoBriefPricingTierSchema).default([]),
+  notes: z.string().nullable().optional(),
 });
 
 export const AutoBriefProductionConstraintsSchema = z.object({
@@ -96,6 +131,13 @@ export const AutoBriefSchema = z.object({
   key_benefits: StringArraySchema,
   offer: z.string().nullable().optional(),
   cta: z.string().nullable().optional(),
+  pricing: AutoBriefPricingSchema.default({
+    model: null,
+    has_free_tier: false,
+    has_free_trial: false,
+    tiers: [],
+    notes: null,
+  }),
   niche: requiredStringField("General SaaS"),
   alternative_solutions: StringArraySchema,
   market_category: z.string().default(""),
@@ -104,10 +146,13 @@ export const AutoBriefSchema = z.object({
   content_angles: StringArraySchema,
   platform_recommendations: z
     .array(
-      z.object({
-        platform: z.string(),
-        reason: defaultReasonField("Recommended platform for this product's audience"),
-      })
+      z.preprocess(
+        coerceStringToObject("platform"),
+        z.object({
+          platform: z.string(),
+          reason: defaultReasonField("Recommended platform for this product's audience"),
+        })
+      )
     )
     .default([]),
   cta_suggestions: StringArraySchema,
