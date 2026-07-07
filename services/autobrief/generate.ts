@@ -87,6 +87,7 @@ Required depth:
 Also include:
 - product_name, product_url, one_line_description, category, product_type
 - primary_pain, core_promise, offer, cta (nullable if unknown)
+- pricing: model (e.g. "freemium", "subscription", "usage-based"), has_free_tier, has_free_trial, tiers (name/price/billing_period/notes from what is actually visible on the site — do not invent numbers), notes for anything ambiguous
 - niche, alternative_solutions, market_category
 - positioning_angles, brand_voice, cta_suggestions, founder_led_opportunities
 - production_constraints booleans

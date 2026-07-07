@@ -1,6 +1,7 @@
 import type { CrawlAdapter, CrawlAdapterName, SearchAdapter, SearchAdapterName } from "../types";
 import { crawl4aiAdapter } from "./crawl4ai-adapter";
 import { firecrawlCrawlAdapter, firecrawlSearchAdapter } from "./firecrawl-adapter";
+import { apifyXSearchAdapter } from "./apify-x-adapter";
 
 export const crawlAdapters: CrawlAdapter[] = [
   crawl4aiAdapter,
@@ -9,6 +10,7 @@ export const crawlAdapters: CrawlAdapter[] = [
 
 export const searchAdapters: SearchAdapter[] = [
   firecrawlSearchAdapter,
+  apifyXSearchAdapter,
 ];
 
 export function getCrawlAdapter(name: CrawlAdapterName): CrawlAdapter | undefined {

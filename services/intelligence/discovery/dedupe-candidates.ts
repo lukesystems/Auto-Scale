@@ -1,6 +1,6 @@
 import { detectPlatform } from "@/services/trendwatch/ingestion";
 import type { DiscoveryIntent } from "./schema";
-import type { SearchResult } from "../types";
+import type { SearchResult, SearchResultEngagement } from "../types";
 
 export interface NormalizedCandidate {
   url: string;
@@ -14,6 +14,9 @@ export interface NormalizedCandidate {
   discoveryReason: string;
   relevanceScore: number;
   accountHandle: string | null;
+  accountType?: SearchResult["accountType"];
+  engagement?: SearchResultEngagement | null;
+  postedAt?: string | null;
 }
 
 export function canonicalizeUrl(url: string): string {
@@ -156,7 +159,10 @@ export function normalizeSearchResults(input: {
       discoveryQuery: input.query,
       discoveryReason: input.reason,
       relevanceScore: Math.max(0.1, 1 - index * 0.05),
-      accountHandle: extractAccountHandle(result.url, platform),
+      accountHandle: result.accountHandle ?? extractAccountHandle(result.url, platform),
+      accountType: result.accountType,
+      engagement: result.engagement,
+      postedAt: result.publishedAt,
     };
   });
 }

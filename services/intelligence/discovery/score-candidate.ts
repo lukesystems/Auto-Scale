@@ -16,6 +16,7 @@ export interface CandidateQualityScore {
   audienceRelevance: number;
   evidenceRichness: number;
   platformValue: number;
+  engagementSignal: number;
   strategicValue: number;
   confidence: number;
   reasons: string[];
@@ -184,18 +185,50 @@ function scorePlatformValue(candidate: NormalizedCandidate, intent: DiscoveryInt
   return clamp(score);
 }
 
+/** Neutral score for candidates with no platform-native engagement data (generic web search results). */
+const NO_ENGAGEMENT_DATA_SCORE = 0.35;
+
+function scoreEngagementSignal(candidate: NormalizedCandidate): number {
+  const engagement = candidate.engagement;
+  if (!engagement) return NO_ENGAGEMENT_DATA_SCORE;
+
+  const weighted =
+    (engagement.likes ?? 0) * 1 +
+    (engagement.reposts ?? 0) * 2 +
+    (engagement.replies ?? 0) * 1.5 +
+    (engagement.views ?? 0) * 0.02;
+
+  let score = 0.25;
+  if (weighted >= 5000) score = 0.95;
+  else if (weighted >= 1000) score = 0.8;
+  else if (weighted >= 200) score = 0.6;
+  else if (weighted >= 50) score = 0.45;
+
+  if (candidate.postedAt) {
+    const ageDays = (Date.now() - new Date(candidate.postedAt).getTime()) / 86_400_000;
+    if (!Number.isNaN(ageDays)) {
+      if (ageDays <= 14) score += 0.1;
+      else if (ageDays > 180) score -= 0.15;
+    }
+  }
+
+  return clamp(score);
+}
+
 function scoreStrategicValue(dimensions: {
   competitorLikelihood: number;
   audienceRelevance: number;
   evidenceRichness: number;
   platformValue: number;
+  engagementSignal: number;
   coverageScore?: number;
 }): number {
   const base =
-    dimensions.competitorLikelihood * 0.3 +
-    dimensions.audienceRelevance * 0.25 +
-    dimensions.evidenceRichness * 0.25 +
-    dimensions.platformValue * 0.2;
+    dimensions.competitorLikelihood * 0.25 +
+    dimensions.audienceRelevance * 0.2 +
+    dimensions.evidenceRichness * 0.2 +
+    dimensions.platformValue * 0.15 +
+    dimensions.engagementSignal * 0.2;
 
   const coverageBoost = dimensions.coverageScore ? Math.min(0.15, dimensions.coverageScore * 0.1) : 0;
   return clamp(base + coverageBoost);
@@ -222,6 +255,9 @@ function buildReasons(
   if (candidate.adapter.includes("+")) {
     reasons.push(`Found by multiple search adapters (${candidate.adapter}).`);
   }
+  if (scores.engagementSignal >= 0.6) {
+    reasons.push("Strong real engagement (likes/reposts/replies).");
+  }
   if (reasons.length === 0) {
     reasons.push("Weak strategic signal — review before promoting.");
   }
@@ -241,12 +277,14 @@ export function scoreCandidate(input: ScoreCandidateInput): CandidateQualityScor
   const audienceRelevance = scoreAudienceRelevance(input.candidate, input.context);
   const evidenceRichness = scoreEvidenceRichness(input.candidate);
   const platformValue = scorePlatformValue(input.candidate, input.intent);
+  const engagementSignal = scoreEngagementSignal(input.candidate);
 
   const strategicValue = scoreStrategicValue({
     competitorLikelihood,
     audienceRelevance,
     evidenceRichness,
     platformValue,
+    engagementSignal,
     coverageScore: input.coverageScore,
   });
 
@@ -257,7 +295,7 @@ export function scoreCandidate(input: ScoreCandidateInput): CandidateQualityScor
       (competitorLikelihood >= 0.6 ? 0.1 : 0)
   );
 
-  const partial = { competitorLikelihood, audienceRelevance, evidenceRichness, platformValue };
+  const partial = { competitorLikelihood, audienceRelevance, evidenceRichness, platformValue, engagementSignal };
   const reasons = buildReasons(input.candidate, partial);
 
   return {

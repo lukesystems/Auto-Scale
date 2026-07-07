@@ -11,6 +11,9 @@ export function buildCandidateSaveMetadata(
 
   return {
     account_handle: candidate.accountHandle,
+    account_type: candidate.accountType ?? null,
+    engagement: candidate.engagement ?? null,
+    posted_at: candidate.postedAt ?? null,
     enrich_status: candidate.enrichStatus,
     enrich_error: candidate.enrichError,
     fetch_metadata: candidate.fetchMetadata,
@@ -21,6 +24,7 @@ export function buildCandidateSaveMetadata(
             audience_relevance: quality.audienceRelevance,
             evidence_richness: quality.evidenceRichness,
             platform_value: quality.platformValue,
+            engagement_signal: quality.engagementSignal,
             strategic_value: quality.strategicValue,
             confidence: quality.confidence,
             reasons: quality.reasons,

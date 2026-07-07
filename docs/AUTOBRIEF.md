@@ -38,6 +38,7 @@ Route: `/onboarding`
 Output validated by `services/autobrief/schema.ts`:
 
 - Product fields: name, URL, summary, ICP, pain, promise, offer, CTA, niche
+- `pricing` — model, free tier/trial flags, tiers (name/price/billing period/notes)
 - `positioning_angles`, `content_pillars`, `brand_voice`
 - `production_constraints` for likely content production limits
 - `suggested_competitors` — names with optional URLs and confidence
@@ -70,6 +71,7 @@ AutoBrief should capture:
 - core promise
 - key features and benefits
 - visible offer/CTA
+- pricing (model, free tier/trial flags, tiers with price/billing period — only what's actually visible on the site, never invented)
 - positioning angles
 - likely content pillars
 - suggested platforms

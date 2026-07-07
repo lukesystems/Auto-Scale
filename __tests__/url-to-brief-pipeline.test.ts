@@ -49,6 +49,13 @@ const mockBrief = {
   key_benefits: ["Benefit"],
   offer: null,
   cta: null,
+  pricing: {
+    model: null,
+    has_free_tier: false,
+    has_free_trial: false,
+    tiers: [],
+    notes: null,
+  },
   niche: "SaaS",
   alternative_solutions: [],
   market_category: "SaaS",

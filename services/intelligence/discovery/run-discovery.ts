@@ -15,6 +15,8 @@ import type { DiscoveryPlan } from "./schema";
 
 const MAX_RESULTS_PER_QUERY = 8;
 const MAX_TOTAL_CANDIDATES = 40;
+/** Apify is pay-per-result; cap combined X-intent results per discovery run regardless of how many X queries the planner generates. */
+const MAX_APIFY_RESULTS_PER_RUN = 75;
 
 export interface RunDiscoveryInput {
   projectId: string;
@@ -56,7 +58,7 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
       projectId: input.projectId,
       status: "running",
       queries: planned.plan.queries,
-      primaryAdapter: "exa",
+      primaryAdapter: "firecrawl",
     });
   } catch (error) {
     return {
@@ -75,11 +77,19 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
   const normalized = [];
   const intentsByQuery = new Map(planned.plan.queries.map((q) => [q.query, q.intent]));
 
+  let apifyResultsUsed = 0;
+
   for (const query of planned.plan.queries) {
     if (normalized.length >= MAX_TOTAL_CANDIDATES) break;
 
-    const coverage = await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY);
+    const isXQuery = query.platform_hint === "x";
+    const platformHint = isXQuery && apifyResultsUsed >= MAX_APIFY_RESULTS_PER_RUN ? null : query.platform_hint;
+
+    const coverage = await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY, platformHint);
     for (const adapter of coverage.adaptersUsed) adaptersUsed.add(adapter);
+    if (coverage.adaptersUsed.includes("apify-x")) {
+      apifyResultsUsed += coverage.results.length;
+    }
 
     const batch = normalizeCoverageResults({
       hits: coverage.results,
@@ -133,6 +143,9 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
           discoveryReason: candidate.discoveryReason,
           relevanceScore: candidate.relevanceScore,
           enrichStatus: candidate.enrichStatus,
+          accountType: candidate.accountType ?? null,
+          engagement: candidate.engagement ?? null,
+          postedAt: candidate.postedAt ?? null,
           metadata: buildCandidateSaveMetadata(candidate, quality),
         };
       })
@@ -149,8 +162,8 @@ export async function runDiscovery(input: RunDiscoveryInput): Promise<RunDiscove
       projectId: input.projectId,
       status,
       queries: planned.plan.queries,
-      primaryAdapter: "exa",
-      fallbackAdapters: [...adaptersUsed].filter((name) => name !== "exa"),
+      primaryAdapter: "firecrawl",
+      fallbackAdapters: [...adaptersUsed].filter((name) => name !== "firecrawl"),
       candidatesFound: deduped.length,
       error,
       completed: true,
