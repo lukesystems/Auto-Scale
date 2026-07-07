@@ -219,7 +219,7 @@ async function crawlCompetitorPage(
   }
 
   try {
-    const page = await extractPage({ url, allowPlaywright: false, allowBrowserUse: false });
+    const page = await extractPage({ url, allowFirecrawl: false });
 
     if (page.fetchStatus !== "success") {
       result.error = page.error ?? "Fetch failed";

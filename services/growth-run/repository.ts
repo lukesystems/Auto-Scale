@@ -27,6 +27,7 @@ export interface CreateGrowthRunInput {
 export async function createGrowthRun(input: CreateGrowthRunInput) {
   const supabase = input.client ?? createSupabaseServerClient();
   const batchKind = await resolveBatchKind(supabase, input.projectId);
+  const distributionMode = "postiz" as const;
 
   const { data, error } = await supabase
     .from("growth_runs")
@@ -38,7 +39,7 @@ export async function createGrowthRun(input: CreateGrowthRunInput) {
       posting_aggressiveness: input.postingAggressiveness ?? "balanced",
       target_platforms: (input.targetPlatforms ?? ["tiktok", "instagram", "youtube"]) as never,
       brand_constraints: (input.brandConstraints ?? {}) as never,
-      distribution_mode: input.distributionMode ?? "postbridge",
+      distribution_mode: distributionMode,
       parent_run_id: input.parentRunId ?? null,
       execution_mode: input.executionMode ?? "sequential_first",
       target_stage: input.targetStage ?? null,
