@@ -72,15 +72,17 @@ export function Footer() {
 
           <div>
 
-            <h4 className="text-sm font-semibold mb-3">Resources</h4>
+            <h4 className="text-sm font-semibold mb-3">Support & legal</h4>
 
             <ul className="space-y-2 text-sm text-muted-foreground">
 
-              <li><span className="opacity-60">Docs (soon)</span></li>
+              <li><a href="mailto:support@autoscaleshorts.com" className="hover:text-foreground">support@autoscaleshorts.com</a></li>
 
-              <li><span className="opacity-60">Changelog (soon)</span></li>
+              <li><Link href="/terms" className="hover:text-foreground">Terms of Service</Link></li>
 
-              <li><span className="opacity-60">Concierge service</span></li>
+              <li><Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link></li>
+
+              <li><Link href="/refunds" className="hover:text-foreground">Refund Policy</Link></li>
 
             </ul>
 

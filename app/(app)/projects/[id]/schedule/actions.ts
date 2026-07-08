@@ -71,7 +71,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     .order("slide_number", { ascending: true });
 
   const { data: channel } = await supabase
-    .from("postiz_channels")
+    .from("postbridge_channels")
     .select("integration_id, platform, disabled")
     .eq("owner_id", user.id)
     .eq("integration_id", parsed.data.channel)
@@ -105,7 +105,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
       platform: post.platform,
       channel: parsed.data.channel,
       scheduled_for: payload.scheduledFor,
-      postiz_payload: payload as never,
+      postbridge_payload: payload as never,
       status: "pending",
     })
     .select("id")
@@ -114,7 +114,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
 
   let finalStatus = "pending";
   let errorMessage: string | null = null;
-  let postizResponse: unknown = {};
+  let providerResponse: unknown = {};
 
   if (isRemotePublishingEnabled(credentials)) {
     const creds = credentials!;
@@ -129,7 +129,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     });
     finalStatus = response.ok ? "scheduled" : "failed";
     errorMessage = response.error ?? null;
-    postizResponse = { ...(response.raw ?? {}), credentialSource: creds.source };
+    providerResponse = { ...(response.raw ?? {}), credentialSource: creds.source };
     await supabase
       .from("scheduled_posts")
       .update({ remote_id: response.remoteId ?? null })
@@ -144,7 +144,7 @@ export async function schedulePostAction(formData: FormData): Promise<ScheduleRe
     .update({
       status: finalStatus,
       error_message: errorMessage,
-      postiz_response: postizResponse as never,
+      postbridge_response: providerResponse as never,
     })
     .eq("id", row.id);
 

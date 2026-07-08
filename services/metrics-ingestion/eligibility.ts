@@ -7,7 +7,7 @@ export type ScheduleItemRow = {
   video_id: string;
   platform: string;
   status: string;
-  postiz_post_id: string | null;
+  postbridge_post_id: string | null;
   posted_url: string | null;
   posted_at: string | null;
   scheduled_for: string;
@@ -32,7 +32,7 @@ export function selectEligibleScheduleItems(
   return items.filter(
     (item) =>
       item.status === "posted" &&
-      Boolean(item.postiz_post_id) &&
+      Boolean(item.postbridge_post_id) &&
       isWithinMetricsWindow(item, sinceDays)
   );
 }

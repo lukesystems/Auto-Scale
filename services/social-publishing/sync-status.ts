@@ -16,8 +16,8 @@ export interface PublishingSyncResult {
 }
 
 /**
- * Sync schedule_items status from the active publishing provider where possible.
- * When the provider API does not expose post status, marks postiz_status = unknown.
+ * Sync schedule_items status from the active publishing provider (Post Bridge) where possible.
+ * When the provider API does not expose post status, marks postbridge_status = unknown.
  */
 export async function syncPublishingScheduleStatus(opts: {
   projectId: string;
@@ -30,7 +30,7 @@ export async function syncPublishingScheduleStatus(opts: {
 
   let query = admin
     .from("schedule_items")
-    .select("id, video_id, status, postiz_post_id, platform")
+    .select("id, video_id, status, postbridge_post_id, platform")
     .eq("project_id", opts.projectId)
     .in("status", ["scheduled", "sending", "queued"]);
 
@@ -48,8 +48,8 @@ export async function syncPublishingScheduleStatus(opts: {
       await admin
         .from("schedule_items")
         .update({
-          postiz_status: "scheduled_status_unknown",
-          postiz_status_synced_at: new Date().toISOString(),
+          postbridge_status: "scheduled_status_unknown",
+          postbridge_status_synced_at: new Date().toISOString(),
         } as never)
         .eq("id", item.id);
       result.unknown++;
@@ -61,26 +61,26 @@ export async function syncPublishingScheduleStatus(opts: {
 
   for (const item of items) {
     try {
-      if (!item.postiz_post_id) {
+      if (!item.postbridge_post_id) {
         await admin
           .from("schedule_items")
           .update({
-            postiz_status: "scheduled_status_unknown",
-            postiz_status_synced_at: new Date().toISOString(),
+            postbridge_status: "scheduled_status_unknown",
+            postbridge_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);
         result.unknown++;
         continue;
       }
 
-      const statusResult = await getPublishingPostStatus(creds, item.postiz_post_id);
+      const statusResult = await getPublishingPostStatus(creds, item.postbridge_post_id);
 
       if (!statusResult) {
         await admin
           .from("schedule_items")
           .update({
-            postiz_status: "scheduled_status_unknown",
-            postiz_status_synced_at: new Date().toISOString(),
+            postbridge_status: "scheduled_status_unknown",
+            postbridge_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);
         result.unknown++;
@@ -94,9 +94,9 @@ export async function syncPublishingScheduleStatus(opts: {
           .from("schedule_items")
           .update({
             status: "posted",
-            postiz_status: "posted",
+            postbridge_status: "posted",
             posted_url: statusResult.postedUrl ?? null,
-            postiz_status_synced_at: new Date().toISOString(),
+            postbridge_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);
         await admin.from("videos").update({ status: "posted" }).eq("id", item.video_id);
@@ -106,8 +106,8 @@ export async function syncPublishingScheduleStatus(opts: {
           .from("schedule_items")
           .update({
             status: "failed",
-            postiz_status: "failed",
-            postiz_status_synced_at: new Date().toISOString(),
+            postbridge_status: "failed",
+            postbridge_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);
         result.updated++;
@@ -115,8 +115,8 @@ export async function syncPublishingScheduleStatus(opts: {
         await admin
           .from("schedule_items")
           .update({
-            postiz_status: remoteStatus || "scheduled_status_unknown",
-            postiz_status_synced_at: new Date().toISOString(),
+            postbridge_status: remoteStatus || "scheduled_status_unknown",
+            postbridge_status_synced_at: new Date().toISOString(),
           } as never)
           .eq("id", item.id);
         result.unknown++;

@@ -27,7 +27,7 @@ export interface CreateGrowthRunInput {
 export async function createGrowthRun(input: CreateGrowthRunInput) {
   const supabase = input.client ?? createSupabaseServerClient();
   const batchKind = await resolveBatchKind(supabase, input.projectId);
-  const distributionMode = "postiz" as const;
+  const distributionMode = "postbridge" as const;
 
   const { data, error } = await supabase
     .from("growth_runs")

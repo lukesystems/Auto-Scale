@@ -21,7 +21,7 @@ type ScheduleItemRow = {
   video_id: string;
   platform: string;
   status: string;
-  postiz_post_id: string | null;
+  postbridge_post_id: string | null;
   posted_url: string | null;
   posted_at: string | null;
   scheduled_for: string;
@@ -36,7 +36,7 @@ export async function ingestMetricsForScheduleItem(
   const { data: item, error } = await admin
     .from("schedule_items")
     .select(
-      "id, project_id, growth_run_id, video_id, platform, status, postiz_post_id, posted_url, posted_at, scheduled_for"
+      "id, project_id, growth_run_id, video_id, platform, status, postbridge_post_id, posted_url, posted_at, scheduled_for"
     )
     .eq("id", scheduleItemId)
     .maybeSingle();
@@ -49,7 +49,7 @@ export async function ingestMetricsForScheduleItem(
     return { scheduleItemId, ok: false, reason: `schedule item status is ${item.status}, not posted` };
   }
 
-  if (!item.postiz_post_id) {
+  if (!item.postbridge_post_id) {
     return { scheduleItemId, ok: false, reason: "no remote post id on schedule item" };
   }
 
@@ -79,7 +79,7 @@ export async function ingestMetricsForScheduleItem(
   const adapter = getMetricsAdapter(item.platform, providerId);
   const fetchResult = await adapter.fetchMetrics(
     {
-      remotePostId: item.postiz_post_id,
+      remotePostId: item.postbridge_post_id,
       postedUrl: item.posted_url,
       platform: item.platform,
       scheduleItemId: item.id,
@@ -106,7 +106,7 @@ export async function ingestMetricsForScheduleItem(
       videoId: item.video_id,
       growthRunId: item.growth_run_id,
       platform: item.platform,
-      remotePostId: item.postiz_post_id,
+      remotePostId: item.postbridge_post_id,
       snapshot: fetchResult.snapshot,
       growthExperimentResultId: experimentResult?.id ?? null,
     });
@@ -142,11 +142,11 @@ export async function ingestMetricsForProject(
   const { data: items, error } = await admin
     .from("schedule_items")
     .select(
-      "id, project_id, growth_run_id, video_id, platform, status, postiz_post_id, posted_url, posted_at, scheduled_for"
+      "id, project_id, growth_run_id, video_id, platform, status, postbridge_post_id, posted_url, posted_at, scheduled_for"
     )
     .eq("project_id", projectId)
     .eq("status", "posted")
-    .not("postiz_post_id", "is", null);
+    .not("postbridge_post_id", "is", null);
 
   if (error) {
     summary.errors.push(error.message);

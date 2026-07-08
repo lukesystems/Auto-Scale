@@ -4,12 +4,10 @@
 
 - Managed server credentials (`POST_BRIDGE_API_KEY`) or encrypted BYOK credentials.
 - Connection test via `GET /v1/social-accounts`.
-- Account sync → `postiz_channels` + `connected_accounts` (opaque remote IDs; column names unchanged).
+- Account sync → `postbridge_channels` + `connected_accounts` (opaque remote account IDs).
 - Scheduling via `POST /v1/posts` with uploaded media IDs.
 - Status polling via `GET /v1/posts/{id}` for autopilot sync.
 - Local queue and export fallback when Post Bridge is unavailable.
-
-Postiz remains the default when `PUBLISHING_PROVIDER=postiz`.
 
 ## Setup
 
@@ -26,14 +24,14 @@ POST_BRIDGE_API_URL=https://api.post-bridge.com/v1
 
 ```env
 PUBLISHING_PROVIDER=postbridge
-POSTIZ_CREDENTIAL_ENCRYPTION_KEY=a-long-random-server-secret
+POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY=a-long-random-server-secret
 ```
 
-In AutoScale, open **Settings → Publishing** (`/settings/postiz`), save your `pb_live_...` key, test the connection, then sync channels.
+In AutoScale, open **Settings → Publishing** (`/settings/publishing`), save your `pb_live_...` key, test the connection, then sync channels.
 
 ## API assumptions
 
-- Auth: `Authorization: Bearer {apiKey}` (not raw key like Postiz).
+- Auth: `Authorization: Bearer {apiKey}`.
 - Media: Post Bridge requires `POST /v1/media/create-upload-url` + `PUT` upload before scheduling. AutoScale fetches public `mediaUrls` / `imageUrls` and uploads them automatically.
 - Posts body: `{ caption, scheduled_at, social_accounts: [id], media: [media_id] }`.
 - Status mapping: `published`/`posted` → posted; `failed`/`error` → failed; `scheduled`/`pending` → scheduled.
@@ -41,8 +39,8 @@ In AutoScale, open **Settings → Publishing** (`/settings/postiz`), save your `
 ## Stored Data
 
 - `postbridge_connections`: encrypted BYOK API key, status.
-- `postiz_channels` / `connected_accounts`: remote account IDs (provider-agnostic storage during transition).
-- `schedule_items.postiz_post_id`: opaque remote post ID from active provider.
+- `postbridge_channels` / `connected_accounts`: remote account IDs.
+- `schedule_items.postbridge_post_id`: opaque remote post ID.
 
 API keys never reach client components.
 
@@ -51,8 +49,7 @@ API keys never reach client components.
 1. Set `PUBLISHING_PROVIDER=postbridge` on staging.
 2. Configure `POST_BRIDGE_API_KEY` (managed) or BYOK in settings.
 3. Sync channels and verify Growth Run schedule + autopilot status sync.
-4. In-flight Postiz posts are **not** migrated automatically — drain or let them complete on Postiz before switching production.
-5. Schema rename (`postiz_*` → `remote_*`) is deferred; treat IDs as opaque.
+4. Post Bridge is the only live publishing provider; the retired Postiz integration has been fully removed.
 
 ## Failure behavior
 

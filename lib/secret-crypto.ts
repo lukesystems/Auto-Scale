@@ -5,9 +5,9 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 const PREFIX = "enc:v1:";
 
 function encryptionKey(): Buffer {
-  const secret = process.env.POSTIZ_CREDENTIAL_ENCRYPTION_KEY;
+  const secret = process.env.POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY;
   if (!secret) {
-    throw new Error("POSTIZ_CREDENTIAL_ENCRYPTION_KEY is required to store BYOK credentials.");
+    throw new Error("POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY is required to store BYOK credentials.");
   }
   return createHash("sha256").update(secret).digest();
 }

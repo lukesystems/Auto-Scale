@@ -244,7 +244,7 @@ export async function scheduleApprovedVideos(
       const { data: account } = await supabase
         .from("connected_accounts")
         .select(
-          "id, platform, handle, status, postiz_account_id, max_posts_per_day, min_minutes_between_posts"
+          "id, platform, handle, status, postbridge_account_id, max_posts_per_day, min_minutes_between_posts"
         )
         .eq("id", accountId)
         .maybeSingle();
@@ -265,7 +265,7 @@ export async function scheduleApprovedVideos(
         });
         continue;
       }
-      if (!account.postiz_account_id) {
+      if (!account.postbridge_account_id) {
         diagnostics.push({
           videoId: video.id,
           accountId,
@@ -392,8 +392,8 @@ export async function scheduleApprovedVideos(
           platform: caption.platform,
           scheduled_for: scheduledFor.toISOString(),
           status: remotePublishing ? "sending" : "queued",
-          postiz_payload: {
-            channel: account.postiz_account_id,
+          postbridge_payload: {
+            channel: account.postbridge_account_id,
             caption: liveCaptionWithLink,
             hashtags: caption.hashtags,
             cta: caption.cta,
@@ -439,7 +439,7 @@ export async function scheduleApprovedVideos(
       }
 
       const resp = await schedulePostViaProvider(credentials!, {
-        accountId: account.postiz_account_id,
+        accountId: account.postbridge_account_id,
         scheduledFor: scheduledFor.toISOString(),
         caption: liveCaptionWithLink,
         mediaUrls: [mediaUrl],
@@ -454,8 +454,8 @@ export async function scheduleApprovedVideos(
           .from("schedule_items")
           .update({
             status: "scheduled",
-            postiz_post_id: resp.remoteId ?? null,
-            postiz_response: (resp.raw ?? {}) as never,
+            postbridge_post_id: resp.remoteId ?? null,
+            postbridge_response: (resp.raw ?? {}) as never,
           })
           .eq("id", scheduleRow!.id);
         // The post is scheduled remotely, not yet live. Reflect that the
@@ -471,7 +471,7 @@ export async function scheduleApprovedVideos(
           .from("schedule_items")
           .update({
             status: "failed",
-            postiz_response: (resp.raw ?? {}) as never,
+            postbridge_response: (resp.raw ?? {}) as never,
             failure_reason: resp.error ?? "Post Bridge unknown error",
           })
           .eq("id", scheduleRow!.id);

@@ -555,7 +555,7 @@ const SyncAccountsSchema = z.object({
   projectId: z.string().uuid(),
 });
 
-export async function syncPostizAccountsAction(formData: FormData): Promise<void> {
+export async function syncPublishingAccountsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const parsed = SyncAccountsSchema.parse({ projectId: formData.get("projectId") });
   const mode = await getProviderModeForUser(user.id);

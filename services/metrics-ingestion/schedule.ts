@@ -27,7 +27,7 @@ export async function runDueMetricsIngestion(opts?: {
     .from("schedule_items")
     .select("project_id")
     .eq("status", "posted")
-    .not("postiz_post_id", "is", null)
+    .not("postbridge_post_id", "is", null)
     .or(`posted_at.gte.${sinceIso.toISOString()},and(posted_at.is.null,scheduled_for.gte.${sinceIso.toISOString()})`);
 
   if (error) {

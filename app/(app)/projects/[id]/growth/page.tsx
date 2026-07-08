@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { startGrowthRunAction, syncPostizAccountsAction, importReferenceVideoAction } from "./actions";
+import { startGrowthRunAction, syncPublishingAccountsAction, importReferenceVideoAction } from "./actions";
 import { checkFfmpegHealth } from "@/services/ffmpeg/health";
 import { getPublishingProviderLabel } from "@/services/social-publishing";
 import { GrowthLoop } from "@/components/growth-loop";
@@ -131,7 +131,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
                     .join(", ")}`}
             </p>
           </div>
-          <form action={syncPostizAccountsAction}>
+          <form action={syncPublishingAccountsAction}>
             <input type="hidden" name="projectId" value={projectId} />
             <button
               type="submit"

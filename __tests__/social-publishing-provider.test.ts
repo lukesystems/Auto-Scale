@@ -21,36 +21,10 @@ describe("social publishing provider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("defaults to postiz when PUBLISHING_PROVIDER is unset", () => {
+  it("defaults to postbridge regardless of PUBLISHING_PROVIDER", () => {
     delete process.env.PUBLISHING_PROVIDER;
-    expect(getPublishingProviderId()).toBe("postiz");
-    expect(getPublishingProvider().name).toBe("postiz");
-  });
-
-  it("selects export_only when configured", () => {
-    process.env.PUBLISHING_PROVIDER = "export_only";
-    expect(getPublishingProviderId()).toBe("export_only");
-    expect(getPublishingProvider().name).toBe("export_only");
-  });
-
-  it("queues locally via export_only without remote calls", async () => {
-    process.env.PUBLISHING_PROVIDER = "export_only";
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-
-    const result = await schedulePostViaProvider(
-      { provider: "export_only", source: "none" },
-      {
-        accountId: "42",
-        scheduledFor: "2026-07-01T12:00:00.000Z",
-        caption: "Hello from AutoScale",
-        mediaUrls: ["https://example.com/video.mp4"],
-        platform: "tiktok",
-      }
-    );
-
-    expect(result.ok).toBe(true);
-    expect(result.status).toBe("queued");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getPublishingProviderId()).toBe("postbridge");
+    expect(getPublishingProvider().name).toBe("postbridge");
   });
 
   it("schedules via Post Bridge when configured", async () => {

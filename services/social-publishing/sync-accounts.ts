@@ -52,8 +52,8 @@ export function mapAccountToConnectedAccountRow(
   platform: GrowthSyncPlatform;
   handle: string;
   display_name: string;
-  postiz_account_id: string;
-  postiz_provider_id: string;
+  postbridge_account_id: string;
+  postbridge_provider_id: string;
   status: "active" | "paused";
 } | null {
   if (!isGrowthSyncPlatform(account.platform)) return null;
@@ -66,8 +66,8 @@ export function mapAccountToConnectedAccountRow(
     platform,
     handle,
     display_name: account.name,
-    postiz_account_id: account.id,
-    postiz_provider_id: account.platform,
+    postbridge_account_id: account.id,
+    postbridge_provider_id: account.platform,
     status: account.disabled ? "paused" : "active",
   };
 }
@@ -135,7 +135,7 @@ export async function syncOwnerPublishingChannels(opts: {
 
   if (rows.length) {
     const supabase = createSupabaseServerClient();
-    const { error } = await supabase.from("postiz_channels").upsert(
+    const { error } = await supabase.from("postbridge_channels").upsert(
       rows.map((row) => ({
         ...row,
         raw_metadata: row.raw_metadata as never,

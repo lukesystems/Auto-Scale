@@ -2,14 +2,14 @@
 
 AutoScale defaults to **Managed Mode** for non-technical founders.
 
-Managed Mode means AutoScale owns the server-side provider configuration. Users should not need to bring OpenRouter or Postiz keys to complete onboarding and run the first growth loop.
+Managed Mode means AutoScale owns the server-side provider configuration. Users should not need to bring OpenRouter or Post Bridge keys to complete onboarding and run the first growth loop.
 
 ## What it means
 
-- AutoScale uses server-side environment variables for OpenRouter, Postiz, and future provider-backed services.
+- AutoScale uses server-side environment variables for OpenRouter, Post Bridge, and future provider-backed services.
 - Users do not enter API keys during onboarding or normal use.
 - Missing AI keys fail loudly with the real configuration error.
-- Scheduling still supports local/manual export when Postiz is not configured.
+- Scheduling still supports local/manual export when Post Bridge is not configured.
 
 ## Provider modes
 
@@ -25,8 +25,8 @@ Stored in `user_settings.provider_mode`.
 ```env
 AUTOSCALE_PROVIDER_MODE_DEFAULT=managed
 OPENROUTER_API_KEY=
-POSTIZ_API_URL=https://api.postiz.com/public/v1
-POSTIZ_API_KEY=
+POST_BRIDGE_API_URL=https://api.post-bridge.com/v1
+POST_BRIDGE_API_KEY=
 AUTOSCALE_MODEL_AUTOBRIEF=
 AUTOSCALE_MODEL_TRENDWATCH=
 AUTOSCALE_MODEL_CONTENT=
@@ -68,7 +68,7 @@ Do not make these required until implementation exists.
 ## Settings
 
 - `/settings/providers` — redacted status, model routing summary, warnings
-- `/settings/postiz` — "Managed by AutoScale" in Managed Mode; BYOK form in Advanced Mode
+- `/settings/publishing` — "Managed by AutoScale" in Managed Mode; BYOK form in Advanced Mode
 
 Future scraping settings should show status only:
 

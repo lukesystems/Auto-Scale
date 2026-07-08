@@ -27,7 +27,7 @@ See `docs/SCRAPING_ENGINE.md`.
 
 ## Managed Mode
 
-AutoScale defaults to **Managed Mode**: server-side environment keys for OpenRouter and Postiz. Non-technical founders do not need to bring API keys.
+AutoScale defaults to **Managed Mode**: server-side environment keys for OpenRouter and Post Bridge. Non-technical founders do not need to bring API keys.
 
 - Onboarding: `/onboarding` → AutoBrief from a website URL
 - Provider status: `/settings/providers`
@@ -62,7 +62,7 @@ The current codebase already has the foundation:
 - user-provided TrendWatch sources
 - source fetching, scoring, classification, and confidence handling
 - TrendWatch analysis from enriched sources
-- content generation, quality gate, export, basic Postiz scheduling, manual experiments, winners, variants, and learnings
+- content generation, quality gate, export, basic Post Bridge scheduling, manual experiments, winners, variants, and learnings
 
 ## What the Scraping Engine adds next
 
@@ -86,7 +86,7 @@ The rule is simple: **no source, no strong claim.**
 - AI runtime with task-based model routing
 - Zod schema validation on every AI output
 - JSZip for export packs
-- Postiz integration for scheduling
+- Post Bridge integration for scheduling
 - Safe source ingestion and confidence scoring
 
 ## Get started
@@ -113,7 +113,7 @@ Managed Mode:
 
 - `AUTOSCALE_PROVIDER_MODE_DEFAULT=managed`
 - `OPENROUTER_API_KEY` — required for managed AI
-- `POSTIZ_API_URL` / `POSTIZ_API_KEY` — required for managed scheduling
+- `POST_BRIDGE_API_URL` / `POST_BRIDGE_API_KEY` — required for managed scheduling
 - `AUTOSCALE_MODEL_*` — task-based model routing
 - `FAL_KEY` — foundation only; media generation not active yet
 
@@ -186,7 +186,7 @@ autoscale/
 │   ├── content-conveyor/
 │   ├── quality-gate/
 │   ├── compound/
-│   ├── postiz/
+│   ├── postbridge/
 │   └── export/
 ├── skills/
 │   ├── product-brief/
@@ -205,17 +205,17 @@ autoscale/
 6. TrendWatch generates competitor intelligence, formats, hooks, risks, and experiments from enriched sources.
 7. Content Conveyor generates hooks, content ideas, and posts tied to TrendWatch insights.
 8. Quality Gate blocks weak or unanchored posts.
-9. Export ZIP pack or schedule through Postiz.
+9. Export ZIP pack or schedule through Post Bridge.
 10. Enter metrics in the experiment tracker.
 11. Mark winners → diagnose → generate variants → store learnings.
 
 ## Roadmap
 
-- V1: Foundation, auth, project workspace, first growth loop, basic Postiz.
+- V1: Foundation, auth, project workspace, first growth loop, basic Post Bridge.
 - V1.1: Managed Mode, AutoBrief onboarding, OpenRouter task routing.
 - V1.2 active focus: Scraping Engine — source discovery, competitor/source map, source enrichment, pattern mining.
 - V1.3: Experiment Pack from discovered patterns.
-- V1.4: Better Postiz automation and calendar view.
+- V1.4: Better Post Bridge automation and calendar view.
 - V1.5: AI Reflection System — weekly retrospective.
 - V2: First-party tracking links, website pixel, activation events.
 - V2.1: Revenue attribution, payment webhooks, Growth Graph.

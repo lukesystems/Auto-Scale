@@ -2,10 +2,10 @@
 
 ## Secrets
 
-- Never commit `.env.local`, service-role keys, LLM keys, Postiz keys, or media provider keys.
+- Never commit `.env.local`, service-role keys, LLM keys, Post Bridge keys, or media provider keys.
 - Browser code may use only explicitly public variables such as `NEXT_PUBLIC_SUPABASE_URL` and the Supabase anon/publishable key.
 - Server-only credentials belong in deployment environment variables.
-- BYOK Postiz keys are AES-256-GCM encrypted with `POSTIZ_CREDENTIAL_ENCRYPTION_KEY` before database storage.
+- BYOK Post Bridge keys are AES-256-GCM encrypted with `POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY` before database storage.
 
 ## If a Secret Was Committed
 

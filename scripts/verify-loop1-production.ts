@@ -515,11 +515,6 @@ async function main() {
     "POST_BRIDGE_API_KEY",
     "missing; Loop 1 can export manually but schedule/post will not be live"
   );
-  optionalEnv(
-    "publishing",
-    "POSTIZ_API_KEY",
-    "missing; OK if Post Bridge or export_only is used"
-  );
 
   if (supabaseUrl && serviceRole) {
     add("supabase", "admin connection target", "pass", redactUrl(supabaseUrl));
