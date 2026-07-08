@@ -67,11 +67,59 @@ export interface Database {
           avatar_url: string | null;
           subscription_status: string;
           plan: string;
+          ls_customer_id: string | null;
+          ls_subscription_id: string | null;
+          subscription_renews_at: string | null;
+          subscription_ends_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["profiles"]["Row"]> & { id: string };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
+        Relationships: [];
+      };
+
+      credit_ledger: {
+        Row: {
+          id: string;
+          owner_id: string;
+          delta: number;
+          bucket: "plan" | "topup";
+          reason:
+            | "plan_grant"
+            | "plan_reset"
+            | "topup_purchase"
+            | "growth_run_start"
+            | "video_render"
+            | "video_render_premium"
+            | "refund"
+            | "manual_adjustment";
+          ref_id: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["credit_ledger"]["Row"]> & {
+          owner_id: string;
+          delta: number;
+          bucket: "plan" | "topup";
+          reason: Database["public"]["Tables"]["credit_ledger"]["Row"]["reason"];
+        };
+        Update: Partial<Database["public"]["Tables"]["credit_ledger"]["Row"]>;
+        Relationships: [];
+      };
+
+      credit_balances: {
+        Row: {
+          owner_id: string;
+          plan_credits: number;
+          topup_credits: number;
+          cycle_started_at: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["credit_balances"]["Row"]> & {
+          owner_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["credit_balances"]["Row"]>;
         Relationships: [];
       };
 
@@ -462,8 +510,8 @@ export interface Database {
           platform: string | null;
           channel: string | null;
           scheduled_for: string | null;
-          postiz_payload: Json;
-          postiz_response: Json;
+          postbridge_payload: Json;
+          postbridge_response: Json;
           status: string;
           error_message: string | null;
           remote_id: string | null;
@@ -475,23 +523,6 @@ export interface Database {
           post_id: string;
         };
         Update: Partial<Database["public"]["Tables"]["scheduled_posts"]["Row"]>;
-        Relationships: [];
-      };
-
-      postiz_connections: {
-        Row: {
-          id: string;
-          owner_id: string;
-          api_url: string | null;
-          api_key: string | null;
-          status: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: Partial<Database["public"]["Tables"]["postiz_connections"]["Row"]> & {
-          owner_id: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["postiz_connections"]["Row"]>;
         Relationships: [];
       };
 
@@ -511,7 +542,7 @@ export interface Database {
         Relationships: [];
       };
 
-      postiz_channels: {
+      postbridge_channels: {
         Row: {
           id: string;
           owner_id: string;
@@ -525,12 +556,12 @@ export interface Database {
           synced_at: string;
           created_at: string;
         };
-        Insert: Partial<Database["public"]["Tables"]["postiz_channels"]["Row"]> & {
+        Insert: Partial<Database["public"]["Tables"]["postbridge_channels"]["Row"]> & {
           owner_id: string;
           integration_id: string;
           name: string;
         };
-        Update: Partial<Database["public"]["Tables"]["postiz_channels"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["postbridge_channels"]["Row"]>;
         Relationships: [];
       };
 
@@ -1213,7 +1244,7 @@ export interface Database {
           error: string | null;
           notes: string | null;
           parent_run_id: string | null;
-          distribution_mode: "postiz" | "export_only";
+          distribution_mode: "postbridge" | "export_only";
           batch_kind: "exploration" | "exploitation";
           started_at: string | null;
           completed_at: string | null;
@@ -1306,7 +1337,7 @@ export interface Database {
           total_videos_planned: number;
           duration_days: number;
           connected_account_ids: Json;
-          distribution_mode: "postiz" | "export_only";
+          distribution_mode: "postbridge" | "export_only";
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["posting_loadouts"]["Row"]> & {
@@ -1323,8 +1354,8 @@ export interface Database {
           platform: "tiktok" | "instagram" | "youtube";
           handle: string;
           display_name: string | null;
-          postiz_account_id: string | null;
-          postiz_provider_id: string | null;
+          postbridge_account_id: string | null;
+          postbridge_provider_id: string | null;
           status: "active" | "paused" | "disconnected" | "flagged";
           max_posts_per_day: number;
           min_minutes_between_posts: number;
@@ -1737,14 +1768,14 @@ export interface Database {
           status:
             | "queued" | "approved" | "sending" | "scheduled"
             | "posted" | "failed" | "cancelled" | "retrying";
-          postiz_post_id: string | null;
-          postiz_payload: Json;
-          postiz_response: Json;
+          postbridge_post_id: string | null;
+          postbridge_payload: Json;
+          postbridge_response: Json;
           posted_url: string | null;
           posted_at: string | null;
           failure_reason: string | null;
-          postiz_status: string | null;
-          postiz_status_synced_at: string | null;
+          postbridge_status: string | null;
+          postbridge_status_synced_at: string | null;
           retry_count: number;
           created_at: string;
           updated_at: string;
@@ -2139,7 +2170,17 @@ export interface Database {
 
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      spend_credits: {
+        Args: {
+          p_owner_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_ref_id: string | null;
+        };
+        Returns: Array<{ plan_credits: number; topup_credits: number }>;
+      };
+    };
     Enums: Record<string, never>;
   };
 }

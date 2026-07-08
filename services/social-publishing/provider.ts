@@ -3,8 +3,8 @@ import "server-only";
 /**
  * Generic publishing provider contract.
  *
- * AutoScale scheduler → provider interface → Postiz adapter (now)
- * → PostBridge adapter (later) → export-only fallback (always).
+ * AutoScale scheduler → provider interface → Post Bridge adapter (now)
+ * → export-only fallback (always).
  */
 
 export type PublishingProviderName = "postbridge";

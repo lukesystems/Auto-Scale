@@ -57,39 +57,29 @@ Considered and rejected for now:
 - **Self-hosted open-source X scraper** (twscrape-style, hosted on a separate server) — full control, no per-call fee, but an ongoing maintenance war against X's anti-bot defenses (breaks every few months, needs residential proxy rotation), and it's exactly the kind of infrastructure project this doc's original version warned against building first.
 - **Official X API (Basic tier, ~$200/mo)** — ToS-safe, real metrics, zero scraper maintenance, but was not selected.
 
-**Chosen: Apify managed actors.** Pay-per-result hosted scraping for X (and later TikTok/IG) without owning scraper infrastructure or fighting the anti-bot arms race. This is the adapter to build next.
+**Chosen: Apify managed actors.** Pay-per-result hosted scraping for X (and later TikTok/IG) without owning scraper infrastructure or fighting the anti-bot arms race.
+
+**Status: built and live** (actor: `api-ninja/x-twitter-advanced-search` — chosen over the alternatives for built-in engagement-tier presets and actual view/impression counts).
 
 ## X adapter architecture (Apify-backed)
 
 ### 1. New adapter, same interface pattern already in the codebase
 
-```ts
-// services/intelligence/adapters/apify-x-adapter.ts
-export const apifyXSearchAdapter: SocialSearchAdapter = {
-  name: "apify-x",
-  isAvailable() { return Boolean(process.env.APIFY_API_TOKEN); },
-  async search(query, options) { /* call Apify actor run, return SocialSearchResult[] */ },
-};
-```
+`services/intelligence/adapters/apify-x-adapter.ts` implements the existing `SearchAdapter` interface (no separate type needed — `SearchResult` itself grew optional engagement fields, see below) and calls the actor via `run-sync-get-dataset-items`. It slots into the existing `searchAdapters` array (`services/intelligence/adapters/index.ts`) and the existing multi-adapter merge logic in `services/intelligence/discovery/search-coverage.ts` (`searchWithCoverage`).
 
-This slots into the existing `searchAdapters` array (`services/intelligence/adapters/index.ts`) and the existing multi-adapter merge logic in `services/intelligence/discovery/search-coverage.ts` (`searchWithCoverage`) — that merge/coverage-scoring code already supports multiple adapters, it's just never had a second one to merge with.
+### 2. Extended the result type to carry real signal
 
-### 2. Extend the result type to carry real signal
-
-`SearchResult` (`services/intelligence/types.ts`) currently only has `{ url, title, snippet, publishedAt }` — no room for engagement data. Add:
+`SearchResult` (`services/intelligence/types.ts`) gained optional fields rather than a separate subtype — keeps every existing adapter/consumer unchanged, since the fields are `undefined` for generic web-search results:
 
 ```ts
-export interface SocialSearchResult extends SearchResult {
-  platform: "x";
-  accountHandle: string | null;
-  accountType: "official" | "creator" | "shadow" | "unknown";
-  engagement: {
-    likes: number | null;
-    reposts: number | null;
-    replies: number | null;
-    views: number | null;
-  };
-  postedAt: string | null;
+export interface SearchResult {
+  url: string;
+  title: string | null;
+  snippet: string | null;
+  publishedAt: string | null;
+  accountHandle?: string | null;
+  accountType?: "official" | "creator" | "shadow" | "unknown";
+  engagement?: { likes: number | null; reposts: number | null; replies: number | null; views: number | null } | null;
 }
 ```
 
@@ -119,9 +109,8 @@ No Apify actor for IG/TikTok yet. Keep them on the existing Firecrawl generic-se
 
 ## Open items before implementation starts
 
-- Apify account + `APIFY_API_TOKEN` need to be created/provided.
-- Actor selection: which specific Apify X/Twitter actor to standardize on (affects field names, rate limits, and per-result cost).
-- Budget cap: results-per-discovery-run limit to bound Apify spend per project.
+- ~~Apify account + `APIFY_API_TOKEN`~~ — done. Actor: `api-ninja/x-twitter-advanced-search` (`APIFY_X_ACTOR_ID` default).
+- ~~Budget cap~~ — done. 75 results/discovery-run (`MAX_APIFY_RESULTS_PER_RUN` in `run-discovery.ts`).
 
 ## What not to build yet
 

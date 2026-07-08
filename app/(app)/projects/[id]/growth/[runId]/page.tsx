@@ -115,7 +115,7 @@ export default async function GrowthRunPage({ params, searchParams }: RunPagePro
         .order("created_at", { ascending: false }),
       supabase
         .from("schedule_items")
-        .select("id, video_id, platform, status, scheduled_for, posted_url, postiz_post_id, failure_reason")
+        .select("id, video_id, platform, status, scheduled_for, posted_url, postbridge_post_id, failure_reason")
         .eq("growth_run_id", runId)
         .order("scheduled_for"),
       supabase
@@ -903,7 +903,7 @@ function SchedulePanel({
 }: {
   projectId: string;
   runId: string;
-  items: Array<{ id: string; video_id: string; platform: string; status: string; scheduled_for: string; posted_url: string | null; postiz_post_id: string | null; failure_reason: string | null }>;
+  items: Array<{ id: string; video_id: string; platform: string; status: string; scheduled_for: string; posted_url: string | null; postbridge_post_id: string | null; failure_reason: string | null }>;
   latestMetricsBySchedule: Map<string, { source: string; fetchedAt: string }>;
   providerLabel: PublishingProviderLabel;
 }) {
@@ -933,7 +933,7 @@ function SchedulePanel({
                 <div className="text-muted-foreground">
                   scheduled {new Date(it.scheduled_for).toLocaleString()}
                   {it.posted_url ? ` · live: ${it.posted_url}` : null}
-                  {it.postiz_post_id ? ` · remote:${it.postiz_post_id}` : null}
+                  {it.postbridge_post_id ? ` · remote:${it.postbridge_post_id}` : null}
                 </div>
                 {it.failure_reason && it.status === "failed" ? (
                   <div className="text-red-600 dark:text-red-300">{it.failure_reason}</div>

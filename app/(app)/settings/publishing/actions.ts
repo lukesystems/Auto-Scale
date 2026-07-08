@@ -144,7 +144,7 @@ export async function disconnectPostBridgeAction(): Promise<Result> {
   const { error } = await supabase.from("postbridge_connections").delete().eq("owner_id", user.id);
   if (error) return { ok: false, error: error.message };
 
-  await supabase.from("postiz_channels").delete().eq("owner_id", user.id).eq("provider", "byok");
+  await supabase.from("postbridge_channels").delete().eq("owner_id", user.id).eq("provider", "byok");
   revalidatePath("/settings/publishing");
   return { ok: true };
 }

@@ -196,14 +196,14 @@ describe("scheduling skip reasons", () => {
     "duplicate_hook_risk",
     "repeated_format_risk",
     "account_health_paused",
-    "postiz_missing",
+    "postbridge_missing",
     "render_failed",
   ] as const;
 
   it("defines autopilot skip reason codes", () => {
     expect(REASONS).toContain("render_failed");
     expect(REASONS).toContain("quality_score_too_low");
-    expect(REASONS).toContain("postiz_missing");
+    expect(REASONS).toContain("postbridge_missing");
   });
 });
 
@@ -218,9 +218,8 @@ describe("verify report formatter", () => {
       environment: {
         supabase: true,
         ffmpeg: true,
-        postiz: false,
         publishing: false,
-        publishingProvider: "postiz",
+        publishingProvider: "postbridge",
       },
       steps: [
         {

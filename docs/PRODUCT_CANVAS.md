@@ -39,7 +39,7 @@ Technical founders and early-stage SaaS builders who can build products but stru
 | Signal Scoring Engine | Score source transferability and relevance |
 | Content Conveyor | Hooks, ideas, post drafts linked to insights |
 | Quality Gate | Deterministic checks before approval |
-| ViralOps | Export + basic Postiz scheduling |
+| ViralOps | Export + basic Post Bridge scheduling |
 | Experiment Tracker | Manual metrics per post |
 | Compound Engine | Winner diagnosis + 10 variants + learnings |
 
@@ -49,7 +49,7 @@ A founder goes from "I have a startup but no idea what to post" to:
 
 - Researched content plan
 - Generated + approved posts
-- Scheduled distribution (Postiz or export)
+- Scheduled distribution (Post Bridge or export)
 - Experiment tracking
 - Winner compounding
 
@@ -59,7 +59,7 @@ A founder goes from "I have a startup but no idea what to post" to:
 /  /auth  /projects  /projects/new  /projects/[id]
 /projects/[id]/brief  /sources  /trendwatch  /ideas  /content
 /projects/[id]/approval  /exports  /schedule  /experiments  /winners
-/settings  /settings/postiz  /debug/ai-runs
+/settings  /settings/publishing  /debug/ai-runs
 ```
 
 ## Engineering Non-Negotiables
@@ -78,7 +78,7 @@ A founder goes from "I have a startup but no idea what to post" to:
 ## Deferred Post-V1
 
 - Full social scraping (TikTok, Instagram, X, LinkedIn)
-- Full Postiz multi-platform automation
+- Full Post Bridge multi-platform automation
 - AI Reflection System (V1.3)
 - Advanced analytics dashboard (V2.1)
 - Full image/video generation pipelines
@@ -95,7 +95,7 @@ A founder goes from "I have a startup but no idea what to post" to:
 4. TrendWatch
 5. Content Conveyor
 6. Quality Gate + approval
-7. Export + Postiz V1
+7. Export + Post Bridge V1
 8. Experiment tracker
 9. Compound engine
 

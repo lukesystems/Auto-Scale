@@ -2,7 +2,7 @@ import type { SearchAdapter, SearchResult } from "../types";
 import { filterSafeResultUrls } from "./guard-url";
 
 const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN?.trim() || null;
-/** api-ninja/x-twitter-advanced-search — chosen for built-in engagement-tier filtering (see docs/SCRAPING_ENGINE.md). */
+/** api-ninja/x-twitter-advanced-search — chosen for built-in engagement-tier filtering and view counts (see docs/SCRAPING_ENGINE.md). */
 const APIFY_X_ACTOR_ID = process.env.APIFY_X_ACTOR_ID?.trim() || "api-ninja~x-twitter-advanced-search";
 const APIFY_API_URL = "https://api.apify.com/v2";
 

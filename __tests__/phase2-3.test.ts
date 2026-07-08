@@ -9,13 +9,6 @@ import {
   scoreSourceRecord,
 } from "@/services/trendwatch/enrich-sources";
 import * as ingestion from "@/services/trendwatch/ingestion";
-import {
-  buildPostizPayload,
-  normalizePostizError,
-  resolvePostizApiBase,
-  sendToPostiz,
-  validatePostizConfig,
-} from "@/services/postiz/client";
 
 describe("Approval guard", () => {
   it("blocks failed quality gate posts", () => {
@@ -178,110 +171,5 @@ describe("TrendWatch scoring & ingestion", () => {
     expect(result.scoring_reasons.some((r) => r.includes("fetch failed"))).toBe(true);
 
     vi.restoreAllMocks();
-  });
-});
-
-describe("Postiz client", () => {
-  it("resolves public v1 base URL", () => {
-    expect(resolvePostizApiBase("https://api.postiz.com")).toBe("https://api.postiz.com/public/v1");
-    expect(resolvePostizApiBase("https://selfhosted.com/api/public/v1")).toBe(
-      "https://selfhosted.com/api/public/v1"
-    );
-  });
-
-  it("buildPostizPayload uses schedule type and integration id", () => {
-    const body = buildPostizPayload({
-      channel: "integration-123",
-      scheduledFor: "2024-12-14T10:00:00.000Z",
-      caption: "Hello world",
-      platform: "linkedin",
-      externalRef: "post-abc",
-    });
-    expect(body.type).toBe("schedule");
-    expect(body.posts[0].integration.id).toBe("integration-123");
-    expect(body.posts[0].settings.__type).toBe("linkedin");
-    expect(body.posts[0].value[0].content).toContain("Hello world");
-  });
-
-  it("validatePostizConfig rejects missing credentials", () => {
-    expect(validatePostizConfig({}).ok).toBe(false);
-    expect(validatePostizConfig({ apiUrl: "https://api.postiz.com", apiKey: "key" }).ok).toBe(true);
-  });
-
-  it("normalizePostizError maps 401 auth failures", () => {
-    expect(normalizePostizError(401, { message: "bad key" })).toContain("authentication failed");
-  });
-
-  describe("sendToPostiz (mocked fetch)", () => {
-    const originalFetch = global.fetch;
-
-    beforeEach(() => {
-      global.fetch = vi.fn();
-    });
-
-    afterEach(() => {
-      global.fetch = originalFetch;
-    });
-
-    it("uses /public/v1/posts and raw Authorization header", async () => {
-      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([{ postId: "remote-1", integration: "int-1" }]),
-      });
-
-      const result = await sendToPostiz(
-        { apiUrl: "https://api.postiz.com", apiKey: "test-key-123" },
-        {
-          channel: "int-1",
-          scheduledFor: "2024-12-14T10:00:00.000Z",
-          caption: "Caption",
-        }
-      );
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        "https://api.postiz.com/public/v1/posts",
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            Authorization: "test-key-123",
-          }),
-        })
-      );
-      const headers = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
-      expect(headers.Authorization).not.toMatch(/^Bearer /);
-      expect(result.remoteId).toBe("remote-1");
-    });
-
-    it("returns failed status on API error preserving export fallback path", async () => {
-      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: async () => "server error",
-      });
-
-      const result = await sendToPostiz(
-        { apiUrl: "https://api.postiz.com", apiKey: "test-key" },
-        {
-          channel: "int-1",
-          scheduledFor: "2024-12-14T10:00:00.000Z",
-          caption: "Caption",
-        }
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.status).toBe("failed");
-      expect(result.error).toContain("500");
-    });
-
-    it("does not call fetch when config is invalid", async () => {
-      const result = await sendToPostiz({}, {
-        channel: "int-1",
-        scheduledFor: "2024-12-14T10:00:00.000Z",
-        caption: "Caption",
-      });
-      expect(result.ok).toBe(false);
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
   });
 });

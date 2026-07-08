@@ -10,7 +10,7 @@ npm run test
 npm run build
 ```
 
-Coverage currently includes pipeline state, Quality Gate enforcement, cross-project chain checks, auth redirect safety, credential encryption, SSRF IP ranges, null-aware scoring, source classification, Postiz payloads, and official array response parsing.
+Coverage currently includes pipeline state, Quality Gate enforcement, cross-project chain checks, auth redirect safety, credential encryption, SSRF IP ranges, null-aware scoring, source classification, Post Bridge payloads, and official array response parsing.
 
 ## Local Setup
 
@@ -35,7 +35,7 @@ Coverage currently includes pipeline state, Quality Gate enforcement, cross-proj
 10. Confirm a failing or sub-70% post cannot be approved.
 11. Approve a passing post.
 12. Export the pack and confirm `slides/README.txt` says no PNGs are included.
-13. Configure Postiz, test the connection, sync channels, and schedule with a discovered integration.
+13. Configure Post Bridge, test the connection, sync channels, and schedule with a discovered integration.
 14. Enter experiment metrics, mark a winner, and generate variants.
 
 ## Scraping Engine test plan
@@ -101,7 +101,7 @@ Using two test users, verify:
 
 - User A cannot select or mutate User B's projects or child records.
 - User A cannot upload/read objects below User B's `project-assets` folder.
-- User A cannot read User B's `postiz_connections`, `postiz_channels`, or `ai_runs`.
+- User A cannot read User B's `postbridge_connections`, `postbridge_channels`, or `ai_runs`.
 - A generated post cannot reference an insight/content idea from another project.
 - Future Scraping Engine source candidates, runs, and source maps are scoped to the owning project/user.
 

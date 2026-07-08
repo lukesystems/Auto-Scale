@@ -20,6 +20,14 @@ import {
 } from "@/services/project-growth-settings/load";
 import { resolveProjectCta } from "@/services/project-growth-settings/schema";
 import { getDefaultCuratedModel } from "@/services/ai/curated-models";
+import {
+  assertProjectLimit,
+  getCreditBalance,
+  getSubscriptionState,
+  isBillingEnforced,
+  requireAndSpendCredits,
+} from "@/services/billing/credits";
+import { CREDIT_COSTS } from "@/services/billing/plans";
 
 const ModelSchema = z.object({
   slug: z.string().min(1),
@@ -89,6 +97,27 @@ export async function beginUnifiedRunAction(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  if (isBillingEnforced()) {
+    try {
+      // Fail fast before anything is created: subscription, project slot,
+      // and enough credits for the run-start charge.
+      const subscription = await getSubscriptionState(user.id);
+      if (!subscription.active) {
+        return { ok: false, error: "An active subscription is required. Choose a plan to start your Growth Run." };
+      }
+      await assertProjectLimit(user.id);
+      const balance = await getCreditBalance(user.id);
+      if (balance.total < CREDIT_COSTS.growth_run_start) {
+        return {
+          ok: false,
+          error: `Starting a Growth Run costs ${CREDIT_COSTS.growth_run_start} credits — you have ${balance.total}. Top up in Settings → Billing.`,
+        };
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Billing check failed." };
+    }
+  }
+
   const model = parsed.data.aiModel.slug || getDefaultCuratedModel().slug;
 
   const begun = await beginAutobriefRun({
@@ -118,6 +147,10 @@ export async function beginUnifiedRunAction(
       brandConstraints: options.brand_constraints as Record<string, unknown>,
       distributionMode: options.distribution_mode,
     });
+
+    if (isBillingEnforced()) {
+      await requireAndSpendCredits(user.id, "growth_run_start", run.id);
+    }
 
     return {
       ok: true,
@@ -215,6 +248,31 @@ export async function continueGrowthRunStageAction(input: {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  // Entering Stage 3 (video production) is where render costs start — charge
+  // per planned video before the stage runs.
+  if (isBillingEnforced()) {
+    const { data: run } = await supabase
+      .from("growth_runs")
+      .select("paused_at_phase, options")
+      .eq("id", input.growthRunId)
+      .maybeSingle();
+
+    if (run?.paused_at_phase === "storyboards") {
+      const options = (run.options ?? {}) as { concept_target_count?: number };
+      const videoCount = Math.max(1, options.concept_target_count ?? 3);
+      try {
+        await requireAndSpendCredits(user.id, "video_render", input.growthRunId, videoCount);
+      } catch (err) {
+        return {
+          ok: false,
+          projectId: input.projectId,
+          growthRunId: input.growthRunId,
+          error: err instanceof Error ? err.message : "Billing check failed.",
+        };
+      }
+    }
+  }
 
   try {
     const result = await continueGrowthRunStage({

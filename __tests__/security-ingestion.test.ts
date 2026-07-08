@@ -5,7 +5,7 @@ import { isPrivateIp } from "@/services/trendwatch/ingestion";
 import { classifySourceDeterministically } from "@/services/trendwatch/classify-source";
 
 afterEach(() => {
-  delete process.env.POSTIZ_CREDENTIAL_ENCRYPTION_KEY;
+  delete process.env.POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY;
 });
 
 describe("redirect security", () => {
@@ -18,8 +18,8 @@ describe("redirect security", () => {
 });
 
 describe("credential encryption", () => {
-  it("round-trips Postiz credentials without storing plaintext", () => {
-    process.env.POSTIZ_CREDENTIAL_ENCRYPTION_KEY = "test-only-long-random-secret";
+  it("round-trips BYOK publishing credentials without storing plaintext", () => {
+    process.env.POSTBRIDGE_CREDENTIAL_ENCRYPTION_KEY = "test-only-long-random-secret";
     const encrypted = encryptSecret("pst_secret_value");
     expect(isEncryptedSecret(encrypted)).toBe(true);
     expect(encrypted).not.toContain("pst_secret_value");

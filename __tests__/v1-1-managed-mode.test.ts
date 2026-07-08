@@ -27,25 +27,25 @@ describe("V1.1 provider status", () => {
 
   it("redacts secrets and never exposes keys in status", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-test-secret-key-12345";
-    process.env.POSTIZ_API_KEY = "pst_secret_postiz_key";
+    process.env.POST_BRIDGE_API_KEY = "pb_secret_postbridge_key";
 
     const status = getClientSafeProviderStatus("managed");
     const serialized = JSON.stringify(status);
 
     expect(status.openrouter.configured).toBe(true);
     expect(serialized).not.toContain("sk-or-test-secret-key-12345");
-    expect(serialized).not.toContain("pst_secret_postiz_key");
+    expect(serialized).not.toContain("pb_secret_postbridge_key");
     expect(redactSecret(process.env.OPENROUTER_API_KEY)).not.toContain("secret-key-12345");
   });
 
   it("returns warnings when managed keys are missing", () => {
     delete process.env.OPENROUTER_API_KEY;
-    delete process.env.POSTIZ_API_KEY;
+    delete process.env.POST_BRIDGE_API_KEY;
 
     const status = getClientSafeProviderStatus("managed");
     expect(status.warnings.length).toBeGreaterThan(0);
     expect(status.openrouter.configured).toBe(false);
-    expect(status.postiz.configured).toBe(false);
+    expect(status.postbridge.configured).toBe(false);
   });
 });
 
@@ -159,63 +159,6 @@ describe("V1.1 website fetch fallback", () => {
   });
 });
 
-describe("V1.1 Postiz credentials", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-    vi.restoreAllMocks();
-  });
-
-  it("uses env credentials in managed mode", async () => {
-    process.env.POSTIZ_API_URL = "https://api.postiz.com/public/v1";
-    process.env.POSTIZ_API_KEY = "managed-key";
-
-    vi.mock("@/lib/supabase/server", () => ({
-      createSupabaseServerClient: vi.fn(),
-    }));
-
-    const { resolvePostizCredentials } = await import("@/lib/postiz-credentials");
-    const creds = await resolvePostizCredentials("user-1", "managed");
-    expect(creds?.source).toBe("managed");
-    expect(creds?.apiKey).toBe("managed-key");
-  });
-
-  it("uses user credentials in BYOK mode", async () => {
-    delete process.env.POSTIZ_API_KEY;
-
-    vi.mock("@/lib/supabase/server", () => ({
-      createSupabaseServerClient: vi.fn(() => ({
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { api_url: "https://user.postiz.com", api_key: "user-key" },
-              }),
-            }),
-          }),
-        }),
-      })),
-    }));
-
-    vi.mock("@/lib/supabase/env", () => ({
-      isSupabaseConfigured: () => true,
-    }));
-
-    const { resolvePostizCredentials } = await import("@/lib/postiz-credentials");
-    const creds = await resolvePostizCredentials("user-1", "byok");
-    expect(creds?.source).toBe("byok");
-    expect(creds?.apiKey).toBe("user-key");
-  });
-
-  it("returns null when managed Postiz key missing", async () => {
-    delete process.env.POSTIZ_API_KEY;
-    delete process.env.POSTIZ_API_URL;
-
-    const config = getManagedProviderConfig();
-    expect(config.postiz.configured).toBe(false);
-  });
-});
 
 describe("V1.1 Fal foundation", () => {
   it("reports Fal as not enabled for generation", () => {

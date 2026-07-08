@@ -34,8 +34,8 @@ describe("social publishing account sync", () => {
       platform: "tiktok",
       handle: "@founder",
       display_name: "My TikTok",
-      postiz_account_id: "acc_123",
-      postiz_provider_id: "tiktok",
+      postbridge_account_id: "acc_123",
+      postbridge_provider_id: "tiktok",
       status: "active",
     });
   });

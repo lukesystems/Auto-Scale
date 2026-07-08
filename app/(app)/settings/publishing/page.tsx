@@ -101,7 +101,7 @@ export default async function PublishingSettingsPage() {
 async function loadChannels(userId: string) {
   const supabase = createSupabaseServerClient();
   const { data } = await supabase
-    .from("postiz_channels")
+    .from("postbridge_channels")
     .select("integration_id, name, platform, disabled")
     .eq("owner_id", userId)
     .order("name");
