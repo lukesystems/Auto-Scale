@@ -35,12 +35,40 @@ export interface BuildScenePlanInput {
   falConfigured?: boolean;
 }
 
+/** Pre-render gate blocks when total duration is >15% off target — stay comfortably inside that. */
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 2.5;
+
+/**
+ * Templates below hardcode each beat's duration by story purpose (hook,
+ * problem, cta, ...) — those fixed values are a reasonable *shape* for the
+ * beat but their sum has no relationship to targetLengthSeconds, which
+ * comes from the concept's requested video length. Scale every scene
+ * proportionally so the template's sum lands on target while preserving
+ * each beat's relative weight (a 3.5s beat stays proportionally longer
+ * than a 2.5s one). Without this, e.g. painLedTemplate always sums to a
+ * fixed 16s regardless of what length was actually requested, and the
+ * pre-render gate (which blocks renders >15% off target) rejects it.
+ */
+function scaleScenesToTarget(scenes: SceneContract[], targetLengthSeconds: number): SceneContract[] {
+  const rawTotal = scenes.reduce((s, sc) => s + sc.duration_seconds, 0);
+  if (!(rawTotal > 0) || !(targetLengthSeconds > 0)) return scenes;
+
+  const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, targetLengthSeconds / rawTotal));
+  if (Math.abs(scale - 1) < 0.02) return scenes;
+
+  return scenes.map((sc) => ({
+    ...sc,
+    duration_seconds: Math.round(sc.duration_seconds * scale * 10) / 10,
+  }));
+}
+
 /**
  * Deterministic scene plan templates per production mode.
  * AI storyboard can refine, but every video starts from a inspectable plan.
  */
 export function buildScenePlan(input: BuildScenePlanInput): ScenePlan {
-  const scenes = templateForMode(input);
+  const scenes = scaleScenesToTarget(templateForMode(input), input.targetLengthSeconds);
   const total = scenes.reduce((s, sc) => s + sc.duration_seconds, 0);
 
   return ScenePlanSchema.parse({
