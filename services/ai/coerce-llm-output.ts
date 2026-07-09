@@ -212,7 +212,68 @@ export function unwrapStructuredPayload(payload: unknown): unknown {
     obj.patterns = obj.patterns.map((p) => normalizePatternRow(p));
   }
 
+  if ("market_patterns" in obj || "competitor_profiles" in obj || "suggested_opportunities" in obj) {
+    obj = normalizeMarketSynthesis(obj);
+  }
+
   return obj;
+}
+
+/**
+ * MarketSynthesisSchema output — the model reliably drifts on this shape:
+ * `competitor_profiles` instead of `competitors`, market pattern entries
+ * missing `why_it_works`, and `suggested_opportunities` collapsed to bare
+ * strings instead of `{title, description}`.
+ */
+function normalizeMarketSynthesis(obj: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...obj };
+
+  if (Array.isArray(out.competitor_profiles) && !Array.isArray(out.competitors)) {
+    out.competitors = out.competitor_profiles;
+    delete out.competitor_profiles;
+  }
+
+  // The model sometimes returns a single object instead of a one-item array.
+  if (out.market_patterns && typeof out.market_patterns === "object" && !Array.isArray(out.market_patterns)) {
+    out.market_patterns = [out.market_patterns];
+  }
+
+  if (Array.isArray(out.market_patterns)) {
+    out.market_patterns = out.market_patterns.map((p) => {
+      if (!p || typeof p !== "object" || Array.isArray(p)) {
+        return { pattern: coerceToString(p), why_it_works: "Observed across gathered evidence." };
+      }
+      const row = p as Record<string, unknown>;
+      return {
+        ...row,
+        pattern: coerceToString(row.pattern ?? row.name ?? ""),
+        why_it_works:
+          coerceToString(row.why_it_works ?? row.whyItWorks ?? row.reason ?? "") ||
+          "Observed across gathered evidence.",
+      };
+    });
+  }
+
+  if (Array.isArray(out.suggested_opportunities)) {
+    out.suggested_opportunities = out.suggested_opportunities.map((o) => {
+      if (typeof o === "string") return { title: o, description: o };
+      if (!o || typeof o !== "object" || Array.isArray(o)) {
+        return { title: "Follow-up angle", description: "Study this further with more evidence." };
+      }
+      const row = o as Record<string, unknown>;
+      const title = coerceToString(row.title ?? row.name ?? "");
+      const description = coerceToString(row.description ?? row.summary ?? "");
+      return {
+        ...row,
+        title: title || description.slice(0, 60) || "Follow-up angle",
+        description: description || title || "Study this further with more evidence.",
+      };
+    });
+  }
+
+  if (!Array.isArray(out.competitors)) out.competitors = [];
+
+  return out;
 }
 
 function normalizeStoryboardScene(scene: unknown, idx: number): Record<string, unknown> {

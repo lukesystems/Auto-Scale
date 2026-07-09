@@ -155,3 +155,16 @@ export const StringArraySchema = z.preprocess((value) => {
   if (typeof value === "string") return value.trim() ? [value] : [];
   return value;
 }, z.array(z.string()).default([]));
+
+/**
+ * Models frequently collapse a requested object shape down to a bare string
+ * (e.g. a reference `{url, title}` becomes just the URL string). Wrap an
+ * object schema so a bare string gets lifted into `{ [key]: value }` before
+ * validation instead of failing outright.
+ */
+export function coerceStringToObjectField<T extends z.ZodTypeAny>(key: string, schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === "string" ? { [key]: value } : value),
+    schema
+  );
+}

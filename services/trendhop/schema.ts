@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  coerceStringToObjectField,
   confidenceScoreField,
   defaultStringField,
   enumField,
@@ -32,11 +33,14 @@ export const TrendHopPlatformSchema = enumField(
   TRENDHOP_PLATFORM_ALIASES
 );
 
-export const TrendHopReferenceSchema = z.object({
-  url: looseUrlField("https://example.com/trend"),
-  title: z.string().nullable().optional(),
-  snippet: z.string().nullable().optional(),
-});
+export const TrendHopReferenceSchema = coerceStringToObjectField(
+  "url",
+  z.object({
+    url: looseUrlField("https://example.com/trend"),
+    title: z.string().nullable().optional(),
+    snippet: z.string().nullable().optional(),
+  })
+);
 
 export const TrendHopItemSchema = z.object({
   platform: TrendHopPlatformSchema,
@@ -58,9 +62,20 @@ export const TrendHopItemSchema = z.object({
   confidence: confidenceScoreField(0.5),
 });
 
-export const TrendHopListSchema = z.object({
-  hops: z.array(TrendHopItemSchema).min(0).max(12),
-});
+export const TrendHopListSchema = z.preprocess(
+  (value) => {
+    if (value && typeof value === "object" && !Array.isArray(value) && !("hops" in value)) {
+      const record = value as Record<string, unknown>;
+      // The model sometimes names the array "trend_hops" instead of "hops".
+      const alias = record.trend_hops ?? record.trendHops;
+      if (Array.isArray(alias)) return { ...record, hops: alias };
+    }
+    return value;
+  },
+  z.object({
+    hops: z.array(TrendHopItemSchema).min(0).max(12),
+  })
+);
 
 export type TrendHopPlatform = z.infer<typeof TrendHopPlatformSchema>;
 export type TrendHopReference = z.infer<typeof TrendHopReferenceSchema>;

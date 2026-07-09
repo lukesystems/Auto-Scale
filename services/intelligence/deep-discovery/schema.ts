@@ -40,11 +40,14 @@ export const CompetitorKindSchema = z.enum([
  * more discovered sources. Founders think in competitors, not URLs.
  */
 export const CompetitorStrategyProfileSchema = z.object({
-  name: z.string().min(1),
+  name: z.preprocess((val) => coerceToString(val) || "Unnamed competitor", z.string().min(1)),
   kind: CompetitorKindSchema.default("unknown"),
   platforms: z.array(z.string()).default([]),
   handles: z.array(z.string()).default([]),
-  what_they_do: z.string().describe("Plain description of who they are and how they show up."),
+  what_they_do: z.preprocess(
+    (val) => coerceToString(val) || "Not described in gathered evidence.",
+    z.string()
+  ).describe("Plain description of who they are and how they show up."),
   working_patterns: z
     .array(z.string())
     .default([])
@@ -99,7 +102,10 @@ export type SuggestedOpportunity = z.infer<typeof SuggestedOpportunitySchema>;
  * fact without a source.
  */
 export const MarketSynthesisSchema = z.object({
-  summary: z.string().min(1),
+  summary: z.preprocess(
+    (val) => coerceToString(val) || "Synthesis summary not provided.",
+    z.string().min(1)
+  ),
   competitors: z.array(CompetitorStrategyProfileSchema).default([]),
   market_patterns: z.array(MarketPatternSchema).default([]),
   white_space: z
