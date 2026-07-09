@@ -389,6 +389,8 @@ export const GrowthRunOptionsSchema = z.object({
   visual_pipeline: VisualPipelineSchema.optional(),
   /** User acknowledged low-evidence render for this run */
   low_evidence_acknowledged: z.boolean().optional(),
+  /** Burned-in caption visual preset; defaults to "bold_pop" when unset. */
+  caption_style: z.enum(["bold_pop", "clean_minimal", "neon"]).optional(),
 });
 
 export type GrowthRunOptions = z.infer<typeof GrowthRunOptionsSchema>;

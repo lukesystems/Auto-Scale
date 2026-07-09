@@ -124,6 +124,8 @@ export async function renderConceptVideo(opts: {
     (brandConstraints.data?.brand_constraints as Record<string, unknown> | null) ?? null;
   const brandColor =
     brandConstraintsObj?.primary_color ?? brandConstraintsObj?.brand_color ?? null;
+  const brandColorForCaptions = typeof brandColor === "string" ? brandColor : null;
+  const captionStyle = runProduction.storedRunOptions.caption_style ?? "bold_pop";
   const productScreenshotUrl =
     typeof brandConstraintsObj?.product_screenshot_url === "string"
       ? brandConstraintsObj.product_screenshot_url
@@ -364,8 +366,10 @@ export async function renderConceptVideo(opts: {
       }
     };
 
-    await mapWithConcurrency(slideIndices, SLIDE_SCENE_CONCURRENCY, renderSceneAt);
-    await mapWithConcurrency(falIndices, FAL_SCENE_CONCURRENCY, renderSceneAt);
+    await Promise.all([
+      mapWithConcurrency(slideIndices, SLIDE_SCENE_CONCURRENCY, renderSceneAt),
+      mapWithConcurrency(falIndices, FAL_SCENE_CONCURRENCY, renderSceneAt),
+    ]);
 
     for (const sceneFile of orderedSceneFiles) {
       if (!sceneFile) throw new Error("scene render incomplete");
@@ -380,13 +384,21 @@ export async function renderConceptVideo(opts: {
     await checkpoint("subs");
     let srt: string;
     let assPath: string | undefined;
+    let captionPages: ReturnType<typeof createCaptionPages> = [];
+    let captionKaraoke = false;
     if (voiceResult?.alignment && audioModeUsesVoiceover(audioMode)) {
       const words = charsToTimedWords(voiceResult.alignment);
       const pages = createCaptionPages(words);
-      const ass = formatAssCaptions(pages, { karaoke: true });
+      const ass = formatAssCaptions(pages, {
+        karaoke: true,
+        captionStyle,
+        brandColor: brandColorForCaptions,
+      });
       assPath = join(workDir, "subs.ass");
       await writeFile(assPath, ass, "utf8");
       srt = pagesToSrt(pages);
+      captionPages = pages;
+      captionKaraoke = true;
       await supabase.from("generated_assets").insert({
         project_id: opts.projectId,
         growth_run_id: opts.growthRunId,
@@ -405,9 +417,15 @@ export async function renderConceptVideo(opts: {
       );
       const pages = createCaptionPages(sceneWords);
       if (pages.length) {
-        const ass = formatAssCaptions(pages, { karaoke: false });
+        const ass = formatAssCaptions(pages, {
+          karaoke: false,
+          captionStyle,
+          brandColor: brandColorForCaptions,
+        });
         assPath = join(workDir, "subs.ass");
         await writeFile(assPath, ass, "utf8");
+        captionPages = pages;
+        captionKaraoke = false;
       }
     }
     const srtPath = join(workDir, "subs.srt");
@@ -565,6 +583,17 @@ export async function renderConceptVideo(opts: {
       mp4Buffer: mp4Buf,
       durationSeconds: totalDuration,
       targetPlatforms,
+      renderInputs: {
+        scenes: sceneFiles,
+        voiceoverPath: voicePath,
+        fallbackSrtPath: srtPath,
+        captionPages,
+        karaoke: captionKaraoke,
+        backgroundMusicPath: bgmPath ?? undefined,
+        backgroundMusicVolume: backgroundMusicVolumeForMode(audioMode),
+        duckMusicUnderVoice: shouldDuckMusicUnderVoice(audioMode),
+        workDir,
+      },
     });
 
     await checkpoint("upload", { publicUrl, partialFailures });

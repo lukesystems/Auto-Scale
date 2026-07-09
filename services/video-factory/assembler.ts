@@ -25,6 +25,67 @@ export interface AssembleVideoInput {
   outputPath: string;
   width?: number;
   height?: number;
+  /** libx264 -crf for the final encode (lower = higher quality). Default 20. */
+  crf?: number;
+  /** libx264 -preset for the final encode. Default "medium". */
+  preset?: string;
+  /** AAC audio bitrate in kbps for the final encode. Default 192. */
+  audioBitrateKbps?: number;
+  /** Hard-trim the final output to at most this many seconds (platform max duration). */
+  maxDurationSeconds?: number;
+}
+
+/**
+ * Chain consecutive clips together with an `xfade` crossfade transition
+ * between each pair, producing a single output clip. Video-only (source
+ * clips have no audio at this stage — see the per-scene pre-render step).
+ *
+ * xfade's `offset` is the timestamp (within the *already-merged* stream)
+ * at which each transition begins. For a chain of N clips with per-clip
+ * durations d0..dN-1 and a fixed crossfade length c:
+ *   offset_1 = d0 - c
+ *   mergedDuration_1 = d0 + d1 - c
+ *   offset_2 = mergedDuration_1 - c = d0 + d1 - 2c
+ *   ...and so on, tracked incrementally below.
+ */
+async function buildCrossfadeChain(
+  paths: string[],
+  durationsSeconds: number[],
+  crossfadeDurationSeconds: number,
+  outPath: string
+): Promise<void> {
+  const args: string[] = [];
+  for (const p of paths) {
+    args.push("-i", p);
+  }
+
+  const filterParts: string[] = [];
+  let currentLabel = "0:v";
+  let mergedDuration = durationsSeconds[0] ?? 0;
+  for (let k = 1; k < paths.length; k++) {
+    const offset = Math.max(0, mergedDuration - crossfadeDurationSeconds);
+    const outLabel = `vx${k}`;
+    filterParts.push(
+      `[${currentLabel}][${k}:v]xfade=transition=fade:duration=${crossfadeDurationSeconds}:offset=${offset.toFixed(3)}[${outLabel}]`
+    );
+    currentLabel = outLabel;
+    mergedDuration = mergedDuration + (durationsSeconds[k] ?? 0) - crossfadeDurationSeconds;
+  }
+
+  args.push("-filter_complex", filterParts.join(";"));
+  args.push("-map", `[${currentLabel}]`);
+  args.push(
+    "-c:v",
+    "libx264",
+    "-preset",
+    // Throwaway intermediate re-encoded again in the final mux pass.
+    "veryfast",
+    "-pix_fmt",
+    "yuv420p",
+    outPath
+  );
+
+  await runFfmpeg(args);
 }
 
 /**
@@ -53,7 +114,10 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
           "-c:v",
           "libx264",
           "-preset",
-          "medium",
+          // Throwaway pre-render: this file is only re-encoded again in the
+          // final mux pass below, so encode quality here doesn't matter —
+          // only speed. Final output quality is controlled by the mux pass.
+          "veryfast",
           "-an",
           out,
         ]);
@@ -73,7 +137,8 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
           "-c:v",
           "libx264",
           "-preset",
-          "medium",
+          // Same rationale: throwaway intermediate, speed over quality here.
+          "veryfast",
           "-pix_fmt",
           "yuv420p",
           "-an",
@@ -83,10 +148,39 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
       scenePaths.push(out);
     }
 
+    // Group consecutive scenes into "runs" so we can crossfade within a run
+    // of consecutive slide (kind: "image") scenes while keeping hard cuts
+    // everywhere else (b-roll scenes, and slide/b-roll boundaries) — fast
+    // cuts on b-roll are intentional for short-form retention pacing.
+    const CROSSFADE_DURATION_SECONDS = 0.2;
+    const segments: string[] = [];
+    {
+      let i = 0;
+      while (i < scenePaths.length) {
+        if (input.scenes[i].kind === "image") {
+          let j = i;
+          while (j + 1 < scenePaths.length && input.scenes[j + 1].kind === "image") j++;
+          if (j > i) {
+            const runPaths = scenePaths.slice(i, j + 1);
+            const runDurations = input.scenes.slice(i, j + 1).map((s) => s.durationSeconds);
+            const xfadeOut = join(dir, `xfade-${i}-${j}.mp4`);
+            await buildCrossfadeChain(runPaths, runDurations, CROSSFADE_DURATION_SECONDS, xfadeOut);
+            segments.push(xfadeOut);
+          } else {
+            segments.push(scenePaths[i]!);
+          }
+          i = j + 1;
+        } else {
+          segments.push(scenePaths[i]!);
+          i++;
+        }
+      }
+    }
+
     const listPath = join(dir, "concat.txt");
     await writeFile(
       listPath,
-      scenePaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n")
+      segments.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n")
     );
     const concatOut = join(dir, "concat.mp4");
     await runFfmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatOut]);
@@ -147,22 +241,27 @@ export async function assembleVideo(input: AssembleVideoInput): Promise<void> {
     }
 
     if (input.voiceoverPath || input.backgroundMusicPath) {
-      args.push("-c:a", "aac", "-b:a", "192k", "-shortest");
+      args.push("-c:a", "aac", "-b:a", `${input.audioBitrateKbps ?? 192}k`, "-shortest");
     }
 
     args.push(
       "-c:v",
       "libx264",
       "-preset",
-      "medium",
+      input.preset ?? "medium",
       "-crf",
-      "20",
+      String(input.crf ?? 20),
       "-pix_fmt",
       "yuv420p",
       "-movflags",
-      "+faststart",
-      input.outputPath
+      "+faststart"
     );
+
+    if (input.maxDurationSeconds != null) {
+      args.push("-t", String(input.maxDurationSeconds));
+    }
+
+    args.push(input.outputPath);
 
     await runFfmpeg(args);
   } finally {

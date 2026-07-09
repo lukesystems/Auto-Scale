@@ -105,31 +105,60 @@ export function createCaptionPages(
   return pages;
 }
 
-/** Derive word timings from scene-level durations when no TTS alignment exists. */
-export function wordsFromSceneDurations(
-  scenes: Array<{ text: string; durationSeconds: number }>
-): TimedWord[] {
-  const words: TimedWord[] = [];
-  let cursor = 0;
-  for (const scene of scenes) {
-    const tokens = scene.text.trim().split(/\s+/).filter(Boolean);
-    if (!tokens.length) {
-      cursor += scene.durationSeconds;
-      continue;
-    }
-    const slice = scene.durationSeconds / tokens.length;
-    for (const token of tokens) {
-      words.push({
-        text: token,
-        startSeconds: cursor,
-        endSeconds: cursor + slice,
-      });
-      cursor += slice;
-    }
-  }
-  return words;
-}
-
+/** Extra pacing weight (in "character units") added after a word to approximate a natural pause. */
+const SENTENCE_END_PAUSE_WEIGHT = 3.5;
+const COMMA_PAUSE_WEIGHT = 1.75;
+
+/** Relative pacing weight for a single token: longer words get proportionally more time,
+ *  and words ending a sentence (or clause) get extra weight so the *following* silence
+ *  reads as a pause rather than being swallowed by even division. */
+function wordPacingWeight(token: string): number {
+  // Strip surrounding punctuation for the character-length base weight, but keep at least 1
+  // so even bare punctuation tokens get a slice.
+  const bareLength = token.replace(/[^\p{L}\p{N}]/gu, "").length || 1;
+  let weight = bareLength;
+  if (/[.!?]$/.test(token)) {
+    weight += SENTENCE_END_PAUSE_WEIGHT;
+  } else if (/,$/.test(token)) {
+    weight += COMMA_PAUSE_WEIGHT;
+  }
+  return weight;
+}
+
+/**
+ * Derive word timings from scene-level durations when no TTS alignment exists.
+ * This is a heuristic estimate, not real forced alignment: each word's slice of the
+ * scene duration is weighted by its character length (longer words take longer to say)
+ * plus extra weight after sentence-terminal punctuation or commas (natural pause), rather
+ * than a flat even split across all words.
+ */
+export function wordsFromSceneDurations(
+  scenes: Array<{ text: string; durationSeconds: number }>
+): TimedWord[] {
+  const words: TimedWord[] = [];
+  let cursor = 0;
+  for (const scene of scenes) {
+    const tokens = scene.text.trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+      cursor += scene.durationSeconds;
+      continue;
+    }
+    const weights = tokens.map(wordPacingWeight);
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0) || tokens.length;
+    const secondsPerWeightUnit = scene.durationSeconds / totalWeight;
+    for (let i = 0; i < tokens.length; i++) {
+      const duration = weights[i]! * secondsPerWeightUnit;
+      words.push({
+        text: tokens[i]!,
+        startSeconds: cursor,
+        endSeconds: cursor + duration,
+      });
+      cursor += duration;
+    }
+  }
+  return words;
+}
+
 /** Convert ElevenLabs character alignment to timed words. */
 export function charsToTimedWords(alignment: {
   characters: string[];

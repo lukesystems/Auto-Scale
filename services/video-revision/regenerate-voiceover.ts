@@ -294,6 +294,12 @@ export async function regenerateVoiceoverWithResult(opts: {
           mp4Buffer: mp4Buf,
           durationSeconds: totalDuration,
           targetPlatforms,
+          renderInputs: {
+            scenes: sceneFiles,
+            voiceoverPath: voicePath,
+            fallbackSrtPath: srtPath,
+            workDir,
+          },
         });
 
         reassembled = true;
