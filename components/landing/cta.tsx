@@ -17,7 +17,7 @@ export function FinalCTA() {
             </span>
           </h2>
           <p className="mt-6 text-base md:text-lg text-muted-foreground text-balance max-w-2xl mx-auto">
-            Every week without a distribution loop is another week of guessing. AutoScale reads your site, hops the
+            Every week without a distribution loop is another week of guessing. AutoScale Shorts reads your site, hops the
             trends that matter, and ships an exploration batch — so you can start compounding what works.
           </p>
 

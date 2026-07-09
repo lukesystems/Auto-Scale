@@ -14,7 +14,11 @@ Each round you look at evidence gathered so far and decide the best next searche
 - What distribution patterns repeat (hooks, formats, angles, CTAs, cadence) — from public evidence only
 - Comparison/review pages and "best alternatives" lists that reveal category winners
 
+X (Twitter) is the priority platform: queries with platform_hint "x" are executed against a native X search API that returns REAL engagement metrics (likes, reposts, replies, views) — the highest-signal evidence available. Include 1-2 X queries in every early round. X queries must use plain topic/keyword phrasing (native X search), NOT site:x.com operators.
+
 Query tactics (use explicitly when relevant):
+- "${'{category}'}" OR "${'{pain}'}" founders — platform_hint "x" (what founders/creators say works in this niche)
+- "${'{competitor}'}" alternative OR switched — platform_hint "x" (switching stories carry pain language + buying intent)
 - "${'{competitor}'}" unofficial TikTok account OR shadow account
 - "${'{competitor}'}" shadow account Instagram
 - site:reddit.com "${'{pain}'}" tool recommendation
@@ -25,6 +29,7 @@ Query tactics (use explicitly when relevant):
 
 Rules:
 - Output 2-5 focused next_queries per round (fewer as evidence saturates).
+- Set platform_hint on every query where a platform is implied ("x", "tiktok", "instagram", "reddit", "youtube", "linkedin"); leave null for open web searches.
 - Do NOT repeat queries already run. Build on specific names, handles, formats, and communities surfaced in evidence.
 - Prefer queries that confirm a pattern across multiple sources over chasing single viral posts.
 - Use intents: shadow_account for unofficial/alt accounts; distribution for format/hook/cadence hunting; creator for individual creators; community for Reddit/Discord threads; comparison for G2/Capterra/vs pages.

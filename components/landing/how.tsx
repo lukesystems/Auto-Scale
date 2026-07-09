@@ -5,7 +5,7 @@ const STEPS = [
     icon: Globe2,
     title: "Paste your URL",
     time: "~2 min",
-    desc: "AutoScale crawls your site and saves a product brief — ICP, pain, competitors, and positioning. No 30-question onboarding form.",
+    desc: "AutoScale Shorts crawls your site and saves a product brief — ICP, pain, competitors, and positioning. No 30-question onboarding form.",
   },
   {
     icon: TrendingUp,
@@ -23,7 +23,7 @@ const STEPS = [
     icon: Trophy,
     title: "Compound the winners",
     time: "Automatic after metrics",
-    desc: "Top performers are classified by save rate and signups. AutoScale spins hook variants from proven formats, kills flat posts, and learns your audience batch by batch.",
+    desc: "Top performers are classified by save rate and signups. AutoScale Shorts spins hook variants from proven formats, kills flat posts, and learns your audience batch by batch.",
   },
 ] as const;
 
@@ -38,7 +38,7 @@ export function How() {
               From your product URL to a compounding video pipeline — in four steps.
             </h2>
             <p className="mt-5 text-base leading-relaxed text-muted-foreground text-balance md:text-lg">
-              Most AI video tools start with a blank prompt. AutoScale starts with your product and today&apos;s trends —
+              Most AI video tools start with a blank prompt. AutoScale Shorts starts with your product and today&apos;s trends —
               and never loses the thread between evidence, video, and result.
             </p>
           </div>

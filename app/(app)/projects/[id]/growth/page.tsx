@@ -109,7 +109,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
             </a>
           ) : (
             <span className="text-amber-600 dark:text-amber-400">
-              No product URL saved. Create a new project from your product URL to start AutoScale.
+              No product URL saved. Create a new project from your product URL to start AutoScale Shorts.
             </span>
           )}
         </div>
@@ -172,7 +172,7 @@ export default async function GrowthIndex({ params }: GrowthIndexProps) {
         <div>
           <h2 className="text-sm font-semibold">Start a Growth Run</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            AutoScale runs end to end: brief, discovery, trend hops, video production, and scheduling.
+            AutoScale Shorts runs end to end: brief, discovery, trend hops, video production, and scheduling.
           </p>
           {!ffmpegHealth.available ? (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">

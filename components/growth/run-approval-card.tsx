@@ -34,7 +34,7 @@ export function RunApprovalCard({
       if (result.status === "awaiting_user_input") {
         toast.info("Paused again for your review.");
       } else {
-        toast.success("Continuing AutoScale run…");
+        toast.success("Continuing AutoScale Shorts run…");
       }
       window.location.reload();
     });

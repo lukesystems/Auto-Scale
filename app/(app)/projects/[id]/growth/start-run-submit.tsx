@@ -22,7 +22,7 @@ export function StartRunSubmit({ disabled = false }: { disabled?: boolean }) {
         aria-live="polite"
         className="text-xs text-muted-foreground"
       >
-        {pending ? "This run is saved. AutoScale will open its review when processing finishes." : ""}
+        {pending ? "This run is saved. AutoScale Shorts will open its review when processing finishes." : ""}
       </span>
     </div>
   );

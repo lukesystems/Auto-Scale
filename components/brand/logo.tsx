@@ -46,7 +46,7 @@ export function Logo({ className, showWordmark = true, href = "/", size = "md" }
       <LogoMark className={markSize} />
       {showWordmark && (
         <span className={cn("font-display", textSize)}>
-          Auto<span className="text-primary">Scale</span>
+          AutoScale<span className="text-primary">Shorts</span>
         </span>
       )}
     </span>

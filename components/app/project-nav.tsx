@@ -49,7 +49,7 @@ function buildGroups(activeRunId?: string | null): NavGroup[] {
     },
     {
       id: "autoscale",
-      label: "AutoScale",
+      label: "AutoScale Shorts",
       items: [
         { key: "growth", href: runHref, label: "Active Run", icon: Rocket },
         { key: "growth-results", href: "/growth/results", label: "Growth Graph", icon: TrendingUp },

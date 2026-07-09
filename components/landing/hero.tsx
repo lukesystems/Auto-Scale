@@ -30,7 +30,7 @@ export function Hero() {
           </h1>
 
           <p className="mt-7 max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground text-balance leading-relaxed">
-            Most founders burn months posting into the void. Paste your product URL — AutoScale studies what&apos;s
+            Most founders burn months posting into the void. Paste your product URL — AutoScale Shorts studies what&apos;s
             already working in your niche, ships controlled video experiments, measures signups, and compounds the
             winners.
           </p>
@@ -105,7 +105,7 @@ function HeroVideoFan() {
             <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
           </div>
-          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscale.app / growth-run / acme-saas</div>
+          <div className="ml-3 text-xs font-mono text-muted-foreground">autoscaleshorts.com / growth-run / acme-saas</div>
           <div className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-primary">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />

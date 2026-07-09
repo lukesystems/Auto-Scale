@@ -54,7 +54,7 @@ export function Comparison() {
             A growth engine, not a generator.
           </h2>
           <p className="mt-5 text-base text-muted-foreground text-balance md:text-lg">
-            Generic AI video tools stop at output. Content calendars stop at scheduling. AutoScale runs the full loop.
+            Generic AI video tools stop at output. Content calendars stop at scheduling. AutoScale Shorts runs the full loop.
           </p>
         </div>
 
@@ -70,7 +70,7 @@ export function Comparison() {
                   Content calendar
                 </th>
                 <th className="pb-4 pl-3 text-xs font-semibold uppercase tracking-wider text-primary">
-                  AutoScale
+                  AutoScale Shorts
                 </th>
               </tr>
             </thead>

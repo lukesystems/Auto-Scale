@@ -19,11 +19,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   title: {
-    default: "AutoScale — Find the video format that brings users",
-    template: "%s · AutoScale",
+    default: "AutoScale Shorts — Find the video format that brings users",
+    template: "%s · AutoScale Shorts",
   },
   description:
-    "Paste your product URL. AutoScale studies proven short-form patterns, ships controlled video experiments, tracks signups, and compounds the winners.",
+    "Paste your product URL. AutoScale Shorts studies proven short-form patterns, ships controlled video experiments, tracks signups, and compounds the winners.",
   keywords: [
     "video growth engine",
     "short-form video for founders",
@@ -35,16 +35,16 @@ export const metadata: Metadata = {
     "indie hacker distribution",
     "autonomous video marketing",
   ],
-  authors: [{ name: "AutoScale" }],
+  authors: [{ name: "AutoScale Shorts" }],
   openGraph: {
-    title: "AutoScale — Autonomous Video Growth Engine for Founders",
+    title: "AutoScale Shorts — Autonomous Video Growth Engine for Founders",
     description:
       "Paste your URL. Hop viral trends. Ship an exploration batch of short-form videos. Compound the winners into variants.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AutoScale — Autonomous video growth for founders",
+    title: "AutoScale Shorts — Autonomous video growth for founders",
     description:
       "Ship the short-form videos that actually bring users. Trend hop, experiment, compound winners.",
   },

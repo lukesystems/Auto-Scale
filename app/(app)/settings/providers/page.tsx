@@ -47,7 +47,7 @@ export default async function ProvidersSettingsPage() {
         title="Provider settings"
         description={
           isManagedMode(mode)
-            ? "Managed Mode: AutoScale handles the technical setup. You do not need API keys."
+            ? "Managed Mode: AutoScale Shorts handles the technical setup. You do not need API keys."
             : "Advanced Mode: Bring your own OpenRouter, Post Bridge, or media provider keys. Recommended only for technical users."
         }
         badge={
@@ -93,7 +93,7 @@ export default async function ProvidersSettingsPage() {
             <StatusRow label="Configured" ok={status.publishing.configured} />
             {isManagedMode(mode) ? (
               <p className="text-sm text-muted-foreground">
-                Managed by AutoScale — no API key required in the UI.
+                Managed by AutoScale Shorts — no API key required in the UI.
               </p>
             ) : (
               <Button asChild variant="outline" size="sm">

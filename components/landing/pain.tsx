@@ -53,7 +53,7 @@ export function Pain() {
 
         <div className="mx-auto mt-10 grid max-w-5xl gap-4 md:grid-cols-2">
           <ComparisonCard title="What founders actually face" items={FOUNDER_PAIN} negative />
-          <ComparisonCard title="What AutoScale does instead" items={AUTOSCALE_ANSWER} />
+          <ComparisonCard title="What AutoScale Shorts does instead" items={AUTOSCALE_ANSWER} />
         </div>
       </div>
     </section>

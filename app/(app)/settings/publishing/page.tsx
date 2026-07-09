@@ -37,7 +37,7 @@ export default async function PublishingSettingsPage() {
         title="Post Bridge connection"
         description={
           isManagedMode(mode)
-            ? "Managed Mode uses AutoScale's Post Bridge integration. You do not need to enter an API key."
+            ? "Managed Mode uses AutoScale Shorts' Post Bridge integration. You do not need to enter an API key."
             : "Connect Post Bridge to publish approved videos directly to your scheduler."
         }
         badge={
@@ -45,16 +45,16 @@ export default async function PublishingSettingsPage() {
             <span
               className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-success animate-pulse-soft" : "bg-muted-foreground"}`}
             />
-            {connected ? (isManagedMode(mode) ? "Managed by AutoScale" : "Connected") : "Not connected"}
+            {connected ? (isManagedMode(mode) ? "Managed by AutoScale Shorts" : "Connected") : "Not connected"}
           </Badge>
         }
       />
 
       {isManagedMode(mode) ? (
         <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-          <h3 className="font-semibold">Managed by AutoScale</h3>
+          <h3 className="font-semibold">Managed by AutoScale Shorts</h3>
           <p className="text-sm text-muted-foreground">
-            Post Bridge scheduling runs through AutoScale-managed server credentials. No API key is stored in your
+            Post Bridge scheduling runs through AutoScale Shorts-managed server credentials. No API key is stored in your
             account or shown in the browser.
           </p>
           <div className="text-sm space-y-1">

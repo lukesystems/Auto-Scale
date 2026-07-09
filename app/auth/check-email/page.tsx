@@ -14,7 +14,7 @@ export default function CheckEmailPage({ searchParams }: { searchParams: { next?
       </div>
       <h1 className="mt-5 font-display text-2xl font-semibold tracking-tight">Check your email</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        We just sent you a confirmation link. Click it to finish creating your account, then AutoScale will reopen
+        We just sent you a confirmation link. Click it to finish creating your account, then AutoScale Shorts will reopen
         project creation with your product URL saved.
       </p>
       <Button asChild variant="outline" className="mt-6">

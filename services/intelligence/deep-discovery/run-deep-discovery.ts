@@ -7,6 +7,7 @@ import {
 } from "../discovery/dedupe-candidates";
 import { enrichCandidates, type EnrichedCandidate } from "../discovery/enrich-candidate";
 import { normalizeCoverageResults, searchWithCoverage } from "../discovery/search-coverage";
+import { mapWithConcurrency } from "../util/map-with-concurrency";
 import {
   buildScoringContextFromDiscovery,
   scoreCandidates,
@@ -26,6 +27,37 @@ const MAX_ROUNDS = 4;
 const MAX_RESULTS_PER_QUERY = 10;
 const MAX_TOTAL_CANDIDATES = 60;
 const MAX_DIGEST_LINES = 40;
+/** Cap native X calls per run — Apify is pay-per-result, this is a safety net on top of the reasoner's own judgment. */
+const MAX_FORCED_X_QUERIES_PER_RUN = 4;
+
+/**
+ * The reasoner is instructed to tag platform_hint: "x" on creator/distribution/
+ * shadow_account queries, but two things make that unreliable in practice:
+ * the model doesn't always remember the tag, AND it doesn't reliably use the
+ * intent labels we'd want to gate on either (a query that reads exactly like
+ * the X example in the prompt — e.g. "Jira alternative OR switched" — has
+ * come back tagged "alternative" or "pain" instead of "distribution").
+ * A generic-web-search query with no platform hint returns text snippets
+ * with zero engagement data, which is the single biggest driver of
+ * "generic-feeling" strategy output. Rather than trust either the tag or the
+ * intent label, force the first few platform-agnostic queries per round onto
+ * X directly — any query that isn't already earmarked for another platform is
+ * a reasonable X candidate (founder/creator sentiment shows up on X across
+ * nearly every intent: competitor, pain, alternative, comparison, etc).
+ */
+function applyXRoutingFallback(queries: DiscoveryQuery[], budgetRemaining: number): DiscoveryQuery[] {
+  if (budgetRemaining <= 0) return queries;
+  const platformNamePattern = /tiktok|instagram|reddit|youtube|linkedin|g2\.com|capterra|site:/i;
+  let forced = 0;
+
+  return queries.map((query) => {
+    if (query.platform_hint || forced >= budgetRemaining) return query;
+    if (query.intent === "community" || query.intent === "platform") return query;
+    if (platformNamePattern.test(query.query)) return query;
+    forced += 1;
+    return { ...query, platform_hint: "x" };
+  });
+}
 
 export interface RunDeepDiscoveryInput {
   projectId: string;
@@ -118,6 +150,7 @@ export async function runDeepDiscovery(
   const intentsByQuery = new Map<string, DiscoveryQuery["intent"]>();
 
   let roundsRun = 0;
+  let forcedXBudget = MAX_FORCED_X_QUERIES_PER_RUN;
 
   for (let round = 1; round <= maxRounds; round++) {
     if (gathered.length >= MAX_TOTAL_CANDIDATES) break;
@@ -136,19 +169,33 @@ export async function runDeepDiscovery(
       if (h && !hypotheses.includes(h)) hypotheses.push(h);
     }
 
-    let roundNewCandidates = 0;
+    const routedQueries = applyXRoutingFallback(action.next_queries, forcedXBudget);
+    forcedXBudget -= routedQueries.filter(
+      (q, i) => q.platform_hint === "x" && action.next_queries[i]?.platform_hint !== "x"
+    ).length;
 
-    for (const query of action.next_queries) {
-      if (gathered.length >= MAX_TOTAL_CANDIDATES) break;
-
+    // Dedupe/bookkeep synchronously first, then fire the actual searches in
+    // parallel — the queries in a round are independent, no reason to pay
+    // their network latency serially (this was ~5 sequential calls/round).
+    const queriesToRun: DiscoveryQuery[] = [];
+    for (const query of routedQueries) {
       const key = query.query.trim().toLowerCase();
       if (!key || ranQueryKeys.has(key)) continue;
       ranQueryKeys.add(key);
       ranQueries.push(query.query);
       allQueryObjects.push(query);
       intentsByQuery.set(query.query, query.intent);
+      queriesToRun.push(query);
+    }
 
-      const coverage = await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY);
+    let roundNewCandidates = 0;
+    const roundResults = await mapWithConcurrency(queriesToRun, 4, async (query) => ({
+      query,
+      coverage: await searchWithCoverage(query.query, MAX_RESULTS_PER_QUERY, query.platform_hint ?? null),
+    }));
+
+    for (const { query, coverage } of roundResults) {
+      if (gathered.length >= MAX_TOTAL_CANDIDATES) break;
       for (const adapter of coverage.adaptersUsed) adaptersUsed.add(adapter);
 
       const batch = normalizeCoverageResults({
@@ -217,6 +264,9 @@ export async function runDeepDiscovery(
             discoveryReason: candidate.discoveryReason,
             relevanceScore: candidate.relevanceScore,
             enrichStatus: candidate.enrichStatus,
+            accountType: candidate.accountType ?? null,
+            engagement: candidate.engagement ?? null,
+            postedAt: candidate.postedAt ?? null,
             metadata: buildCandidateSaveMetadata(candidate, quality),
           };
         })

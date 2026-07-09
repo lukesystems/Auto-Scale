@@ -1,4 +1,4 @@
-export const metadata = { title: "Privacy Policy · AutoScale" };
+export const metadata = { title: "Privacy Policy · AutoScale Shorts" };
 
 const LAST_UPDATED = "July 8, 2026";
 
@@ -9,7 +9,7 @@ export default function PrivacyPage() {
       <p className="text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
       <p>
-        This policy explains what data AutoScale (autoscaleshorts.com) collects and how
+        This policy explains what data AutoScale Shorts (autoscaleshorts.com) collects and how
         it is used.
       </p>
 

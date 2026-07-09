@@ -1,4 +1,4 @@
-export const metadata = { title: "Terms of Service · AutoScale" };
+export const metadata = { title: "Terms of Service · AutoScale Shorts" };
 
 const LAST_UPDATED = "July 8, 2026";
 
@@ -9,7 +9,7 @@ export default function TermsPage() {
       <p className="text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
       <p>
-        These Terms of Service (&quot;Terms&quot;) govern your use of AutoScale
+        These Terms of Service (&quot;Terms&quot;) govern your use of AutoScale Shorts
         (autoscaleshorts.com), a short-form video growth intelligence service
         (&quot;the Service&quot;). By creating an account or using the Service you agree
         to these Terms.
@@ -17,7 +17,7 @@ export default function TermsPage() {
 
       <h2>1. The Service</h2>
       <p>
-        AutoScale analyzes your product website and public market signals to generate
+        AutoScale Shorts analyzes your product website and public market signals to generate
         content strategy, scripts, and short-form videos, and can schedule publishing to
         connected social accounts. Output quality depends on publicly available
         information about your product and market; results are not guaranteed.

@@ -151,7 +151,7 @@ export function StageGateCard({
       } else if (result.status === "awaiting_approval" && pausedAtPhase === "approval") {
         toast.success("Ready to schedule — review the posting plan below.");
       } else {
-        toast.success("Continuing AutoScale run…");
+        toast.success("Continuing AutoScale Shorts run…");
       }
       window.location.reload();
     });

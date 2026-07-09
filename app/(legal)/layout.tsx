@@ -6,7 +6,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       <header className="border-b border-border/40">
         <div className="container py-4">
           <Link href="/" className="font-display text-lg font-semibold">
-            Auto<span className="text-primary">Scale</span>
+            AutoScale<span className="text-primary">Shorts</span>
           </Link>
         </div>
       </header>

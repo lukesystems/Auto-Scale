@@ -19,7 +19,7 @@ export function GrowthLoop({
 }) {
   return (
     <ol
-      aria-label="AutoScale growth loop"
+      aria-label="AutoScale Shorts growth loop"
       className={cn(
         "flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-center",
         className

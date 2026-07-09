@@ -95,7 +95,7 @@ export function NewProjectForm({
         setStage("growth");
       });
 
-      toast.success("Project created — starting AutoScale run…");
+      toast.success("Project created — starting AutoScale Shorts run…");
       onSuccess?.();
       router.push(
         `/projects/${begin.projectId}/growth/${begin.growthRunId}?autoExecute=1`
@@ -111,7 +111,7 @@ export function NewProjectForm({
         autobriefProgress={autobriefProgress}
         growthProgress={growthProgress}
         brief={null}
-        title="Starting AutoScale…"
+        title="Starting AutoScale Shorts…"
         subtitle="Understanding your product, discovering evidence, and producing your first video experiments."
       />
     );
@@ -161,7 +161,7 @@ export function NewProjectForm({
           variant="glow"
         >
           {isBootstrapping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Start AutoScale
+          Start AutoScale Shorts
         </Button>
       </div>
     </form>

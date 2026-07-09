@@ -14,7 +14,7 @@ interface AutoBriefProgressPanelProps {
 export function AutoBriefProgressPanel({
   progress,
   title = "Analyzing your product…",
-  subtitle = "AutoScale is reading your site and extracting product signals in real time.",
+  subtitle = "AutoScale Shorts is reading your site and extracting product signals in real time.",
   showSlowHint = false,
 }: AutoBriefProgressPanelProps) {
   const events = progress?.events ?? [];

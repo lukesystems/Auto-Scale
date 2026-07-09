@@ -52,7 +52,7 @@ export function ProjectDiscoveryPanel({
         </div>
         <p className="text-sm text-muted-foreground">{brief.one_line_description || brief.product_summary}</p>
         <p className="text-xs text-muted-foreground">
-          Saved internally — this is what AutoScale learned about your product.
+          Saved internally — this is what AutoScale Shorts learned about your product.
         </p>
       </header>
 

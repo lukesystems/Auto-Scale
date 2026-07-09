@@ -5,6 +5,7 @@ import type { Json } from "@/lib/supabase/types";
 import { estimateDistortionRisk } from "@/services/trendwatch/scoring";
 import { loadLatestDeepDiscoverySynthesis } from "../deep-discovery/load-latest-synthesis";
 import { searchWithCoverage } from "../discovery/search-coverage";
+import { mapWithConcurrency } from "../util/map-with-concurrency";
 import { saveSourceCandidates } from "../memory/save-source-candidates";
 import {
   detectCTA,
@@ -303,10 +304,15 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
   }).select("id").single();
   if (runError || !run) throw new Error(runError?.message ?? "Failed to start video discovery.");
 
+  // Queries are independent — search them concurrently instead of one at a
+  // time (up to MAX_QUERIES=12 sequential network round-trips otherwise).
   const adapters = new Set<string>();
   const hits: SearchHit[] = [];
-  for (const query of queries) {
-    const coverage = await searchWithCoverage(query.query, RESULTS_PER_QUERY);
+  const queryResults = await mapWithConcurrency(queries, 4, async (query) => ({
+    query,
+    coverage: await searchWithCoverage(query.query, RESULTS_PER_QUERY),
+  }));
+  for (const { query, coverage } of queryResults) {
     coverage.adaptersUsed.forEach((adapter) => adapters.add(adapter));
     for (const hit of coverage.results) {
       if (!isSupportedPublicVideoUrl(hit.url)) continue;
@@ -320,7 +326,6 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
         score: hit.coverageScore,
       });
     }
-    if (hits.length >= EXTRACTION_CAP) break;
   }
 
   const keywords = briefKeywords(brief);
@@ -360,8 +365,8 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
     .eq("discovery_run_id", run.id);
   const candidateIdByUrl = new Map((savedCandidates ?? []).map((candidate) => [candidate.canonical_url, candidate.id]));
 
-  let saved = 0;
-  for (const candidate of candidates) {
+  // Independent inserts — save concurrently instead of one row at a time.
+  const saveResults = await mapWithConcurrency(candidates, 5, async (candidate) => {
     const sourceCandidateId = candidateIdByUrl.get(canonicalizeVideoUrl(candidate.hit.url)) ?? null;
     try {
       await saveVideoEvidence({
@@ -370,16 +375,18 @@ export async function discoverVideoEvidence(projectId: string): Promise<{
         sourceCandidateId,
         briefKeywords: keywords,
       });
-      saved += 1;
       if (sourceCandidateId) {
         await supabase.from("source_candidates").update({
           enrich_status: candidate.evidence.fetchStatus === "success" ? "enriched" : "failed",
         }).eq("id", sourceCandidateId);
       }
+      return true;
     } catch {
       if (sourceCandidateId) await supabase.from("source_candidates").update({ enrich_status: "failed" }).eq("id", sourceCandidateId);
+      return false;
     }
-  }
+  });
+  const saved = saveResults.filter(Boolean).length;
 
   const status = saved === candidates.length ? "success" : saved > 0 ? "partial" : "failed";
   await supabase.from("source_discovery_runs").update({
@@ -397,21 +404,19 @@ async function rankExtractedCandidates(
   hits: SearchHit[],
   competitorNames: string[],
 ): Promise<RankedCandidate[]> {
-  const ranked: RankedCandidate[] = [];
-
-  for (const hit of hits) {
-    const extracted = await extractVideoEvidence(hit.url);
-    const evidence = enrichNadiaEvidence(extracted, hit, competitorNames);
+  // Each hit's page fetch/extraction is independent network work.
+  const extracted = await mapWithConcurrency(hits, 5, async (hit) => {
+    const evidence = enrichNadiaEvidence(await extractVideoEvidence(hit.url), hit, competitorNames);
     const rank = rankNadiaVideoCandidate({
       evidence,
       score: hit.score,
       competitorNames,
       snippet: hit.snippet,
     });
-    if (rank === -Infinity) continue;
-    ranked.push({ hit, evidence, rank });
-  }
+    return { hit, evidence, rank };
+  });
 
+  const ranked = extracted.filter((item) => item.rank !== -Infinity);
   ranked.sort((left, right) => right.rank - left.rank);
   return ranked;
 }

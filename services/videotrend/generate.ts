@@ -203,32 +203,44 @@ export async function generateVideoTrendReport(opts: {
   }
 
   const evidenceVideoIds = evidence.slice(0, 40).map((e) => e.id);
-  const { data, error } = await supabase
-    .from("video_trend_reports")
-    .insert({
-      growth_run_id: opts.growthRunId,
-      project_id: opts.projectId,
-      winning_structures: result.winning_structures as never,
-      hook_patterns: result.hook_patterns as never,
-      opening_frames: result.opening_frames as never,
-      cta_patterns: result.cta_patterns as never,
-      audience_language: result.audience_language as never,
-      platform_patterns: result.platform_patterns as never,
-      recommended_experiments: result.recommended_experiments as never,
-      competitor_gaps: result.competitor_gaps as never,
-      repurposable_formats: result.repurposable_formats as never,
-      evidence_video_ids: evidenceVideoIds as never,
-      confidence: result.confidence,
-      raw_output: {
-        text: raw,
-        low_confidence_evidence: opts.lowConfidenceEvidence ?? false,
-        evidence_count: opts.evidenceCount ?? evidencePackets.length,
-        hook_validation: hookValidation ?? null,
-      } as never,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`video_trend_reports insert failed: ${error.message}`);
+  const insertRow = {
+    growth_run_id: opts.growthRunId,
+    project_id: opts.projectId,
+    winning_structures: result.winning_structures as never,
+    hook_patterns: result.hook_patterns as never,
+    opening_frames: result.opening_frames as never,
+    cta_patterns: result.cta_patterns as never,
+    audience_language: result.audience_language as never,
+    platform_patterns: result.platform_patterns as never,
+    recommended_experiments: result.recommended_experiments as never,
+    competitor_gaps: result.competitor_gaps as never,
+    repurposable_formats: result.repurposable_formats as never,
+    evidence_video_ids: evidenceVideoIds as never,
+    confidence: result.confidence,
+    raw_output: {
+      text: raw,
+      low_confidence_evidence: opts.lowConfidenceEvidence ?? false,
+      evidence_count: opts.evidenceCount ?? evidencePackets.length,
+      hook_validation: hookValidation ?? null,
+    } as never,
+  };
 
-  return { report: result, evidenceVideoIds, recordId: data!.id, hookValidation };
+  // The report is the product of an expensive multi-model phase; do not let a
+  // transient network blip to Supabase discard it. Retry fetch-level failures.
+  let lastMessage = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await supabase
+      .from("video_trend_reports")
+      .insert(insertRow)
+      .select("id")
+      .single();
+    if (!error) {
+      return { report: result, evidenceVideoIds, recordId: data!.id, hookValidation };
+    }
+    lastMessage = error.message;
+    const transient = /fetch failed|ECONNRESET|ETIMEDOUT|522|network/i.test(lastMessage);
+    if (!transient || attempt === 3) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+  }
+  throw new Error(`video_trend_reports insert failed: ${lastMessage}`);
 }

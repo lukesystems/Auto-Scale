@@ -34,7 +34,7 @@ export function SchedulePreviewPanel({
       <header>
         <h2 className="text-sm font-semibold">Schedule preview</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Review exactly what AutoScale will post before sending to {providerLabel}.
+          Review exactly what AutoScale Shorts will post before sending to {providerLabel}.
         </p>
       </header>
       <ul className="space-y-3">

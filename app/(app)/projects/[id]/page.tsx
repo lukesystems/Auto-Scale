@@ -82,7 +82,7 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
               <div className="mt-6 flex flex-wrap gap-2">
                 <SignalPill label="Brief" done={briefOk} />
                 <SignalPill
-                  label="AutoScale run"
+                  label="AutoScale Shorts run"
                   done={
                     stats.growthRunCompletedCount > 0 ||
                     stats.growthVideoReadyCount > 0 ||
@@ -133,7 +133,7 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
                     stats.growthVideoReadyCount > 0 ||
                     Boolean(activeRun.data?.id)
                   }
-                  label="AutoScale run"
+                  label="AutoScale Shorts run"
                   href={next.href}
                 />
                 <PipelineRow done={stats.winnerCount > 0} label="Winner(s) detected" href={`/projects/${params.id}/growth/winners`} />
@@ -156,7 +156,7 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
                 {activeRun.data?.id
-                  ? "AutoScale is running or waiting for your review. Open the run to see progress, evidence, and videos."
+                  ? "AutoScale Shorts is running or waiting for your review. Open the run to see progress, evidence, and videos."
                   : "Start a new run from the Growth hub or create a project from your product URL."}
               </p>
             </div>

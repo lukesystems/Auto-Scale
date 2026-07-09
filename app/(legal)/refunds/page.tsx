@@ -1,4 +1,4 @@
-export const metadata = { title: "Refund Policy · AutoScale" };
+export const metadata = { title: "Refund Policy · AutoScale Shorts" };
 
 const LAST_UPDATED = "July 8, 2026";
 
@@ -10,7 +10,7 @@ export default function RefundsPage() {
 
       <h2>Subscriptions</h2>
       <p>
-        If AutoScale did not work for you, email us within 14 days of your first payment
+        If AutoScale Shorts did not work for you, email us within 14 days of your first payment
         and we will refund it in full — no questions beyond what helps us fix the
         problem. Renewal payments are refundable within 72 hours of the charge if no
         credits from the new cycle have been spent.

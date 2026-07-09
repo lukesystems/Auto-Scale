@@ -43,7 +43,7 @@ export function RunPageAutoExecutor({
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
       <div className="flex items-center gap-3 min-w-0">
         <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-        <span>Starting AutoScale run — progress updates live below.</span>
+        <span>Starting AutoScale Shorts run — progress updates live below.</span>
       </div>
       <CancelGrowthRunButton
         projectId={projectId}

@@ -16,7 +16,7 @@ export default function SignUpPage({ searchParams }: { searchParams: { url?: str
       <p className="mt-1.5 text-sm text-muted-foreground">
         {productUrl
           ? "Create an account — we'll open your project with your product URL pre-filled."
-          : "No onboarding form. AutoScale reads your site and builds your Product Brief automatically."}
+          : "No onboarding form. AutoScale Shorts reads your site and builds your Product Brief automatically."}
       </p>
 
       {productUrl ? (

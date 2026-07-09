@@ -23,7 +23,7 @@ export function Differentiation() {
             If you&apos;d rather debug distribution than dance on TikTok — this is for you.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base text-muted-foreground text-balance md:text-lg">
-            AutoScale is not a content tool for marketers. It&apos;s a growth engine for founders who measure signups,
+            AutoScale Shorts is not a content tool for marketers. It&apos;s a growth engine for founders who measure signups,
             not impressions.
           </p>
         </div>

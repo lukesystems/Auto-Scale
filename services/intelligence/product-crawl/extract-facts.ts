@@ -3,6 +3,7 @@ import { classifyPage } from "./classify-page";
 import { llmClassifyPage, llmExtractPageFacts } from "./llm-extract";
 import { pageFactsToProductFacts } from "./llm-facts-mapper";
 import type { CrawlMode } from "./get-crawl-mode";
+import { mapWithConcurrency } from "../util/map-with-concurrency";
 
 const PRICING_PATTERN = /(\$\d+[\d,]*(?:\.\d{2})?|\d+\s*(?:\/\s*)?(?:month|mo|year|yr)|free plan|enterprise plan|per user|per seat)/i;
 
@@ -145,18 +146,13 @@ export async function classifyAndExtractFactsAsync(
   }
 
   const homepageNormalized = normalizeUrl(homepageUrl);
-  const results: Array<{
-    page: CrawledPageContent;
-    pageType: ProductPageType;
-    facts: ProductSiteFact[];
-    relevance?: number;
-  }> = [];
+  // Pages are independent — classify/extract in parallel instead of one at a
+  // time. This was the single largest contributor to AutoBrief's ~3min runtime.
+  const PAGE_CONCURRENCY = 4;
 
-  for (let index = 0; index < pages.length; index += 1) {
-    const page = pages[index];
+  const results = await mapWithConcurrency(pages, PAGE_CONCURRENCY, async (page, index) => {
     if (page.fetchStatus !== "success") {
-      results.push({ page, pageType: "other", facts: [] });
-      continue;
+      return { page, pageType: "other" as ProductPageType, facts: [] as ProductSiteFact[] };
     }
 
     const isHomepage = normalizeUrl(page.finalUrl || page.url) === homepageNormalized;
@@ -193,7 +189,6 @@ export async function classifyAndExtractFactsAsync(
     }
 
     const facts = dedupeFacts([...heuristicFacts, ...llmFacts]);
-    results.push({ page, pageType, facts, relevance });
 
     await opts.onPageExtracted?.({
       url: sourceUrl,
@@ -202,7 +197,9 @@ export async function classifyAndExtractFactsAsync(
       index,
       total: pages.length,
     });
-  }
+
+    return { page, pageType, facts, relevance };
+  });
 
   return results;
 }

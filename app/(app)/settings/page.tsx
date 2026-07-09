@@ -111,7 +111,7 @@ export default async function SettingsPage() {
 
               {isManagedMode(mode)
 
-                ? "AutoScale handles the technical setup. You do not need API keys."
+                ? "AutoScale Shorts handles the technical setup. You do not need API keys."
 
                 : "Bring your own OpenRouter, Post Bridge, or media provider keys. Recommended only for technical users."}
 
@@ -152,7 +152,7 @@ export default async function SettingsPage() {
       <section className="rounded-xl border border-border bg-card p-6">
         <h3 className="font-semibold tracking-tight">Run approval</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Controls when AutoScale pauses during a run and waits for you to continue.
+          Controls when AutoScale Shorts pauses during a run and waits for you to continue.
         </p>
         <div className="mt-4">
           <ApprovalPolicyToggle currentPolicy={approvalPolicy} />
@@ -226,7 +226,7 @@ export default async function SettingsPage() {
 
               {isManagedMode(mode)
 
-                ? "Scheduling uses AutoScale-managed Post Bridge credentials in Managed Mode."
+                ? "Scheduling uses AutoScale Shorts-managed Post Bridge credentials in Managed Mode."
 
                 : "Connect Post Bridge to push approved posts to your scheduler."}
 

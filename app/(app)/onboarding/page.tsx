@@ -11,7 +11,7 @@ export default async function OnboardingPage() {
     return (
       <div className="container py-10 max-w-2xl">
         <PageHeader
-          title="Welcome to AutoScale"
+          title="Welcome to AutoScale Shorts"
           description="Configure Supabase to enable onboarding. You can still browse projects in preview mode."
         />
       </div>
@@ -33,7 +33,7 @@ export default async function OnboardingPage() {
     <div className="container py-10 max-w-6xl animate-fade-in">
       <PageHeader
         title="Paste your product URL. Start cracking distribution."
-        description="AutoScale will understand your product, find the video formats worth testing, and prepare your first Growth Run."
+        description="AutoScale Shorts will understand your product, find the video formats worth testing, and prepare your first Growth Run."
         actions={<SkipOnboardingButton />}
       />
       <div className="mt-8 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-6 md:p-8 shadow-lg shadow-primary/5">

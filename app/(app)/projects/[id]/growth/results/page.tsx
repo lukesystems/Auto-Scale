@@ -19,7 +19,7 @@ export default async function GrowthResultsPage({ params }: PageProps) {
         </Link>
         <h1 className="text-2xl font-semibold mt-2">Growth Graph</h1>
         <p className="text-sm text-muted-foreground">
-          What brought users, what worked, and what AutoScale recommends next.
+          What brought users, what worked, and what AutoScale Shorts recommends next.
         </p>
       </header>
 

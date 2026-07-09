@@ -10,7 +10,7 @@ export default function SignInPage({ searchParams }: { searchParams: { next?: st
       <Badge variant="outline" className="mb-4 border-primary/30 bg-primary/5 text-primary text-[10px]">
         Welcome back
       </Badge>
-      <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in to AutoScale</h1>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in to AutoScale Shorts</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
         Your winners are waiting to compound. Pick up where you left off.
       </p>

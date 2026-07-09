@@ -76,7 +76,13 @@ export function Footer() {
 
             <ul className="space-y-2 text-sm text-muted-foreground">
 
-              <li><a href="mailto:support@autoscaleshorts.com" className="hover:text-foreground">support@autoscaleshorts.com</a></li>
+              <li><a href="mailto:support@autoscaleshorts.com" className="hover:text-foreground">Support</a></li>
+
+              {process.env.NEXT_PUBLIC_DISCORD_INVITE && (
+
+                <li><a href={process.env.NEXT_PUBLIC_DISCORD_INVITE} target="_blank" rel="noreferrer" className="hover:text-foreground">Join our Discord</a></li>
+
+              )}
 
               <li><Link href="/terms" className="hover:text-foreground">Terms of Service</Link></li>
 
@@ -94,7 +100,7 @@ export function Footer() {
 
         <div className="mt-12 pt-6 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
 
-          <div>© {new Date().getFullYear()} AutoScale. Built for builders who ship.</div>
+          <div>© {new Date().getFullYear()} AutoScale Shorts. Built for builders who ship.</div>
 
           <div className="font-mono">
 

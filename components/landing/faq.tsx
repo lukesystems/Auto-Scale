@@ -6,16 +6,16 @@ import { cn } from "@/lib/utils";
 
 const FAQS_BEFORE = [
   {
-    q: "Does AutoScale actually post the videos?",
+    q: "Does AutoScale Shorts actually post the videos?",
     a: "Yes. Approved videos can be scheduled and posted through Post Bridge to your connected TikTok, YouTube Shorts, and Instagram Reels accounts.",
   },
   {
     q: "What if my first batch flops?",
-    a: "That's expected — and it's the whole point of the exploration batch. AutoScale's classifier turns flat or failing videos into learnings, while winners get compounded into variant batches. The system is designed to learn from failure, not be defeated by it.",
+    a: "That's expected — and it's the whole point of the exploration batch. AutoScale Shorts' classifier turns flat or failing videos into learnings, while winners get compounded into variant batches. The system is designed to learn from failure, not be defeated by it.",
   },
   {
     q: "How is this different from ChatGPT + CapCut?",
-    a: "Generic video tools start with a blank prompt and stop at an output. AutoScale starts with your product and today's trends, runs videos as experiments, measures what worked, and compounds the winners. It's a growth engine, not a generator.",
+    a: "Generic video tools start with a blank prompt and stop at an output. AutoScale Shorts starts with your product and today's trends, runs videos as experiments, measures what worked, and compounds the winners. It's a growth engine, not a generator.",
   },
   {
     q: "Is this spammy autopilot?",
@@ -26,7 +26,7 @@ const FAQS_BEFORE = [
 const FAQS_AFTER = [
   {
     q: "Do I need to be on camera?",
-    a: "No. AutoScale supports multiple production modes — including reference-remix and trend-style videos that don't require your face. Founder-POV is an option, not a requirement.",
+    a: "No. AutoScale Shorts supports multiple production modes — including reference-remix and trend-style videos that don't require your face. Founder-POV is an option, not a requirement.",
   },
   {
     q: "How does it know what's trending?",
@@ -42,11 +42,11 @@ const FAQS_AFTER = [
   },
   {
     q: "Can I use my own AI provider?",
-    a: "Yes. AutoScale uses a model abstraction across supported providers and OpenRouter-style routing. Configure once in settings — you should never be locked to one model.",
+    a: "Yes. AutoScale Shorts uses a model abstraction across supported providers and OpenRouter-style routing. Configure once in settings — you should never be locked to one model.",
   },
   {
     q: "What about LinkedIn carousels or X threads?",
-    a: "Deprecated. AutoScale used to ship a text/carousel content loop and we cut it. Short-form video is where founder distribution lives right now, and we'd rather build one engine extremely well than five mediocre ones.",
+    a: "Deprecated. AutoScale Shorts used to ship a text/carousel content loop and we cut it. Short-form video is where founder distribution lives right now, and we'd rather build one engine extremely well than five mediocre ones.",
   },
 ];
 

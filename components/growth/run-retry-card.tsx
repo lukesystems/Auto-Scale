@@ -29,7 +29,7 @@ export function RunRetryCard({
       if (result.status === "awaiting_user_input") {
         toast.info("Paused again for your review.");
       } else {
-        toast.success("Retrying AutoScale run…");
+        toast.success("Retrying AutoScale Shorts run…");
       }
       window.location.reload();
     });

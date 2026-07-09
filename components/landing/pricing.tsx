@@ -64,7 +64,7 @@ const PLANS = [
 const ANCHORS = [
   { label: "Freelance UGC creator", value: "$3–5k/mo" },
   { label: "Growth agency retainer", value: "$8k+/mo" },
-  { label: "AutoScale Growth", value: "$149/mo", accent: true },
+  { label: "AutoScale Shorts Growth", value: "$149/mo", accent: true },
 ];
 
 export function Pricing() {

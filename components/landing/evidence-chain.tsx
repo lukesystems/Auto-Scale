@@ -46,7 +46,7 @@ export function EvidenceChain() {
             Every video traces back to a source.
           </h2>
           <p className="mt-5 text-base text-muted-foreground text-balance md:text-lg">
-            AutoScale separates observed evidence from strategic inference. You always know why a hook exists
+            AutoScale Shorts separates observed evidence from strategic inference. You always know why a hook exists
             and what signal it is designed to test.
           </p>
         </div>

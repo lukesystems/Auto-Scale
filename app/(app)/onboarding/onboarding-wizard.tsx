@@ -120,7 +120,7 @@ export function OnboardingWizard({
             }}
           />
           <p className="text-xs text-muted-foreground">
-            AutoScale runs end to end: product brief, discovery, trend hops, video experiments, and scheduling.
+            AutoScale Shorts runs end to end: product brief, discovery, trend hops, video experiments, and scheduling.
           </p>
         </div>
 
@@ -133,7 +133,7 @@ export function OnboardingWizard({
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            Start AutoScale
+            Start AutoScale Shorts
           </Button>
         </div>
       </div>

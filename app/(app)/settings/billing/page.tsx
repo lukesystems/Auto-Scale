@@ -82,11 +82,23 @@ export default async function BillingSettingsPage() {
       />
 
       <p className="text-xs text-muted-foreground">
-        Questions? Email{" "}
+        Questions about billing?{" "}
         <a className="underline" href="mailto:support@autoscaleshorts.com">
           support@autoscaleshorts.com
         </a>
-        .
+        {process.env.NEXT_PUBLIC_DISCORD_INVITE ? (
+          <>
+            {" · "}
+            <a
+              className="underline"
+              href={process.env.NEXT_PUBLIC_DISCORD_INVITE}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Join our Discord
+            </a>
+          </>
+        ) : null}
       </p>
     </div>
   );

@@ -19,7 +19,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         <div className="space-y-8 max-w-md">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary">AutoScale</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary">AutoScale Shorts</p>
             <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight leading-tight">
               Find the format that brings users.
               <br />
@@ -55,7 +55,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <p className="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} AutoScale · Growth infrastructure for builders
+          © {new Date().getFullYear()} AutoScale Shorts · Growth infrastructure for builders
         </p>
       </div>
 
