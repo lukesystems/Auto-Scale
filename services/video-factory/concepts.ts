@@ -3,6 +3,7 @@ import "server-only";
 import { generateObject } from "@/services/ai/runtime";
 import { logAIRun } from "@/services/ai/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { withFetchRetry } from "@/lib/supabase/retry-insert";
 import {
   loadProductBrief,
   loadVideoPatterns,
@@ -265,33 +266,36 @@ export async function generateVideoConcepts(opts: {
       rankedEvidence
     );
     const fingerprintKey = createFingerprintKey(normalized);
-    const { data: fingerprint, error: fingerprintError } = await supabase
-      .from("format_fingerprints")
-      .insert({
-        project_id: opts.projectId,
-        growth_run_id: opts.growthRunId,
-        name: normalized.format_name,
-        fingerprint_key: fingerprintKey,
-        video_type: normalized.video_type,
-        platform: normalized.platform,
-        hook_mechanism: normalized.hook_mechanism,
-        visual_grammar: normalized.visual_grammar,
-        script_structure: normalized.script_structure as never,
-        cta_pattern: normalized.cta_pattern,
-        business_hypothesis: normalized.business_hypothesis,
-        transferability_score: normalized.transferability_score,
-        distortion_risk: normalized.distortion_risk,
-        confidence: normalized.confidence,
-        missing_evidence: normalized.missing_evidence as never,
-        evidence_video_ids: normalized.evidence_video_ids as never,
-        source_pattern_ids: normalized.source_pattern_ids as never,
-        status: "testing",
-      })
-      .select("id")
-      .single();
-    if (fingerprintError || !fingerprint) {
-      throw new Error(`format_fingerprints insert: ${fingerprintError?.message ?? "unknown"}`);
-    }
+    // This is the product of an expensive LLM formats call — don't let a
+    // transient network blip to Supabase discard the whole batch.
+    const fingerprint = await withFetchRetry(
+      () =>
+        supabase
+          .from("format_fingerprints")
+          .insert({
+            project_id: opts.projectId,
+            growth_run_id: opts.growthRunId,
+            name: normalized.format_name,
+            fingerprint_key: fingerprintKey,
+            video_type: normalized.video_type,
+            platform: normalized.platform,
+            hook_mechanism: normalized.hook_mechanism,
+            visual_grammar: normalized.visual_grammar,
+            script_structure: normalized.script_structure as never,
+            cta_pattern: normalized.cta_pattern,
+            business_hypothesis: normalized.business_hypothesis,
+            transferability_score: normalized.transferability_score,
+            distortion_risk: normalized.distortion_risk,
+            confidence: normalized.confidence,
+            missing_evidence: normalized.missing_evidence as never,
+            evidence_video_ids: normalized.evidence_video_ids as never,
+            source_pattern_ids: normalized.source_pattern_ids as never,
+            status: "testing",
+          })
+          .select("id")
+          .single(),
+      "format_fingerprints insert"
+    );
     formatFingerprintIds.push(fingerprint.id);
 
     const startsAt = new Date();
